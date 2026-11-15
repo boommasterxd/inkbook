@@ -153,22 +153,24 @@ The choice controls the shared owning-window work budget and the same scheduling
 
 The built-in palette uses these exact snapshot values:
 
-| Name             | Value                      |
-| ---------------- | -------------------------- |
-| Theme text color | `{ "type": "theme-text" }` |
-| Red              | `#EF4444FF`                |
-| Orange           | `#F97316FF`                |
-| Yellow           | `#EAB308FF`                |
-| Green            | `#22C55EFF`                |
-| Cyan             | `#06B6D4FF`                |
-| Blue             | `#3B82F6FF`                |
-| Violet           | `#8B5CF6FF`                |
-| Pink             | `#EC4899FF`                |
-| Gray             | `#6B7280FF`                |
+| Name   | Value                      |
+| ------ | -------------------------- |
+| Auto   | `{ "type": "theme-text" }` |
+| Black  | `#000000FF`                |
+| White  | `#FFFFFFFF`                |
+| Red    | `#EF4444FF`                |
+| Orange | `#F97316FF`                |
+| Yellow | `#EAB308FF`                |
+| Green  | `#22C55EFF`                |
+| Cyan   | `#06B6D4FF`                |
+| Blue   | `#3B82F6FF`                |
+| Violet | `#8B5CF6FF`                |
+| Pink   | `#EC4899FF`                |
+| Gray   | `#6B7280FF`                |
 
 Custom colors are not part of the first release. Opacity remains a separate normalized value.
 
-Theme text is resolved by the portable document palette, not by a transient Community-theme value. It therefore switches between Inkbook's canonical light and dark text colors while preserving identical active-scene and standalone-SVG output. Host chrome continues to use live Obsidian variables. See [Standalone SVG Envelope and Theme Rendering](svg-envelope.md).
+The first palette cell shows the selected neutral choice and opens **Auto**, **Black**, and **White** with a concise description. These choices share one cell rather than expanding the palette grid. Auto preserves the existing `theme-text` semantic value and chooses its document paint from the page and image underlay; Black and White are fixed RGBA colors. Host chrome continues to use live Obsidian variables, while document paint is portable. See [Standalone SVG Envelope and Theme Rendering](svg-envelope.md).
 
 ## Pen Defaults
 
@@ -184,7 +186,7 @@ interface PenDefaultsV1 {
 
 Built-in values:
 
-- color: Theme text color
+- color: Auto (`theme-text`)
 - width: S, 4
 - opacity: 1
 - pressure enabled: true
@@ -234,7 +236,7 @@ interface ShapeDefaultsV1 extends OutlineDefaultsV1 {
 
 Built-in outline values for every shape:
 
-- outline color: Theme text color
+- outline color: Auto (`theme-text`)
 - outline width: S, 4
 - outline style: solid
 - outline opacity: 1
@@ -440,7 +442,7 @@ Settings inherit Obsidian's neutral `SettingGroup` surface and its host-owned ra
 The following controls are visual choices rather than plain dropdowns:
 
 - Select area uses icon-only Rectangle and Lasso choices with accessible names. The Select toolbar icon follows the active area choice immediately. Select inclusion uses a two-column Fully enclosed and Touched choice row whose labels wrap inside their controls instead of overflowing a narrow adaptive panel. The two independent groups retain this order and expose the same labels, values, and selected state in Style and Settings.
-- Colors use the same labelled color swatches and selected state as Style, including Theme text color and the documented palette.
+- Colors use the same labelled color swatches and selected state as Style, including Auto and the documented palette.
 - Outline style uses exactly three buttons, in the same order, with the same solid, dashed, and dotted line previews.
 - Pen, highlighter, and outline widths use five evenly sized XS-through-XL choices with real line-width previews. The stored width values remain those in the type definitions and validation matrix.
 - Fill uses the same No fill choice, color swatches, selected states, and fill-opacity treatment as Style. Fill is present only for closed shapes.

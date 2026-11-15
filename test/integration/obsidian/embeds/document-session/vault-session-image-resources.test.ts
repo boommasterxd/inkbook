@@ -6,7 +6,8 @@ import { parseInkbookDocumentForTest } from "../../../../fixtures/persistence/pa
 import { operation, persistenceHarness } from "./vault-session-fixtures";
 
 it("admits before mutation and persists/reopens only referenced image resources", async () => {
-  const { asset, element } = await validImageFixture();
+  const { asset, element: source } = await validImageFixture();
+  const element = { ...source, contrast: "light" as const };
   const execute = vi.spyOn(DocumentWorkerRuntime.prototype, "execute");
   const harness = persistenceHarness();
   let reopened: ReturnType<typeof persistenceHarness> | undefined;
@@ -44,7 +45,7 @@ it("admits before mutation and persists/reopens only referenced image resources"
     const saved = await parseInkbookDocumentForTest(harness.content());
     if (!saved.ok) throw new Error(saved.error.message);
     expect(saved.value.snapshot).toMatchObject({
-      version: 3,
+      version: 5,
       imageResources: [asset],
       elements: [
         { ...element, x: element.x + 10, pivot: { ...element.pivot, x: element.pivot.x + 10 } },
@@ -54,7 +55,7 @@ it("admits before mutation and persists/reopens only referenced image resources"
     expect((await reopened.session.unlock(operation())).status).toBe("active");
     expect(reopened.session.documentModel!.imageResource!(asset.id)).toEqual(asset);
     const copy = await reopened.session.documentModel!.encodeClipboard(new Set([element.id]));
-    expect(JSON.parse(copy!.customText)).toMatchObject({ version: 3, imageResources: [asset] });
+    expect(JSON.parse(copy!.customText)).toMatchObject({ version: 5, imageResources: [asset] });
     model.removeElements([element.id]);
     expect(model.imageResource!(asset.id)).toEqual(asset);
     expect((await harness.session.lockLatest(operation())).status).toBe("confirmed");
@@ -123,25 +124,25 @@ it("persists a lock-only change through the worker and reopens locked images wit
     );
     if (prepared.token === null) throw new Error("Expected a prepared element lock.");
     expect(model.commitPreparedElementReplacement(prepared.token)).toBe("committed");
-    expect(model.formatVersion).toBe(4);
+    expect(model.formatVersion).toBe(5);
     expect(model.store.get(element.id)?.geometryVersion).toBe(before.geometryVersion);
     expect((await harness.session.lockLatest(operation())).status).toBe("confirmed");
 
     const saved = await parseInkbookDocumentForTest(harness.content());
     if (!saved.ok) throw new Error(saved.error.message);
     expect(saved.value.snapshot).toMatchObject({
-      version: 4,
+      version: 5,
       elements: [{ ...element, locked: true }],
       imageResources: [asset],
     });
     reopened = persistenceHarness(saved.value.snapshot);
     expect((await reopened.session.unlock(operation())).status).toBe("active");
     const reopenedModel = reopened.session.documentModel!;
-    expect(reopenedModel.formatVersion).toBe(4);
+    expect(reopenedModel.formatVersion).toBe(5);
     expect(reopenedModel.imageResource!(asset.id)).toEqual(asset);
     const copy = await reopenedModel.encodeClipboard(new Set([element.id]));
     expect(JSON.parse(copy!.customText)).toMatchObject({
-      version: 4,
+      version: 5,
       elements: [{ element: { locked: true } }],
       imageResources: [asset],
     });

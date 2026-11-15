@@ -1,55 +1,24 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fontResourceCssFamily } from "../../../../../src/domain/text/font-family";
-import {
-  TextFieldEditor,
-  type TextFieldEditorOptions,
-} from "../../../../../src/obsidian/text/editor/text-field-editor";
+import { type TextFieldEditorOptions } from "../../../../../src/obsidian/text/editor/text-field-editor";
 import { TextMathSyntaxError } from "../../../../../src/rendering/text/text-math-syntax-error";
-import { ManualFrameScheduler } from "../../../../fixtures/obsidian/manual-frame-scheduler";
-import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
+import { createTextFieldEditorFixture } from "../../../../fixtures/obsidian/text-field-editor";
 import { textElement } from "../../../../unit/domain/schema/fixtures";
 
-const editors: TextFieldEditor[] = [];
+const mountEditor = createTextFieldEditorFixture();
 
 function mount(
   source: string,
   renderMath: (latex: string, display: boolean, signal: AbortSignal) => Promise<HTMLElement>,
   options: Partial<TextFieldEditorOptions> = {},
 ) {
-  const container = document.createElement("div");
-  document.body.append(container);
-  const frames = new ManualFrameScheduler();
-  const scheduler = workSchedulerFromFrames({
-    requestAnimationFrame: frames.requestFrame.bind(frames),
-    cancelAnimationFrame: frames.cancelFrame.bind(frames),
-  });
-  const onError = vi.fn();
-  const onChange = vi.fn();
-  const editor = new TextFieldEditor({
-    container,
-    element: { ...textElement(), source },
-    scheduler,
-    renderMath,
-    onChange,
-    onFinish: vi.fn(),
-    onError,
-    ...options,
-  });
-  editor.view.dispatch({ selection: { anchor: editor.view.state.doc.length } });
-  while (frames.pendingCount) frames.runNext();
-  editors.push(editor);
-  const flush = () => {
-    while (frames.pendingCount) frames.runNext();
-  };
-  return { editor, onError, onChange, flush };
+  const result = mountEditor(source, { renderMath, ...options });
+  result.editor.view.dispatch({ selection: { anchor: result.editor.view.state.doc.length } });
+  result.flush();
+  return result;
 }
-
-afterEach(() => {
-  for (const editor of editors.splice(0)) editor.dispose();
-  document.body.replaceChildren();
-});
 
 function expectDisplayFormula(
   render: ReturnType<typeof vi.fn>,

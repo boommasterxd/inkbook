@@ -2,11 +2,15 @@ import { selectInkImportSources } from "../../import/selection";
 import type { InkImportPreview } from "../../import/types";
 import { renderImportFile, type ImportViewContext } from "./import-findings";
 
+export type ImportSelectionChange =
+  | { readonly kind: "source"; readonly path: string; readonly selected: boolean }
+  | { readonly kind: "all"; readonly selected: boolean };
+
 /** Keeps the full scan selection independent of the currently published page. */
 export function createImportSelection(
   preview: InkImportPreview,
   context: ImportViewContext,
-  changed: (count: number, notes: number) => void,
+  changed: (count: number, notes: number, change: ImportSelectionChange) => void,
 ) {
   const selected =
     context.state?.selection ?? new Set(preview.sources.map((source) => source.path));
@@ -29,7 +33,7 @@ export function createImportSelection(
   for (const path of selected) countNotes(path, 1);
   let controls: HTMLElement | undefined;
   let all: HTMLInputElement | undefined;
-  const update = (): void => {
+  const update = (change: ImportSelectionChange): void => {
     if (all !== undefined) {
       all.checked = selected.size === preview.sources.length;
       all.indeterminate = selected.size > 0 && selected.size < preview.sources.length;
@@ -38,9 +42,15 @@ export function createImportSelection(
       "input[data-inkbook-import-source]",
     ) ?? [])
       input.checked = selected.has(input.dataset.inkbookImportSource!);
-    changed(selected.size, noteCounts.size);
+    changed(selected.size, noteCounts.size, change);
   };
   return {
+    get selectedPaths(): ReadonlySet<string> {
+      return selected;
+    },
+    get sourceNotes(): ReadonlyMap<string, ReadonlySet<string>> {
+      return sourceNotes;
+    },
     noteCount: noteCounts.size,
     selectedCount: selected.size,
     snapshot: () => selectInkImportSources(preview, selected),
@@ -61,7 +71,7 @@ export function createImportSelection(
               selected.add(source.path);
               countNotes(source.path, 1);
             }
-          update();
+          update({ kind: "all", selected: all!.checked });
         });
       });
     },
@@ -76,7 +86,7 @@ export function createImportSelection(
             if (include) selected.add(source.path);
             else selected.delete(source.path);
             countNotes(source.path, include ? 1 : -1);
-            update();
+            update({ kind: "source", path: source.path, selected: include });
           });
         },
       });

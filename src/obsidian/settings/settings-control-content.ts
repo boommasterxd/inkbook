@@ -115,7 +115,10 @@ function installControlAccessibility(
     error.setAttribute("aria-live", "polite");
     const describedBy = description === null ? errorId : `${descriptionId} ${errorId}`;
     for (const element of section.querySelectorAll<HTMLElement>("button, input")) {
-      element.setAttribute("aria-describedby", describedBy);
+      element.setAttribute(
+        "aria-describedby",
+        [element.getAttribute("aria-describedby"), describedBy].filter(Boolean).join(" "),
+      );
     }
     errors.set(control.id, error);
   }

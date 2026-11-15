@@ -169,6 +169,7 @@ function canonicalTextRun(run: TextLayoutRunV2): TextLayoutRunV2 {
     end: run.end,
     x: run.x,
     width: run.width,
+    ...(run.inkBounds === undefined ? {} : { inkBounds: { ...run.inkBounds } }),
     ...(run.fontResourceId === undefined ? {} : { fontResourceId: run.fontResourceId }),
     ...(run.style === undefined ? {} : { style: canonicalPartialStyle(run.style) }),
   };

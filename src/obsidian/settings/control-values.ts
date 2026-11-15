@@ -47,6 +47,8 @@ const COLOR_VALUES = new Map<string, ColorV1 | null>([
   ["none", null],
   ["theme-text", { type: "theme-text" }],
   ...[
+    "#000000FF",
+    "#FFFFFFFF",
     "#EF4444FF",
     "#F97316FF",
     "#EAB308FF",

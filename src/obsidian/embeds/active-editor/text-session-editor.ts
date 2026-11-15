@@ -29,6 +29,7 @@ interface TextSessionEditorOptions extends Pick<
   "onChange" | "onInputPending" | "onError" | "onScrollInterrupt"
 > {
   readonly element: TextElementV2;
+  readonly imageBackdrop?: boolean;
   readonly tableCellLabel?: string;
   readonly tableUi?: TextTableUiPort;
   readonly surface: TextEditingSurface;
@@ -97,6 +98,7 @@ export function createTextSessionEditor(options: TextSessionEditorOptions) {
       container: surface.container,
       surfaceCoordinates: surface.coordinates,
       element,
+      ...(options.imageBackdrop ? { imageBackdrop: true } : {}),
       ...(options.tableCellLabel ? { tableCellLabel: options.tableCellLabel } : {}),
       ...(options.tableUi ? { tableUi: options.tableUi } : {}),
       scheduler: options.scheduler,

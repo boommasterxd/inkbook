@@ -233,17 +233,21 @@ export class SceneVisibilityCoordinator {
     livePaths: SceneLivePathCommits,
     motion: SceneMotionController,
     frameTime: number,
+    beforeLiveSettle: () => void = () => undefined,
   ): void {
     this.#elements.applyMounted(this.#content.takeCommittedPreviewIds());
-    const settled = (id: string) =>
-      this.#content.hasMounted(id) || (!this.#queryPending && !this.#visibility.contains(id));
-    liveStroke.settleCommits(settled);
-    livePaths.settle(settled);
     const mountedIds = this.#content.takeNewlyMountedIds();
     this.#transforms.applyMounted(mountedIds);
     motion.bindMountedEntrances(mountedIds, frameTime);
     motion.finishEntranceBatch();
     this.#elements.applyMounted(mountedIds);
+    beforeLiveSettle();
+    const settled = (id: string) =>
+      this.#content.hasMounted(id)
+        ? this.#content.paintReady(id)
+        : !this.#queryPending && !this.#visibility.contains(id);
+    liveStroke.settleCommits(settled);
+    livePaths.settle(settled);
     this.prepareNavigation();
   }
 

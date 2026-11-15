@@ -14,6 +14,17 @@ function document() {
   return { ...snapshot([imageElement()]), version: 3 as const, imageResources: [imageResource()] };
 }
 
+it("accepts image contrast overrides only in version 5 and retains automatic legacy images", () => {
+  for (const contrast of ["light", "dark"] as const) {
+    const elements = [{ ...imageElement(), contrast }];
+    expect(validateInkSnapshotV1({ ...document(), version: 5, elements }).ok).toBe(true);
+    for (const version of [3, 4])
+      expect(validateInkSnapshotV1({ ...document(), version, elements }).ok).toBe(false);
+  }
+  expect(validateInkSnapshotV1({ ...document(), version: 5 }).ok).toBe(true);
+  expect(validateInkElementV1({ ...imageElement(), contrast: "auto" }).ok).toBe(false);
+});
+
 describe("native image validation", () => {
   it("allows bounded WebP resources in version 3 while rejecting a legacy version", () => {
     const resource = {
@@ -72,7 +83,7 @@ describe("native image validation", () => {
       { id: "A".repeat(64) },
       { width: 0 },
       { width: IMAGE_LIMITS.resourceAxis + 1 },
-      { width: 2001, height: 2000 },
+      { width: 4001, height: 4000 },
       { data: "AB==" },
       { data: "AAF=" },
       { data: "AA=A" },

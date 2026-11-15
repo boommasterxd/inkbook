@@ -8,6 +8,7 @@ import type {
   TrustedDocumentHeadPort,
   TrustedDocumentHeadResult,
 } from "../../storage/trusted-document-head-ledger";
+import { prepareVaultNativeText } from "./vault-native-text-preparation";
 
 type VaultDocumentLoaderOptions = Parameters<typeof loadVaultDocument>[0];
 export type TrustedVaultDocumentRejection = Extract<
@@ -50,6 +51,9 @@ export function createTrustedVaultDocumentLoader(options: {
               safeStaticProof: () => options.hooks.safeStaticProof?.(options.documentId),
             }),
         ...(prefetchedBytes === undefined ? {} : { prefetchedBytes }),
+        ...(options.hooks.prepareTextInkBounds === undefined
+          ? {}
+          : { prepareTextInkBounds: options.hooks.prepareTextInkBounds }),
         workerEpoch,
       },
       options.hooks.trustedHeads,
@@ -58,12 +62,13 @@ export function createTrustedVaultDocumentLoader(options: {
 }
 
 export async function loadTrustedVaultDocument(
-  options: VaultDocumentLoaderOptions,
+  options: VaultDocumentLoaderOptions & Pick<VaultDocumentSessionHooks, "prepareTextInkBounds">,
   trustedHeads: TrustedDocumentHeadPort | undefined,
   policy: TrustedVaultDocumentLoadPolicy = {},
 ): Promise<LoadedVaultDocument | undefined> {
   const loaded = await loadVaultDocument(options);
-  if (loaded === undefined || trustedHeads === undefined) return loaded;
+  if (loaded === undefined) return undefined;
+  if (trustedHeads === undefined) return prepareTrustedText(loaded, options);
   if (options.cancelled()) return undefined;
   const observed: TrustedDocumentHead = {
     documentId: options.documentId,
@@ -73,7 +78,7 @@ export async function loadTrustedVaultDocument(
   const result = trustedHeads.reconcile(observed);
   if (result.status === "external-version" && acceptsExternalVersion(policy, observed)) {
     const accepted = trustedHeads.acceptExternalVersion(observed);
-    if (accepted.status === "accepted") return loaded;
+    if (accepted.status === "accepted") return prepareTrustedText(loaded, options);
     policy.onRejected?.(accepted);
     return undefined;
   }
@@ -81,7 +86,16 @@ export async function loadTrustedVaultDocument(
     policy.onRejected?.(result);
     return undefined;
   }
-  return loaded;
+  return prepareTrustedText(loaded, options);
+}
+
+function prepareTrustedText(
+  loaded: LoadedVaultDocument,
+  options: VaultDocumentLoaderOptions & Pick<VaultDocumentSessionHooks, "prepareTextInkBounds">,
+): Promise<LoadedVaultDocument | undefined> {
+  return options.prepareTextInkBounds === undefined
+    ? Promise.resolve(loaded)
+    : prepareVaultNativeText(loaded, { ...options, prepare: options.prepareTextInkBounds });
 }
 
 function acceptsExternalVersion(

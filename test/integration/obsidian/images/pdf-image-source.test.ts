@@ -10,7 +10,7 @@ const host = vi.hoisted(() => ({ load: vi.fn() }));
 vi.mock("obsidian", () => ({ loadPdfJs: host.load }));
 afterEach(() => vi.restoreAllMocks());
 
-async function pdfSetup() {
+async function pdfSetup(width = 10_000, height = 10_000) {
   const resource = await validImageResource();
   const bytes = Uint8Array.from(atob(resource.data), (char) => char.charCodeAt(0));
   const { canvases, encode } = installImageRasterBoundary(bytes);
@@ -19,8 +19,8 @@ async function pdfSetup() {
   const render = vi.fn(() => ({ promise: Promise.resolve(), cancel }));
   const page = {
     getViewport: ({ scale }: { scale: number }) => ({
-      width: 10_000 * scale,
-      height: 10_000 * scale,
+      width: width * scale,
+      height: height * scale,
     }),
     render,
     cleanup,
@@ -96,7 +96,54 @@ describe("owned host PDF rasterization", () => {
     await state.source.dispose();
     expect(state.destroy).toHaveBeenCalledOnce();
   });
+});
 
+describe("higher PDF raster resolutions", () => {
+  it("honors a 16MP render budget and reports the actual limited DPI only after successful rendering", async () => {
+    const state = await pdfSetup();
+    expect(state.source.resolution).toBeUndefined();
+    await state.source.render(1, { ...state.options, scale: 400 / 72, maximumPixels: 16_000_000 });
+    expect(state.render).toHaveBeenCalledWith(
+      expect.objectContaining({ viewport: { width: 4000, height: 4000 } }),
+    );
+    expect(state.source.resolution).toEqual({ page: 1, dpi: 28.8, limited: true });
+    expect(state.getPage).toHaveBeenCalledExactlyOnceWith(1);
+    expect(state.cleanup).toHaveBeenCalledOnce();
+    expect(state.canvases).toHaveLength(1);
+    expect(state.canvases[0]).toMatchObject({ width: 0, height: 0 });
+    const retained = state.source.resolution;
+    state.render.mockImplementationOnce(() => {
+      throw new Error("Native render failed");
+    });
+    await expect(state.source.render(2, state.options)).rejects.toThrow("Native render failed");
+    expect(state.source.resolution).toBe(retained);
+    expect(state.cleanup).toHaveBeenCalledTimes(2);
+    await state.source.dispose();
+  });
+
+  it.each([
+    [300, 9_000_000],
+    [400, 16_000_000],
+  ])(
+    "renders an A4 page at the requested %s DPI within its profile",
+    async (dpi, maximumPixels) => {
+      const state = await pdfSetup(595, 842);
+      const scale = dpi / 72;
+      await state.source.render(1, { ...state.options, scale, maximumPixels });
+      expect(state.render).toHaveBeenCalledWith(
+        expect.objectContaining({ viewport: { width: 595 * scale, height: 842 * scale } }),
+      );
+      expect(state.source.resolution?.dpi).toBeCloseTo(dpi);
+      expect(state.source.resolution).toMatchObject({ page: 1, limited: false });
+      expect(state.getPage).toHaveBeenCalledOnce();
+      expect(state.render).toHaveBeenCalledOnce();
+      expect(state.cleanup).toHaveBeenCalledOnce();
+      await state.source.dispose();
+    },
+  );
+});
+
+describe("owned PDF cancellation and loading failures", () => {
   it("cancels an in-flight render on owner unload and releases its resources", async () => {
     const state = await pdfSetup();
     let reject!: (error: Error) => void;

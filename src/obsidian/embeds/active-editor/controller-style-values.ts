@@ -57,6 +57,7 @@ function parseColor(value: boolean | number | string, nullable: true): ColorV1 |
 function parseColor(value: boolean | number | string, nullable: boolean): ColorV1 | null {
   if (nullable && value === "none") return null;
   if (value === "theme-text") return { type: "theme-text" };
+  if (value === "#000000FF" || value === "#FFFFFFFF") return { type: "rgba", value };
   const color = BUILT_IN_COLORS.find(
     (candidate) => candidate.type === "rgba" && candidate.value === value,
   );

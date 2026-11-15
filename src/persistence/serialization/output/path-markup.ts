@@ -16,9 +16,36 @@ import { serializeSvgNumber, serializeSvgOpacity } from "../../documents/svg-num
 import { DOCUMENT_PALETTE, type ThemeClass } from "../../documents/svg-theme";
 import { serializeImageMarkup } from "./image-markup";
 import { serializeTextMarkup } from "./text-markup";
+import { autoElementMarkupFragments } from "./auto-contrast-markup";
+import { calculateElementBounds, type Bounds } from "../../../domain/geometry/public";
+import type { AutoPaintServerRegistry } from "./auto-contrast-servers";
 
 type AttributeValue = number | string;
 type PathAttributes = Readonly<Record<string, AttributeValue | undefined>>;
+
+/** Canonical version-5 presentation; callers may reuse already validated world bounds. */
+export function* serializeAutoElementPaths(
+  element: InkElementV1,
+  bounds?: Bounds,
+  servers?: AutoPaintServerRegistry,
+): Iterable<string> {
+  const chunks: string[] = [];
+  if (element.kind === "text") {
+    for (const chunk of serializeTextMarkup(element)) {
+      chunks.push(chunk);
+      yield "";
+    }
+  } else chunks.push(...serializeElementPaths(element));
+  const markup = chunks.join("");
+  if (element.kind === "image" || !markup.includes('class="inkbook-theme-')) yield markup;
+  else
+    yield* autoElementMarkupFragments(
+      element,
+      markup,
+      bounds ?? calculateElementBounds(element),
+      servers,
+    );
+}
 
 export function serializeElementPaths(element: InkElementV1): string[] {
   if (element.kind === "image") return [serializeImageMarkup(element)];

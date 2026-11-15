@@ -7,6 +7,7 @@ import { encodeImageCanvas, type ImageCanvasEncodingOptions } from "./image-canv
 
 export interface ImageRasterOptions extends ImageCanvasEncodingOptions {
   readonly document: Document;
+  readonly maximumPixels?: number;
 }
 
 export interface PreparedRasterImage {
@@ -55,7 +56,7 @@ export async function prepareRasterImage(
   try {
     options.signal.throwIfAborted();
     assertRasterDimensions(bitmap.width, bitmap.height, IMAGE_LIMITS.sourcePixels);
-    const size = fitImageRasterSize(bitmap.width, bitmap.height);
+    const size = fitImageRasterSize(bitmap.width, bitmap.height, 1, options.maximumPixels);
     assertRasterDimensions(size.width, size.height);
     canvas.width = size.width;
     canvas.height = size.height;

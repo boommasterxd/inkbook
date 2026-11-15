@@ -29,7 +29,12 @@ export function attachEditableDocumentState(
     formatVersion: {
       enumerable: true,
       get: () => {
-        const current = model.store.lockedCount > 0 ? 4 : state.formatVersion?.();
+        const current =
+          model.store.bandSize("image") > 0
+            ? 5
+            : model.store.lockedCount > 0
+              ? 4
+              : state.formatVersion?.();
         if (current !== undefined && (formatVersion === undefined || current > formatVersion))
           formatVersion = current;
         return formatVersion;

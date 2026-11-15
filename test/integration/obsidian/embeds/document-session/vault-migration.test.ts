@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CANONICAL_THEME_STYLESHEET } from "../../../../../src/persistence/documents/svg-theme";
 import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
 import type { DocumentRuntimePort } from "../../../../../src/persistence/worker/runtime/public";
+import { legacyImageDocument } from "../../../../fixtures/persistence/legacy-image-svg";
 
 import {
   createVaultSessionFactory,
@@ -19,8 +20,14 @@ function migrationHarness(options: {
   readonly createRuntime?: (sessionId: string, workerEpoch: number) => Promise<DocumentRuntimePort>;
   readonly failBackup?: boolean;
   readonly legacyTheme?: boolean;
+  readonly legacyImageVersion?: 3 | 4;
 }) {
-  const original = options.legacyTheme ? legacyThemeDocument() : versionZeroDocumentFromSnapshot();
+  const original =
+    options.legacyImageVersion !== undefined
+      ? legacyImageDocument(options.legacyImageVersion)
+      : options.legacyTheme
+        ? legacyThemeDocument()
+        : versionZeroDocumentFromSnapshot();
   let content = original.svg;
   const file = new TestTFile("drawings/ink.svg", original.bytes.byteLength);
   const copies = new Map<string, { file: TFile; text: string }>();
@@ -30,7 +37,7 @@ function migrationHarness(options: {
     return content;
   });
   const create = vi.fn(async (path: string, text: string) => {
-    if (options.failBackup && path === "drawings/ink.backup-v0.svg") {
+    if (options.failBackup && path.startsWith("drawings/ink.backup-v")) {
       throw new Error("backup creation failed");
     }
     const created = new TestTFile(path, new TextEncoder().encode(text).byteLength);
@@ -71,7 +78,8 @@ async function commitAndLock(harness: ReturnType<typeof migrationHarness>, opera
 
 async function unlockAndLockWithoutEdit(harness: ReturnType<typeof migrationHarness>) {
   await expect(harness.session.unlock(operation())).resolves.toMatchObject({ status: "active" });
-  await expect(harness.session.lockLatest(operation())).resolves.toMatchObject({
+  const locked = await harness.session.lockLatest(operation());
+  expect(locked, JSON.stringify(locked)).toMatchObject({
     revision: 7,
     status: "confirmed",
   });
@@ -145,6 +153,65 @@ describe("vault document migration persistence", () => {
     expect(harness.copies.get("drawings/ink.backup-v0.svg")?.text).toBe(harness.original.svg);
     expect(harness.process).toHaveBeenCalledOnce();
   });
+});
+
+it.each([
+  { version: 3 as const, fallback: false },
+  { version: 4 as const, fallback: true },
+])(
+  "backs up exact legacy image version $version once before an unedited rewrite (fallback=$fallback)",
+  async ({ version, fallback }) => {
+    const createRuntime = fallback
+      ? vi.fn(async (): Promise<DocumentRuntimePort> => {
+          throw new Error("Worker unavailable");
+        })
+      : undefined;
+    const harness = migrationHarness({
+      legacyImageVersion: version,
+      ...(createRuntime === undefined ? {} : { createRuntime }),
+    });
+    try {
+      await unlockAndLockWithoutEdit(harness);
+      expect(harness.copies.get(`drawings/ink.backup-v${version}.svg`)?.text).toBe(
+        harness.original.svg,
+      );
+      expect(harness.process).toHaveBeenCalledOnce();
+      const loaded = await parseInkbookDocumentForTest(harness.content());
+      expect(loaded).toMatchObject({
+        ok: true,
+        value: { requiresCanonicalRewrite: false, sourceVersion: 5, snapshot: { version: 5 } },
+      });
+      expect(createRuntime?.mock.calls.length ?? 0).toBe(fallback ? 2 : 0);
+      const model = harness.factory.getDocumentModel("session-1")!;
+      model.commitPage({ ...model.page, activeBufferLines: 4 });
+      await expect(
+        harness.session.lockLatest({ ...operation(), operationId: 2, workspaceToken: 2 }),
+      ).resolves.toMatchObject({ status: "confirmed" });
+      expect(harness.copies.size).toBe(1);
+      expect(harness.create).toHaveBeenCalledOnce();
+      expect(harness.copies.get(`drawings/ink.backup-v${version}.svg`)?.text).toBe(
+        harness.original.svg,
+      );
+    } finally {
+      harness.session.dispose();
+    }
+  },
+);
+
+it("preserves the exact legacy image source when its migration backup fails", async () => {
+  const harness = migrationHarness({ legacyImageVersion: 3, failBackup: true });
+  try {
+    await expect(harness.session.unlock(operation())).resolves.toMatchObject({ status: "active" });
+    await expect(harness.session.lockLatest(operation())).resolves.toMatchObject({
+      status: "failed",
+    });
+    expect(harness.process).not.toHaveBeenCalled();
+    expect(harness.copies.size).toBe(0);
+    expect(harness.create).toHaveBeenCalledWith("drawings/ink.backup-v3.svg", harness.original.svg);
+    expect(harness.content()).toBe(harness.original.svg);
+  } finally {
+    harness.session.dispose();
+  }
 });
 
 function documentBytes(svg: string): { readonly bytes: Uint8Array; readonly svg: string } {

@@ -1,65 +1,12 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseTextMarkdown } from "../../../../fixtures/domain/text-source";
-import {
-  TextFieldEditor,
-  type TextFieldEditorOptions,
-} from "../../../../../src/obsidian/text/editor/text-field-editor";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
-import { ManualFrameScheduler } from "../../../../fixtures/obsidian/manual-frame-scheduler";
-import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
+import { createTextFieldEditorFixture } from "../../../../fixtures/obsidian/text-field-editor";
 import { textElement } from "../../../../unit/domain/schema/fixtures";
 
-const editors: TextFieldEditor[] = [];
-
-function mount(source = "Hello", overrides: Partial<TextFieldEditorOptions> = {}) {
-  const container = document.createElement("div");
-  document.body.append(container);
-  const frames = new ManualFrameScheduler();
-  const element = { ...textElement(), source };
-  const onChange = vi.fn<TextFieldEditorOptions["onChange"]>();
-  const onSelectionChange = vi.fn();
-  const onUndoRedo = vi.fn();
-  const onFinish = vi.fn();
-  const onError = vi.fn();
-  const scheduler = workSchedulerFromFrames({
-    requestAnimationFrame: frames.requestFrame.bind(frames),
-    cancelAnimationFrame: frames.cancelFrame.bind(frames),
-  });
-  const editor = new TextFieldEditor({
-    container,
-    element,
-    scheduler,
-    onChange,
-    onSelectionChange,
-    onUndoRedo,
-    onFinish,
-    onError,
-    ...overrides,
-  });
-  editors.push(editor);
-  const flush = () => {
-    while (frames.pendingCount) frames.runNext();
-  };
-  return {
-    editor,
-    container,
-    frames,
-    flush,
-    element,
-    onChange,
-    onSelectionChange,
-    onUndoRedo,
-    onFinish,
-    onError,
-  };
-}
-
-afterEach(() => {
-  for (const editor of editors.splice(0)) editor.dispose();
-  document.body.replaceChildren();
-});
+const mount = createTextFieldEditorFixture();
 
 describe("native text source editor", () => {
   it("formats selected Markdown and retains native selection through menu and history updates", async () => {

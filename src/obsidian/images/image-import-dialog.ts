@@ -1,14 +1,20 @@
 import type { ImageResourceV3 } from "../../domain/schema/public";
 import type { ImageRasterSize } from "../../domain/images/image-raster-size";
+import { imageImportResolution } from "../../domain/images/image-import-resolution";
 import type { ImportedImageBatch } from "../embeds/active-scene/editor-chrome-openings";
 import { setIcon } from "obsidian";
 import { DialogHeightMotion } from "../dialogs/dialog-height-motion";
 import { ImageImportStaging } from "./image-import-staging";
 import { ImageImportSpinner } from "./image-import-spinner";
+import { ImageImportPages } from "./image-import-pages";
 import { imageImportErrorMessage } from "./image-import-error";
 import { ImageDialog, type ImageDialogOptions } from "./image-dialog";
-import { parsePdfPages, prepareRasterImage, readImageSource } from "./image-import";
+import { prepareRasterImage, readImageSource, type PreparedRasterImage } from "./image-import";
 import { openPdfImageSource, type PdfImageSource } from "./pdf-image-source";
+import {
+  ImageImportResolutionControl,
+  imageResolutionDescription,
+} from "./image-import-resolution-control";
 
 export function openImageImportDialog(
   options: ImageDialogOptions,
@@ -21,7 +27,8 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
   #pdf: PdfImageSource | undefined;
   #preview: ImageResourceV3 | undefined;
   #previewPage = 1;
-  #previewScale = 2;
+  #previewQuality = "high";
+  #rasterBytes: Uint8Array<ArrayBuffer> | undefined;
   #busy = false;
   #generation = 0;
   #input!: HTMLInputElement;
@@ -43,10 +50,9 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
   #resizeWarning!: HTMLElement;
   #resizeWarningText!: HTMLElement;
   #details!: HTMLElement;
-  #pdfFields!: HTMLElement;
-  #pages!: HTMLInputElement;
-  #page!: HTMLInputElement;
+  #pdfPages!: ImageImportPages;
   #quality!: HTMLSelectElement;
+  #resolution!: ImageImportResolutionControl;
   #placement!: HTMLLabelElement;
   #pageWidth!: HTMLInputElement;
 
@@ -76,6 +82,7 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     this.#resizeWarningText = this.#resizeWarning.createSpan();
     this.#buildPreview();
     this.#buildPdfFields();
+    this.#buildResolution();
     this.#buildPlacement();
     this.#status = this.contentEl.createEl("p", { cls: "inkbook-menu-visually-hidden" });
     this.#status.setAttribute("role", "status");
@@ -157,41 +164,23 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
   }
 
   #buildPdfFields(): void {
-    const { t } = this.options.localization;
-    this.#pdfFields = this.#body.createEl("fieldset", { cls: "inkbook-image-import-pdf" });
-    this.#pdfFields.hidden = true;
-    this.#pdfFields.createEl("legend", {
-      cls: "inkbook-menu-visually-hidden",
-      text: t("images.pages"),
+    this.#pdfPages = new ImageImportPages(this.#body, this.#figure, {
+      localization: this.options.localization,
+      signal: this.abort.signal,
+      mutate: (update) => this.#mutateView(update),
+      changed: (page) => {
+        this.#updateInsert();
+        if (page !== undefined) void this.#refreshPreview();
+      },
     });
-    const label = this.#pdfFields.createEl("label", {
-      cls: "inkbook-image-field inkbook-image-import-pages",
-    });
-    label.createSpan({ text: t("images.pages") });
-    this.#pages = label.createEl("input", { type: "text" });
-    this.#pages.maxLength = 256;
-    this.#pages.value = "1";
-    this.#pages.placeholder = "1, 3-5";
-    this.#pdfFields.createEl("p", {
-      cls: "inkbook-image-import-pages-hint",
-      text: t("images.pagesHint"),
-    });
-    const pageLabel = this.#pdfFields.createEl("label", { cls: "inkbook-image-field" });
-    pageLabel.createSpan({ text: t("images.previewPage") });
-    this.#page = pageLabel.createEl("input", { type: "number" });
-    this.#page.min = "1";
-    this.#page.value = "1";
-    const qualityLabel = this.#pdfFields.createEl("label", { cls: "inkbook-image-field" });
-    qualityLabel.createSpan({ text: t("images.quality") });
-    this.#quality = qualityLabel.createEl("select");
-    this.#quality.createEl("option", { value: "1", text: t("images.standard") });
-    this.#quality.createEl("option", { value: "2", text: t("images.high") });
-    this.#quality.value = "2";
-    this.listen(this.#page, "change", () => {
-      void this.#refreshPdfPreview();
-    });
+    this.#figure.insertBefore(this.#pdfPages.navigation, this.#details.parentElement);
+  }
+
+  #buildResolution(): void {
+    this.#resolution = new ImageImportResolutionControl(this.#body, this.options.localization);
+    this.#quality = this.#resolution.select;
     this.listen(this.#quality, "change", () => {
-      void this.#refreshPdfPreview();
+      void this.#refreshPreview();
     });
   }
 
@@ -199,8 +188,12 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     if (this.#busy || this.abort.signal.aborted) return;
     this.#setBusy(true);
     this.#preview = undefined;
+    this.#rasterBytes = undefined;
+    this.#pdfPages.setSource(undefined);
+    this.#previewImage.removeAttribute("src");
     this.#mutateView(() => {
       this.#placement.hidden = true;
+      this.#resolution.element.hidden = true;
       this.#resizeWarning.hidden = true;
       this.#resizeWarningText.textContent = "";
       this.#sourceDescription = this.options.localization.t("images.formats");
@@ -218,14 +211,14 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
       const bytes = await readImageSource(file, this.abort.signal);
       if (String.fromCharCode(...bytes.subarray(0, 5)) === "%PDF-") {
         this.#pdf = await openPdfImageSource(bytes, this.abort.signal);
-        this.#page.max = String(this.#pdf.pageCount);
-        this.#page.value = "1";
-        this.#pages.value = "1";
+        this.#pdfPages.setSource(this.#pdf.pageCount);
         this.#previewPage = 1;
-        this.#previewScale = Number(this.#quality.value);
+        this.#previewQuality = this.#quality.value;
         this.#showPreview(await this.#pdf.render(1, this.#rasterOptions()));
       } else {
+        this.#rasterBytes = bytes;
         const prepared = await prepareRasterImage(bytes, this.#rasterOptions());
+        this.#previewQuality = this.#quality.value;
         this.#showPreview(prepared.resource, prepared.resizedFrom);
       }
     } catch (error) {
@@ -236,27 +229,54 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
   }
 
   #rasterOptions() {
+    const profile = imageImportResolution(this.#quality.value);
     return {
       document: this.contentEl.ownerDocument,
       scheduler: this.options.scheduler,
       signal: this.abort.signal,
-      scale: Number(this.#quality.value),
+      scale: profile.dpi / 72,
+      maximumPixels: profile.maximumPixels,
     };
   }
 
-  async #refreshPdfPreview(): Promise<void> {
-    if (this.#busy || this.#pdf === undefined || this.abort.signal.aborted) return;
+  async #refreshPreview(): Promise<void> {
+    if (this.#busy || this.abort.signal.aborted) return;
+    if (this.#pdf === undefined && this.#rasterBytes === undefined) return;
+    if (this.#pdf !== undefined && !this.#pdfPages.previewValid) return;
+    const page = this.#pdfPages.page;
+    if (
+      this.#preview !== undefined &&
+      this.#quality.value === this.#previewQuality &&
+      (this.#pdf === undefined || page === this.#previewPage)
+    )
+      return;
+    const active = this.contentEl.ownerDocument.activeElement;
+    const focused = active === this.#quality ? this.#quality : this.#pdfPages.focused;
     this.#setBusy(true);
+    this.#preview = undefined;
+    this.#previewImage.removeAttribute("src");
+    this.#resizeWarning.hidden = true;
+    this.#resizeWarningText.textContent = "";
     try {
-      const page = Number(this.#page.value);
-      const preview = await this.#pdf.render(page, this.#rasterOptions());
+      const prepared: PreparedRasterImage =
+        this.#pdf !== undefined
+          ? { resource: await this.#pdf.render(page, this.#rasterOptions()) }
+          : await prepareRasterImage(this.#rasterBytes!, this.#rasterOptions());
       this.#previewPage = page;
-      this.#previewScale = Number(this.#quality.value);
-      this.#showPreview(preview);
+      this.#previewQuality = this.#quality.value;
+      this.#showPreview(prepared.resource, prepared.resizedFrom);
     } catch (error) {
       this.#showError(error);
     } finally {
       this.#setBusy(false);
+      if (
+        focused !== undefined &&
+        focused.isConnected &&
+        focused.ownerDocument.activeElement === focused.ownerDocument.body
+      )
+        (focused.disabled ? this.#pdfPages.navigationFocusTarget : focused).focus({
+          preventScroll: true,
+        });
     }
   }
 
@@ -264,24 +284,27 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     if (this.abort.signal.aborted) return;
     this.#preview = resource;
     this.#mutateView(() => {
-      this.#resizeWarning.hidden = resizedFrom === undefined;
-      this.#resizeWarningText.textContent =
-        resizedFrom === undefined
-          ? ""
-          : this.options.localization.t("images.resized", {
-              sourceWidth: resizedFrom.width,
-              sourceHeight: resizedFrom.height,
-              width: resource.width,
-              height: resource.height,
-            });
+      this.#resolution.show(this.#pdf !== undefined);
+      const { details, warning } = imageResolutionDescription(
+        this.options.localization.t,
+        resource,
+        {
+          resizedFrom,
+          resolution: this.#pdf?.resolution,
+        },
+      );
+      this.#resizeWarning.hidden = warning === "";
+      this.#resizeWarningText.textContent = warning;
+      this.#details.textContent = details;
       this.#choose.dataset.selected = "true";
       this.#replace.hidden = false;
       this.#previewImage.width = resource.width;
       this.#previewImage.height = resource.height;
       this.#previewImage.src = `data:${resource.mimeType};base64,${resource.data}`;
+      this.#previewImage.parentElement!.hidden = false;
+      this.#details.parentElement!.hidden = false;
       this.#figure.hidden = false;
       this.#placement.hidden = false;
-      this.#pdfFields.hidden = this.#pdf === undefined;
       this.#previewHint.hidden = this.#pdf === undefined;
       this.#sourceDescription =
         this.#pdf === undefined
@@ -295,21 +318,18 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
               { count: this.#pdf.pageCount },
             );
       this.#fileHint.textContent = this.#sourceDescription;
-      this.#details.textContent = this.options.localization.t("images.details", {
-        width: resource.width,
-        height: resource.height,
-      });
     });
   }
 
   async #commit(): Promise<void> {
     if (this.#busy || this.#preview === undefined || this.abort.signal.aborted) return;
+    if (this.#pdf !== undefined && !this.#pdfPages.valid) return;
     this.#setBusy(true);
     try {
       const staging = new ImageImportStaging();
       if (this.#pdf === undefined) staging.add(this.#preview);
       else {
-        const pages = parsePdfPages(this.#pages.value, this.#pdf.pageCount);
+        const pages = this.#pdfPages.selection!;
         for (const [index, page] of pages.entries()) {
           this.abort.signal.throwIfAborted();
           this.#status.textContent = this.options.localization.t("images.preparingPage", {
@@ -318,7 +338,7 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
           });
           this.#fileHint.textContent = this.#status.textContent;
           const resource =
-            page === this.#previewPage && Number(this.#quality.value) === this.#previewScale
+            page === this.#previewPage && this.#quality.value === this.#previewQuality
               ? this.#preview
               : await this.#pdf.render(page, this.#rasterOptions());
           this.abort.signal.throwIfAborted();
@@ -343,8 +363,11 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     if (!this.abort.signal.aborted)
       this.#mutateView(() => {
         if (this.#preview === undefined) {
-          this.#figure.hidden = true;
-          this.#pdfFields.hidden = true;
+          this.#figure.hidden = this.#pdf === undefined;
+          this.#previewImage.parentElement!.hidden = true;
+          this.#details.parentElement!.hidden = true;
+          if (this.#pdf !== undefined || this.#rasterBytes !== undefined)
+            this.#resolution.show(this.#pdf !== undefined);
           this.#placement.hidden = true;
           this.#choose.dataset.selected = "true";
           this.#replace.hidden = false;
@@ -376,14 +399,31 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     );
     this.#spinner?.setActive(busy);
     this.#choose.disabled = busy;
-    this.#insert.disabled = busy || this.#preview === undefined;
-    for (const input of [this.#pages, this.#page, this.#quality, this.#pageWidth])
-      input.disabled = busy;
+    this.#updateInsert();
+    this.#pdfPages.setBusy(busy);
+    for (const input of [this.#quality, this.#pageWidth]) input.disabled = busy;
     this.#status.textContent = busy ? this.options.localization.t("images.preparing") : "";
     this.#fileHint.textContent = busy
       ? this.options.localization.t("images.preparing")
       : this.#sourceDescription;
     if (busy) this.#error.textContent = "";
+  }
+
+  #updateInsert(): void {
+    const { t } = this.options.localization;
+    const pages = this.#pdfPages.selection;
+    this.#insert.textContent =
+      this.#pdf === undefined
+        ? t("images.insert")
+        : pages === undefined
+          ? t("images.insertSelectedPages")
+          : t(pages.length === 1 ? "images.insertPage" : "images.insertPages", {
+              count: pages.length,
+            });
+    this.#insert.disabled =
+      this.#busy ||
+      this.#preview === undefined ||
+      (this.#pdf !== undefined && !this.#pdfPages.valid);
   }
 
   public override open(): void {
@@ -419,6 +459,7 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     this.#heightMotion = undefined;
     void this.#pdf?.dispose().catch(() => undefined);
     this.#pdf = undefined;
+    this.#rasterBytes = undefined;
     this.#preview = undefined;
     super.onClose();
   }

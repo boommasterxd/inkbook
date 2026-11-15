@@ -1,5 +1,5 @@
 import { EditorView } from "@codemirror/view";
-import type { TextStyleV2 } from "../../../domain/schema/public";
+import type { TextStyleRangeV2, TextStyleV2 } from "../../../domain/schema/public";
 import { fontCssFamily, fontResourceCssFamily } from "../../../domain/text/font-family";
 import {
   TEXT_CODE_FONT_FAMILY,
@@ -9,6 +9,18 @@ import {
   TEXT_LIST_MARKER_GAP_EM,
 } from "../../../domain/text/text-layout-style";
 import { textTableThemeRules } from "./text-table-theme";
+
+export function syncLegibleBackdrop(
+  view: EditorView,
+  imageBackdrop: boolean | undefined,
+  style: TextStyleV2,
+  ranges: readonly TextStyleRangeV2[],
+): void {
+  const auto =
+    style.color.type === "theme-text" ||
+    ranges.some((range) => range.style.color?.type === "theme-text");
+  view.dom.toggleAttribute("data-inkbook-legible-backdrop", !!imageBackdrop && auto);
+}
 
 export function textStyleCss(style: TextStyleV2, fontResourceId?: string): string {
   const decoration = [style.underline ? "underline" : "", style.strikethrough ? "line-through" : ""]
@@ -30,6 +42,10 @@ export const textFieldTheme = EditorView.theme({
   "&": { height: "auto", minHeight: "1em", outline: "none", background: "transparent" },
   "&.cm-focused": { outline: "none" },
   "&.inkbook-text-background-owner": { isolation: "isolate" },
+  "&[data-inkbook-legible-backdrop]": { background: "var(--inkbook-page, #ffffff)" },
+  "&[data-inkbook-legible-backdrop] .inkbook-text-editor-background": {
+    visibility: "hidden",
+  },
   ".inkbook-text-editor-background": {
     position: "absolute",
     left: "0",

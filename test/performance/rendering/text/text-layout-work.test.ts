@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { TextStyleV2 } from "../../../../src/domain/schema/public";
 import { parseTextMarkdown } from "../../../fixtures/domain/text-source";
-import { CanvasTextMeasurer } from "../../../../src/rendering/text/canvas-text-measurer";
+import {
+  measurementBoundary,
+  nativeMetrics,
+} from "../../../fixtures/rendering/text-measurement-boundary";
 import { layoutTextMarkdown } from "../../../../src/rendering/text/text-layout";
 import type {
   TextFontResourceBoundaries,
@@ -23,79 +26,40 @@ const style: TextStyleV2 = {
   strikethrough: false,
 };
 
-function measurementBoundary(
-  resolveFontResourceId?: TextFontResourceResolver,
-  fontResourceBoundaries?: TextFontResourceBoundaries,
-  nativeLine = (_font: string, fontSize: number, _lineHeight: string) => ({
-    ascent: fontSize * 0.95,
-    lineHeight: fontSize * 1.3,
-  }),
-) {
-  const context = {
-    font: "",
-    measureText: vi.fn((text: string) => ({
-      width: text.length * 10,
-      fontBoundingBoxAscent: 16,
-      fontBoundingBoxDescent: 4,
-    })),
-  };
-  const canvas = { width: 300, height: 150, getContext: () => context };
-  const createElement = vi.fn(() => canvas);
-  const nativeDocument = document.implementation.createHTMLDocument("Text measurements");
-  const rectReads = vi.fn();
-  const styleWrites = vi.fn();
-  const phases: string[] = [];
-  const createElementNS = vi.fn((namespace: string | null, tag: string) => {
-    const node = nativeDocument.createElementNS(namespace, tag) as HTMLElement;
-    if (tag === "div") {
-      const setProperty = node.style.setProperty.bind(node.style);
-      vi.spyOn(node.style, "setProperty").mockImplementation((...args) => {
-        styleWrites(...args);
-        phases.push("write");
-        setProperty(...args);
-      });
-    }
-    if (tag === "div" || tag === "span")
-      vi.spyOn(node, "getBoundingClientRect").mockImplementation(() => {
-        rectReads(tag);
-        phases.push("read");
-        const probe = tag === "span" ? node.parentElement! : node;
-        const metrics = nativeLine(
-          probe.style.font,
-          Number.parseFloat(probe.style.fontSize),
-          probe.style.lineHeight,
-        );
-        return new DOMRect(
-          0,
-          tag === "span" ? metrics.ascent : 0,
-          0,
-          tag === "span" ? 0 : metrics.lineHeight,
-        );
-      });
-    return node;
-  });
-  const createTextNode = vi.fn((text: string) => nativeDocument.createTextNode(text));
-  const ownerDocument = {
-    createElement,
-    createElementNS,
-    createTextNode,
-    createDocumentFragment: () => nativeDocument.createDocumentFragment(),
-    head: nativeDocument.head,
-    body: nativeDocument.body,
-  } as unknown as Document;
-  return {
-    context,
-    canvas,
-    createElement,
-    createElementNS,
-    createTextNode,
-    rectReads,
-    styleWrites,
-    phases,
-    nativeDocument,
-    measure: new CanvasTextMeasurer(ownerDocument, resolveFontResourceId, fontResourceBoundaries),
-  };
-}
+it("retains native italic overhang beyond advances while reusing shapes across 2,000 lines", async () => {
+  const boundary = measurementBoundary();
+  boundary.context.measureText.mockImplementation((text) => ({
+    ...nativeMetrics(text.length * 8),
+    actualBoundingBoxLeft: text.length ? 2 : 0,
+    actualBoundingBoxRight: text.length ? 16 : 0,
+  }));
+  const italic = { ...style, italic: true };
+  try {
+    const result = await layoutTextMarkdown(
+      {
+        document: parseTextMarkdown(Array(2_000).fill("‾").join("\n"), { style: italic }),
+        width: 200,
+        style: italic,
+      },
+      { measure: boundary.measure, scheduler: createTestWorkScheduler() },
+    );
+    expect(result.layout.lines).toHaveLength(2_000);
+    expect(
+      result.layout.lines.every(
+        (line) =>
+          line.runs[0]?.width === 8 &&
+          line.runs[0].inkBounds?.minX === -2 &&
+          line.runs[0].inkBounds.maxX === 16,
+      ),
+    ).toBe(true);
+    expect(boundary.context.measureText).toHaveBeenCalledTimes(3);
+    expect(new Set(boundary.context.measureText.mock.calls.map(([text]) => text))).toEqual(
+      new Set(["", "‾", "\n"]),
+    );
+  } finally {
+    boundary.measure.dispose();
+  }
+});
 
 describe("bounded native text measurement work", () => {
   it("measures and retains the exact bound face when a new bold face becomes available inside one word", async () => {
@@ -109,11 +73,7 @@ describe("bounded native text measurement work", () => {
     );
     boundary.context.measureText.mockImplementation((text) => {
       fonts.push(boundary.context.font);
-      return {
-        width: text.length * (boundary.context.font.includes(boldId) ? 12 : 7),
-        fontBoundingBoxAscent: 16,
-        fontBoundingBoxDescent: 4,
-      };
+      return nativeMetrics(text.length * (boundary.context.font.includes(boldId) ? 12 : 7));
     });
     const boldStyle = { ...style, bold: true };
     const request = {
@@ -288,7 +248,8 @@ describe("bounded native measurement cache", () => {
       expect(result.layout.lines.length).toBe(1000);
       expect(result.layout).toMatchObject({ padding: 10 });
       expect(result.layout.lines[0]).toMatchObject({ x: 10, y: 10 });
-      expect(boundary.context.measureText).toHaveBeenCalledTimes(3);
+      // The merged final run needs one additional shape, shared across all identical lines.
+      expect(boundary.context.measureText).toHaveBeenCalledTimes(4);
       expect(boundary.createElement).toHaveBeenCalledTimes(1);
       expect(boundary.createElementNS).toHaveBeenCalledTimes(3);
       expect(boundary.createTextNode).toHaveBeenCalledTimes(1);
@@ -300,7 +261,7 @@ describe("bounded native measurement cache", () => {
         scheduler: createTestWorkScheduler(),
       });
       expect(repeated).toEqual(result);
-      expect(boundary.context.measureText).toHaveBeenCalledTimes(3);
+      expect(boundary.context.measureText).toHaveBeenCalledTimes(4);
       expect(boundary.rectReads).toHaveBeenCalledTimes(2);
       expect(boundary.styleWrites).toHaveBeenCalledTimes(2);
     } finally {
@@ -376,11 +337,9 @@ describe("native CSS line-box reuse", () => {
         lineHeight: Math.floor(fontSize * 1.3 * 64) / 64,
       }),
     );
-    boundary.context.measureText.mockImplementation((text) => ({
-      width: text.length * 10,
-      fontBoundingBoxAscent: 47,
-      fontBoundingBoxDescent: 12,
-    }));
+    boundary.context.measureText.mockImplementation((text) =>
+      nativeMetrics(text.length * 10, 47, 12),
+    );
     const baseStyle = { ...style, fontSize: 24 };
     const request = {
       document: parseTextMarkdown("# Heading\n# Heading\n# Heading", { style: baseStyle }),

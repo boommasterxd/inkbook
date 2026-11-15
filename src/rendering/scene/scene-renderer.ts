@@ -87,7 +87,7 @@ export class SvgSceneRenderer {
     this.#background = new SceneBackgroundController(options.page, this.#scheduler, this.#stats);
     const render = this.renderFrame.bind(this);
     this.#frames = new SceneFrameScheduler(this.#scheduler, this.#stats, render);
-    this.#dom = SceneDom.create(options);
+    this.#dom = SceneDom.create({ ...options, instrumentation: this.#stats });
     this.textDocument = this.#dom.ownerDocument;
     this.#dom.onSurfaceInvalidated = (themeChanged) =>
       themeChanged === true ? this.invalidateLayout() : this.#frames.schedule();
@@ -100,6 +100,7 @@ export class SvgSceneRenderer {
       this.#dom.liveStrokeGroup,
       (band) => this.#dom.placeLiveGroup("stroke", band),
       this.#stats,
+      this.#dom.autoPaint,
     );
     this.#content = new SceneContentRenderer(
       this.#dom,
@@ -123,8 +124,7 @@ export class SvgSceneRenderer {
       this.#pathCache,
       this.#motion,
       options.onResourceUsageChanged ?? (() => undefined),
-      () =>
-        this.#visibilityCoordinator.previewMemoryUsage() + this.#dom.imageResources.memoryUsage(),
+      () => this.#visibilityCoordinator.previewMemoryUsage() + this.#dom.memoryUsage(),
       this.#detachedCache,
     );
     this.#elementPreviews = new SceneElementPreviews(this.#content, options.store);
@@ -301,7 +301,7 @@ export class SvgSceneRenderer {
   public commitLivePath(id: string): void {
     runtime.assertSceneActive(this.#disposed);
     this.#frameWriter.commitLivePath(id);
-    this.#frameWriter.livePathCommits.settle((key) => this.#content.hasMounted(key));
+    this.#frameWriter.livePathCommits.settle(this.#content.paintReady);
     this.#frames.schedule();
   }
   public commitLiveStroke(id: string, prepared?: PreparedScenePath): void {
@@ -350,6 +350,7 @@ export class SvgSceneRenderer {
       deadline,
       () => this.#scheduler.now(),
     );
+    if (this.#dom.autoPaint.flush(this.#viewport, this.#camera, deadline)) this.#frames.schedule();
   }
   public setPreviewTransform(
     ids: readonly string[],
@@ -474,6 +475,10 @@ export class SvgSceneRenderer {
       this.#frameWriter.livePathCommits,
       this.#motion,
       startedAt,
+      () => {
+        if (this.#dom.autoPaint.flush(this.#viewport, this.#camera, deadline))
+          work = { ...work, pendingVisibility: true };
+      },
     );
     this.#frameWriter.writeSelection(this.#elementPreviews, this.#motion);
     this.#crop.flush();

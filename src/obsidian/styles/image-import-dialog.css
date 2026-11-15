@@ -88,7 +88,9 @@
 .inkbook-image-import-source-hint,
 .inkbook-image-import-replace,
 .inkbook-image-import-figure figcaption,
-.inkbook-image-import-pdf > p {
+.inkbook-image-import-pdf > p,
+.inkbook-image-import-resolution > p,
+.inkbook-image-import-preview-unselected {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
 }
@@ -170,24 +172,66 @@
 
 .inkbook-image-import-content .inkbook-image-import-pdf {
   border: 0;
-  display: grid;
-  gap: var(--size-4-2) var(--size-4-3);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
   margin: 0;
   padding: 0;
 }
 
-.inkbook-image-import-pdf .inkbook-image-field {
+.inkbook-image-import-pdf .inkbook-image-field,
+.inkbook-image-import-resolution .inkbook-image-field {
   margin: 0;
 }
 
-.inkbook-image-import-pages,
-.inkbook-image-import-pages-hint {
-  grid-column: 1 / -1;
+.inkbook-image-import-pdf input,
+.inkbook-image-import-resolution select {
+  inline-size: 100%;
 }
 
-.inkbook-image-import-pdf :is(input, select) {
-  inline-size: 100%;
+.inkbook-image-import-resolution {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.inkbook-image-import-resolution > p {
+  margin: 0;
+}
+
+.inkbook-image-import-preview-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  min-inline-size: 0;
+}
+
+.inkbook-image-import-page-controls,
+.inkbook-image-import-page-controls label {
+  align-items: center;
+  display: flex;
+  gap: var(--size-4-2);
+  justify-content: center;
+}
+
+.inkbook-image-import-page-controls label {
+  white-space: nowrap;
+}
+
+.inkbook-image-import-page-controls input {
+  inline-size: calc(5ch + var(--size-4-4));
+  padding-inline: var(--size-4-1);
+  text-align: center;
+}
+
+.inkbook-image-import-page-action {
+  min-block-size: 44px;
+  min-inline-size: 44px;
+}
+
+.inkbook-image-import-field-error {
+  color: var(--inkbook-tone-danger);
+  margin: 0;
 }
 
 .inkbook-image-import-placement {
@@ -254,8 +298,4 @@
 
 .inkbook-image-dialog-container[data-inkbook-modal-platform="phone"] .inkbook-image-import-footer {
   padding-block-end: 0;
-}
-
-.inkbook-image-dialog-container[data-inkbook-modal-platform="phone"] .inkbook-image-import-pdf {
-  grid-template-columns: minmax(0, 1fr);
 }

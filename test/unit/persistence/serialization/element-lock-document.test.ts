@@ -28,20 +28,21 @@ it("retains lock states for vector, text and image elements in compact saved doc
   const font = await validFontResource();
   const text = textElement(8000);
   text.style.fontFamily = font.family;
+  text.layout.lines[0]!.runs[0]!.inkBounds = { minX: 0, minY: -15, maxX: 40, maxY: 5 };
   const snapshot = createAllElementSnapshot();
   snapshot.elements = [image, ...snapshot.elements, text].map((element, index) => ({
     ...element,
     ...(element.kind === "text" || index % 2 === 0 ? { locked: true } : {}),
   }));
-  snapshot.version = 4;
+  snapshot.version = 5;
   snapshot.imageResources = [resource];
   snapshot.fontResources = [font];
   const validation = validateInkSnapshotV1(snapshot);
   expect(validation.ok, JSON.stringify(validation)).toBe(true);
   const output = serializeInkbookDocument(snapshot);
   if (!output.ok) throw new Error(JSON.stringify(output.error));
-  expect(output.value.snapshot.version).toBe(4);
-  expect(validateSafeSvg(output.value.svg)).toMatchObject({ version: 4 });
+  expect(output.value.snapshot.version).toBe(5);
+  expect(validateSafeSvg(output.value.svg)).toMatchObject({ version: 5 });
   const loaded = await parseInkbookDocumentForTest(output.value.svg);
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.error));
   expect(loaded.value.snapshot).toEqual(output.value.snapshot);
@@ -100,6 +101,7 @@ it("requires version four for stored locks and rejects malformed lock states", (
   ).toBe(false);
   expect(elementSnapshotVersion(createSnapshot().elements)).toBe(1);
   expect(elementSnapshotVersion([textElement()])).toBe(2);
-  expect(elementSnapshotVersion([imageElement()])).toBe(3);
+  expect(elementSnapshotVersion([imageElement()])).toBe(5);
+  expect(elementSnapshotVersion([{ ...textElement(), locked: true }, imageElement()])).toBe(5);
   expect(elementSnapshotVersion([{ ...textElement(), locked: true }])).toBe(4);
 });

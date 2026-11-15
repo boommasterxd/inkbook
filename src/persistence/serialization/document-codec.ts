@@ -1,12 +1,13 @@
-import { deriveRenderBands } from "../../domain/commands/render-bands";
 import { derivePageExtent } from "../../domain/geometry/public";
 import type { InkSnapshotV1, ValidationError } from "../../domain/schema/public";
 import { FILE_SCHEMA_LIMITS, validateInkSnapshotV1 } from "../../domain/schema/public";
 import { validateSafeSvg } from "../documents/safe-svg-validator";
 import { serializeSvgEnvelope } from "../documents/svg-envelope";
 import { serializeSvgNumber } from "../documents/svg-number";
-import { backgroundFitsStaticLimit, serializeBackgroundPaths } from "./output/background";
-import { serializeElementPaths } from "./output/path-markup";
+import { backgroundFitsStaticLimit } from "./output/background";
+import { boundedSvgBands } from "./output/bounded-svg-bands";
+import { ChunkedOutputLimitError } from "./output/chunked-output-assembler";
+import { UnpreparedAutoTextError } from "./output/auto-contrast-text-bounds";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import type {
   DocumentCodecError,
@@ -64,13 +65,18 @@ export function serializeInkbookDocument(
   ) {
     return failure("static-output-limit-exceeded", "Generated background exceeds file limits.");
   }
-  const bands = deriveRenderBands(snapshot.elements);
-  const svg = serializeSvgEnvelope(snapshot, lockedHeight, {
-    background: serializeBackgroundPaths(snapshot.page.background, lockedHeight),
-    images: bands.image.flatMap(serializeElementPaths),
-    highlights: bands.highlight.flatMap(serializeElementPaths),
-    content: bands.content.flatMap(serializeElementPaths),
-  });
+  let svg: string;
+  try {
+    svg = serializeSvgEnvelope(
+      snapshot,
+      lockedHeight,
+      boundedSvgBands(snapshot, lockedHeight, validation.derivations),
+    );
+  } catch (error) {
+    if (error instanceof UnpreparedAutoTextError) return failure("snapshot-invalid", error.message);
+    if (!(error instanceof ChunkedOutputLimitError)) throw error;
+    return failure("static-output-limit-exceeded", "Generated document exceeds file limits.");
+  }
   const staticValidation = validateSafeSvg(svg);
   if (staticValidation === null || staticValidation.snapshotHash === null) {
     return failure(

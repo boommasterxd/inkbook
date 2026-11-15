@@ -9,12 +9,28 @@ export const images = {
   "images.pageCount": "PDF · {count} Seiten",
   "images.singlePage": "PDF · 1 Seite",
   "images.pages": "PDF-Seiten",
-  "images.pagesHint": "Bis zu 20 Seiten, z. B. 1, 3-5. Einfügen in Dokumentreihenfolge.",
+  "images.pagesHint": "Bis zu 20 Seiten, abhängig von der Auflösung.",
   "images.previewHint": "Prüfe, ob die Vorschau dem Original entspricht.",
   "images.previewPage": "Vorschauseite",
+  "images.pageLabel": "Seite",
+  "images.pageTotal": "von {count}",
+  "images.previousPage": "Vorherige Seite",
+  "images.nextPage": "Nächste Seite",
+  "images.previewNotSelected": "Nicht zum Import ausgewählt",
+  "images.failurePreviewPage": "Gib eine Seite zwischen 1 und {count} ein.",
   "images.quality": "PDF-Auflösung",
-  "images.standard": "Standard · bis 72 dpi",
-  "images.high": "Hoch · bis 144 dpi",
+  "images.imageQuality": "Bildauflösung",
+  "images.standard": "Standard",
+  "images.high": "Hoch",
+  "images.veryHigh": "Sehr hoch",
+  "images.ultra": "Ultra",
+  "images.pdfResolutionOption": "{quality} · bis {dpi} dpi",
+  "images.imageResolutionOption": "{quality} · bis {megapixels} MP",
+  "images.resolutionHint":
+    "Höhere Auflösung benötigt mehr Speicher und lässt weniger Seiten pro Zeichnung zu.",
+  "images.pdfDetails": "{width} × {height} Pixel · ca. {dpi} dpi",
+  "images.pdfResolutionLimited":
+    "Diese Seite wurde auf ca. {dpi} dpi begrenzt, um die gewählte Auflösungsgrenze einzuhalten.",
   "images.preview": "Bildvorschau",
   "images.pageWidthLocked": "Auf Seitenbreite einfügen und sperren",
   "images.preparing": "Bild wird vorbereitet…",
@@ -30,14 +46,17 @@ export const images = {
   "images.failureDecode":
     "Das Bild konnte nicht dekodiert werden. Speichere es erneut als PNG, JPEG oder statisches WebP und versuche es noch einmal.",
   "images.failureEncodedSize":
-    "Das aufbereitete Bild ist größer als 8 MiB. Verkleinere es und versuche es erneut.",
+    "Das aufbereitete Bild ist größer als 8 MiB. Wähle eine niedrigere Auflösung und versuche es erneut.",
   "images.failurePages":
     "Wähle gültige PDF-Seiten, z. B. 1, 3-5. Höchstens 20 Seiten sind möglich.",
   "images.failureCapacity":
-    "Diese Seiten überschreiten die Bildkapazität der Zeichnung. Wähle weniger Seiten.",
+    "Diese Seiten überschreiten die Bildkapazität der Zeichnung. Wähle weniger Seiten oder eine niedrigere Auflösung.",
   "images.failureFormat":
     "Die Datei ist kein unterstütztes PNG, JPEG, statisches WebP oder PDF. Wähle eine andere Datei.",
   "images.insert": "Einfügen",
+  "images.insertPage": "{count} Seite einfügen",
+  "images.insertPages": "{count} Seiten einfügen",
+  "images.insertSelectedPages": "Seiten einfügen",
   "images.cancel": "Abbrechen",
   "images.crop": "Bild zuschneiden",
   "images.cropHint":

@@ -26,6 +26,7 @@ import {
 } from "../../domain/geometry/public";
 import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../domain/spatial/index";
 import type { ClipboardResult, ElementBounds } from "./types";
+import { hasMeasuredTextInkBounds } from "../../domain/schema/snapshot-version";
 
 type UnknownRecord = Record<string, unknown>;
 const validatedBounds = new WeakMap<InkClipboardV1, readonly ElementBounds[]>();
@@ -338,7 +339,11 @@ function* validateClipboardPayloadSteps(
   }
   if (
     value.format !== "inkbook-elements" ||
-    (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4) ||
+    (value.version !== 1 &&
+      value.version !== 2 &&
+      value.version !== 3 &&
+      value.version !== 4 &&
+      value.version !== 5) ||
     !Array.isArray(value.elements)
   ) {
     return failure("Clipboard payload discriminator or version is invalid.");
@@ -350,8 +355,8 @@ function* validateClipboardPayloadSteps(
     samplesPerStep,
   );
   if (!entries.ok) return entries;
-  if (value.version !== 4 && entries.value.some(({ element }) => element.locked === true))
-    return failure("Locked elements require clipboard version 4.");
+  const versions = validateClipboardElementVersions(entries.value, value.version);
+  if (!versions.ok) return versions;
   const resources = yield* validateClipboardResourcesSteps(value, entries.value);
   if (!resources.ok) return resources;
   if (!hasValidRenderBandOrder(entries.value)) {
@@ -362,6 +367,25 @@ function* validateClipboardPayloadSteps(
   const payload = value as unknown as InkClipboardV1;
   validatedBounds.set(payload, limits.value);
   return { ok: true, value: payload };
+}
+
+function validateClipboardElementVersions(
+  entries: readonly ValidatedEntry[],
+  version: number,
+): ClipboardResult<void> {
+  if (version >= 5) return { ok: true, value: undefined };
+  let locked = false;
+  let imageContrast = false;
+  let measuredText = false;
+  for (const { element } of entries) {
+    locked ||= element.locked === true;
+    imageContrast ||= element.kind === "image" && element.contrast !== undefined;
+    measuredText ||= hasMeasuredTextInkBounds(element);
+  }
+  if (version < 4 && locked) return failure("Locked elements require clipboard version 4.");
+  if (imageContrast) return failure("Image contrast overrides require clipboard version 5.");
+  if (measuredText) return failure("Measured text ink bounds require clipboard version 5.");
+  return { ok: true, value: undefined };
 }
 
 function validateClipboardPayloadInternal(

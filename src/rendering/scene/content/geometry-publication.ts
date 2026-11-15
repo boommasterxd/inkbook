@@ -57,7 +57,6 @@ export class SceneGeometryPublication {
   #waitingForPaths = false;
   readonly #ports: GeometryPublicationPorts;
   readonly #textPreviews: TextPreviewPublication;
-
   public constructor(ports: GeometryPublicationPorts) {
     this.#ports = ports;
     this.#textPreviews = new TextPreviewPublication(ports.mounted, ports.store);
@@ -365,6 +364,7 @@ export class SceneGeometryPublication {
   public applyCanonicalElementPreview(
     element: InkElementV1,
     parts: readonly SvgPathPart[],
+    paintBounds?: SceneElementRecord["bounds"],
   ): boolean {
     const entry = this.previewEntry(element.id);
     if (entry === undefined) return false;
@@ -375,7 +375,7 @@ export class SceneGeometryPublication {
       return false;
     }
     if (this.#textPreviews.defer(entry, element, parts)) return true;
-    if (preview.publish(entry, record, element, parts, this.#ports))
+    if (preview.publish(entry, record, element, parts, this.#ports, paintBounds))
       this.#selectionDirty.delete(element.id);
     else this.#selectionDirty.add(element.id);
     return true;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { RENDER_BANDS } from "../../../../src/domain/commands/render-bands";
+import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import {
   applyElementMutation,
   applyRetainedHistoryMutation,
@@ -33,7 +34,7 @@ describe("image render band", () => {
     expect(orderedIds(store!)).toEqual([second.id, first.id, marker.id, shape.id]);
     expect(store!.getRank(first.id)).toEqual({ band: "image", rank: 1 });
     const snapshot = store!.materializeSnapshot({ page: PAGE, revision: 1 });
-    expect(snapshot.version).toBe(3);
+    expect(snapshot.version).toBe(5);
     expect(snapshot.elements.map(({ id }) => id)).toEqual(orderedIds(store!));
   });
 
@@ -72,7 +73,7 @@ describe("image render band", () => {
   });
 
   it("retains image membership and crop through append, removal, and replay", async () => {
-    const first = image();
+    const first = { ...image(), contrast: "dark" as const };
     const store = new ElementStore([highlighter(), rectangle()]);
     const appended = await store.prepareElementAppend([first], scheduler);
     const addition = store.commitPreparedElementMutation(appended.token!);
@@ -113,4 +114,33 @@ describe("image render band", () => {
     snapshot.imageResources![0]!.width = 1;
     expect(resource.width).toBe(200);
   });
+});
+
+it("treats contrast overrides as paint-only changes and restores them through history", async () => {
+  const first = image();
+  const store = new ElementStore([first, { ...rectangle(), locked: true }]);
+  const previous = store.get(first.id)!;
+  const prepared = await store.prepareElementReplacement(
+    [{ ...first, contrast: "light" }],
+    scheduler,
+  );
+  const committed = store.commitPreparedElementReplacement(prepared.token!);
+  const changed = store.get(first.id)!;
+  expect(committed.delta?.changes[0]?.domains).toEqual(["paint"]);
+  expect(changed.geometryVersion).toBe(previous.geometryVersion);
+  expect(changed.bounds).toBe(previous.bounds);
+  expect(store.materializeSnapshot({ page: PAGE, revision: 1 }).version).toBe(5);
+  const history = committed.history!;
+  const undo = await store.prepareElementReplacement(
+    history.previous as readonly InkElementV1[],
+    scheduler,
+  );
+  store.commitPreparedElementReplacement(undo.token!);
+  expect(store.get(first.id)?.element).toEqual(first);
+  const redo = await store.prepareElementReplacement(
+    history.replacements as readonly InkElementV1[],
+    scheduler,
+  );
+  store.commitPreparedElementReplacement(redo.token!);
+  expect(store.get(first.id)?.element).toMatchObject({ contrast: "light" });
 });

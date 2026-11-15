@@ -348,6 +348,7 @@ export class ActiveTextSession {
     const editor = TextEditor.createTextSessionEditor({
       surface,
       element,
+      imageBackdrop: this.#options.model.store.bandSize("image") > 0,
       ...(this.#options.tableCellLabel ? { tableCellLabel: this.#options.tableCellLabel } : {}),
       ...(this.#options.tableUi ? { tableUi: this.#options.tableUi } : {}),
       scheduler: this.#options.scheduler,
@@ -393,7 +394,6 @@ export class ActiveTextSession {
     if (!preview && !this.#geometry.settled()) this.requestCaretReveal();
     if (!preview) this.#options.onStateChanged();
   }
-
   #sourceChanged(state: TextSourceState, changes?: ChangeDesc): void {
     const element = this.#draft;
     if (!element || this.#disposed) return;

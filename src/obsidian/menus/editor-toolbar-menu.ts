@@ -219,6 +219,7 @@ export class EditorToolbarMenuSession {
       return createStyleMenuContent({
         workScheduler: this.#options.workScheduler,
         controls: state.styleControls,
+        mutateLayout: (update) => lifecycle.mutateLayout(update),
         localization: this.#options.localization,
         registerLocaleUpdate: lifecycle.registerLocaleUpdate,
         registerCleanup: lifecycle.registerCleanup,

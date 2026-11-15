@@ -55,6 +55,7 @@ export function writeLivePath(
       instrumentation,
     );
     next.push({ d: part.d, node, presentation: part.presentation });
+    dom.autoPaint.publishLive(node);
   }
   for (const removed of applied.parts.slice(path.parts.length)) removed.node.remove();
   if (path.parts.length === 0) clearPrimaryLivePath(dom, applied.parts[0], instrumentation);

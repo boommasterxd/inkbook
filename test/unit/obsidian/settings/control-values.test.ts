@@ -57,6 +57,16 @@ it("persists text-copy preferences in the vault without changing text styles", a
   expect(values.get("copyTextFieldsAsText")).toBe(true);
 });
 
+it("persists explicit neutral pen colors and restores automatic contrast", async () => {
+  for (const value of ["#000000FF", "#FFFFFFFF", "theme-text"]) {
+    await values.set("toolDefaults.pen.color", value);
+    expect(values.get("toolDefaults.pen.color")).toBe(value);
+    expect(vault.saved.toolDefaults.pen.color).toEqual(
+      value === "theme-text" ? { type: "theme-text" } : { type: "rgba", value },
+    );
+  }
+});
+
 describe("SettingsControlValues", () => {
   it("persists hold settings in the vault and preserves values while disabled", async () => {
     await values.set("holdToShape.holdDurationMs", "950");

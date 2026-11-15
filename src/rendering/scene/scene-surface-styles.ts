@@ -11,6 +11,12 @@ export const SCENE_SURFACE_STYLES = `
 .inkbook-theme-stroke { stroke: var(--inkbook-text); }
 .inkbook-theme-fill { fill: var(--inkbook-text); }
 .inkbook-theme-stroke-fill { stroke: var(--inkbook-text); fill: var(--inkbook-text); }
+[data-inkbook-auto-enabled] .inkbook-theme-stroke { stroke: var(--inkbook-auto-paint, transparent); }
+[data-inkbook-auto-enabled] .inkbook-theme-fill { fill: var(--inkbook-auto-paint, transparent); }
+[data-inkbook-auto-enabled] .inkbook-theme-stroke-fill { stroke: var(--inkbook-auto-paint, transparent); fill: var(--inkbook-auto-paint, transparent); }
+[data-inkbook-live-handoff] { visibility: hidden !important; }
+[data-inkbook-image-contrast] > svg { opacity: var(--inkbook-image-pixels-opacity, 1); }
+.inkbook-image-substrate { opacity: var(--inkbook-image-substrate-opacity, 0); }
 .inkbook-text-editor {
   box-sizing: border-box; width: var(--inkbook-text-editor-width, 100%); height: var(--inkbook-text-editor-height, 100%);
   margin: 0; padding: 0; position: relative;
@@ -49,6 +55,7 @@ export const SCENE_SURFACE_STYLES = `
   visibility: hidden;
 }
 [data-inkbook-motion] { transform-box: fill-box; transform-origin: center; }
+[data-inkbook-motion="page"] { transform-box: view-box; }
 .inkbook-native-text[data-inkbook-motion] { transform-box: view-box; }
 .inkbook-selection-center-trace {
   fill: none; stroke: var(--interactive-accent); stroke-linecap: round;

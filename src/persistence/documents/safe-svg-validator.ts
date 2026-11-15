@@ -1,31 +1,33 @@
+import type { SvgTotals } from "./safe-svg-totals";
+export { accountPath, isBandGroup, validPressureGroup, type SvgTotals } from "./safe-svg-totals";
 import type { ImageResourceV3 } from "../../domain/schema/public";
 import {
   parseSafeImageDefinitionsSteps,
   parseSafeImageBandSteps,
   hasSafeImageBand,
 } from "./safe-svg-images";
-import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import { hasExactAttributes, parseOpeningTag, skipWhitespace } from "./svg-tag";
-import { validatePathAttributesSteps } from "./safe-svg-paths";
 export { validatePathAttributesSteps } from "./safe-svg-paths";
 import { CANONICAL_THEME_STYLESHEET, isSupportedThemeStylesheet } from "./svg-theme";
-import { parseCanonicalSvgOpacity } from "./svg-number";
 import { parseSafeSvgRoot, type SafeSvgRoot, type SafeSvgVersionPolicy } from "./svg-envelope-root";
-import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "./svg-output-limits";
 import { decodeMetadataTextSteps, measureUtf8BytesSteps } from "./safe-svg-metadata";
 import { validateFontStylesheetSteps, type SafeSvgFontFace } from "./safe-svg-fonts";
-import { validateTextElementSteps } from "./safe-svg-text";
+import { parseSafeAutoDefinitionsSteps } from "./safe-svg-auto-definitions";
+import { parseSafeAutoPaintDefinitionsSteps } from "./safe-svg-auto-servers";
+import type { SafeAutoPaintServer, SafeAutoPaintReferences } from "./safe-svg-auto-paint";
+import { parsePathGroupSteps } from "./safe-svg-bands";
 import {
   COMPACT_METADATA_ENCODING,
   type SnapshotMetadataEncoding,
 } from "../serialization/metadata/stroke-sample-codec";
 const MAXIMUM_FILE_BYTES = 64 * 1024 * 1024;
 const MAXIMUM_METADATA_BYTES = 60 * 1024 * 1024;
-const MAXIMUM_PATHS = 60_004;
-const MAXIMUM_TOTAL_COMMANDS = 8_000_000;
 const DEFAULT_PATHS_PER_STEP = 128;
 const MARKUP_CODE_UNITS_PER_STEP = 256 * 1024;
 interface SafeSvgPrefix {
+  readonly autoDefinitions?: string;
+  readonly autoPaintDefinitions?: string;
+  readonly autoPaintServers?: ReadonlyMap<string, SafeAutoPaintServer>;
   readonly imageResources?: readonly ImageResourceV3[];
   readonly fontFaces?: readonly SafeSvgFontFace[];
   readonly fontStylesheet?: string;
@@ -50,6 +52,9 @@ export interface SafeSvgValidationStepOptions {
 }
 
 export interface SafeSvgValidation {
+  readonly autoDefinitions?: string;
+  readonly autoPaintDefinitions?: string;
+  readonly autoPaintServers?: ReadonlyMap<string, SafeAutoPaintServer>;
   readonly imageResources?: readonly ImageResourceV3[];
   readonly unadjustedTextRuns: number;
   readonly fontFaces?: readonly SafeSvgFontFace[];
@@ -71,6 +76,9 @@ export type SafeSvgPrelude = Readonly<
   Pick<SafeSvgRoot, "revision" | "snapshotHash" | "version"> & {
     lockedHeight: number;
     imageResources?: readonly ImageResourceV3[];
+    autoDefinitions?: string;
+    autoPaintDefinitions?: string;
+    autoPaintServers?: ReadonlyMap<string, SafeAutoPaintServer>;
     fontStylesheet?: string;
     fontFaces?: readonly SafeSvgFontFace[];
     metadataEncoding: SnapshotMetadataEncoding;
@@ -103,157 +111,6 @@ function expectTextElement(
   return end < 0 ? null : { next: end + closing.length, text: input.slice(tag.next, end) };
 }
 
-export interface SvgTotals {
-  commands: number;
-  groups: number;
-  pathBytes: number;
-  paths: number;
-  textElements?: number;
-  unadjustedTextRuns?: number;
-}
-
-export function validPressureGroup(
-  tag: NonNullable<ReturnType<typeof parseOpeningTag>>,
-  id: string,
-  pressurePaths: number | null,
-  totals: SvgTotals,
-): boolean {
-  if (
-    id === "inkbook-background" ||
-    pressurePaths !== null ||
-    tag.selfClosing ||
-    !validStrokeGroupAttributes(tag.attributes)
-  )
-    return false;
-  totals.groups += 1;
-  return totals.groups <= FILE_SCHEMA_LIMITS.elements;
-}
-
-function validStrokeGroupAttributes(attributes: ReadonlyMap<string, string>): boolean {
-  if (attributes.size < 1 || attributes.size > 2) return false;
-  if ([...attributes.keys()].some((name) => name !== "opacity" && name !== "transform"))
-    return false;
-  const opacity = attributes.get("opacity");
-  if (opacity !== undefined && parseCanonicalSvgOpacity(opacity) === null) return false;
-  const transform = attributes.get("transform");
-  if (transform === undefined) return opacity !== undefined;
-  const match =
-    /^translate\((-?(?:0|[1-9]\d*)(?:\.\d{1,3})?) (-?(?:0|[1-9]\d*)(?:\.\d{1,3})?)\)$/u.exec(
-      transform,
-    );
-  return (
-    match !== null &&
-    match.slice(1).every((value) => {
-      const number = Number(value);
-      return Math.abs(number) <= 1_000_000 && number.toString() === value;
-    })
-  );
-}
-
-export function accountPath(totals: SvgTotals, commands: number, pathData: string): boolean {
-  totals.paths += 1;
-  totals.commands += commands;
-  totals.pathBytes += pathData.length;
-  return (
-    totals.paths <= MAXIMUM_PATHS &&
-    totals.commands <= MAXIMUM_TOTAL_COMMANDS &&
-    totals.pathBytes <= MAXIMUM_TOTAL_PATH_DATA_BYTES
-  );
-}
-
-export function isBandGroup(tag: ReturnType<typeof parseOpeningTag>, id: string): boolean {
-  return (
-    tag !== null &&
-    tag.name === "g" &&
-    !tag.selfClosing &&
-    hasExactAttributes(tag.attributes, { id })
-  );
-}
-
-function* parsePathGroupSteps(
-  input: string,
-  start: number,
-  id: string,
-  totals: SvgTotals,
-  pathsPerStep: number,
-  deadlineExceeded?: () => boolean,
-): Generator<void, { readonly next: number; readonly range: SafeSvgGroupRange } | null> {
-  const group = parseOpeningTag(input, start);
-  if (!isBandGroup(group, id)) return null;
-  const contentStart = group!.next;
-  let cursor = skipWhitespace(input, contentStart);
-  let pathsSinceStep = 0;
-  let pressurePaths: number | null = null;
-  while (pressurePaths !== null || !input.startsWith("</g>", cursor)) {
-    if (input.startsWith("</g>", cursor)) {
-      if (pressurePaths === 0) return null;
-      pressurePaths = null;
-      cursor = skipWhitespace(input, cursor + 4);
-      continue;
-    }
-    const path = parseOpeningTag(input, cursor);
-    if (path?.name === "text") {
-      const next = yield* parseBandTextSteps(input, cursor, { id, pressurePaths, totals });
-      if (next === null) return null;
-      cursor = skipWhitespace(input, next);
-      continue;
-    }
-    if (path?.name === "g") {
-      if (!validPressureGroup(path, id, pressurePaths, totals)) return null;
-      pressurePaths = 0;
-      cursor = skipWhitespace(input, path.next);
-      continue;
-    }
-    const next = yield* parseSinglePathSteps(path, totals, deadlineExceeded);
-    if (next === null) return null;
-    if (pressurePaths !== null && ++pressurePaths > 1) return null;
-    cursor = skipWhitespace(input, next);
-    pathsSinceStep += 1;
-    if (pathsSinceStep === pathsPerStep) {
-      pathsSinceStep = 0;
-      yield;
-    }
-  }
-  if (pathsSinceStep > 0) yield;
-  return { next: cursor + 4, range: { end: cursor, start: contentStart } };
-}
-
-function* parseSinglePathSteps(
-  path: ReturnType<typeof parseOpeningTag>,
-  totals: SvgTotals,
-  deadlineExceeded?: () => boolean,
-): Generator<void, number | null> {
-  if (path === null || path.name !== "path" || !path.selfClosing) return null;
-  const commands = yield* validatePathAttributesSteps(
-    path.attributes,
-    deadlineExceeded,
-    undefined,
-    totals.textElements === undefined ? 1 : 2,
-  );
-  return commands !== null && accountPath(totals, commands, path.attributes.get("d")!)
-    ? path.next
-    : null;
-}
-
-function* parseBandTextSteps(
-  input: string,
-  cursor: number,
-  context: { id: string; pressurePaths: number | null; totals: SvgTotals },
-): Generator<void, number | null> {
-  const { id, pressurePaths, totals } = context;
-  if (id !== "inkbook-content" || pressurePaths !== null || totals.textElements === undefined)
-    return null;
-  const next = yield* validateTextElementSteps(input, cursor, {
-    open: () => undefined,
-    close: () => undefined,
-    unadjustedText: () => {
-      totals.unadjustedTextRuns = (totals.unadjustedTextRuns ?? 0) + 1;
-    },
-  });
-  totals.textElements += 1;
-  return totals.textElements > FILE_SCHEMA_LIMITS.elements ? null : next;
-}
-
 export function validateSafeSvg(svg: string): SafeSvgValidation | null {
   return completeValidation(validateSafeSvgSteps(svg));
 }
@@ -271,13 +128,14 @@ export function* validateEditableSafeSvgPreludeSteps(
       : "") +
     '<g id="inkbook-highlights"></g>' +
     '<g id="inkbook-content"></g></svg>';
-  const safe = yield* validateSafeSvgSteps(synthetic, { versionPolicy: "editable" });
+  const safe = yield* validateSvgStructureSteps(synthetic, { versionPolicy: "editable" }, false);
   return safe === null
     ? null
     : {
         ...(safe.fontStylesheet === undefined ? {} : { fontStylesheet: safe.fontStylesheet }),
         ...(safe.fontFaces === undefined ? {} : { fontFaces: safe.fontFaces }),
         ...(safe.imageResources === undefined ? {} : { imageResources: safe.imageResources }),
+        ...safeAutoFields(safe),
         lockedHeight: safe.lockedHeight,
         metadataEncoding: safe.metadataEncoding,
         requiresCanonicalRewrite: safe.requiresCanonicalRewrite,
@@ -302,6 +160,14 @@ export function* validateSafeSvgSteps(
   svg: string,
   options: SafeSvgValidationStepOptions = {},
 ): Generator<void, SafeSvgValidation | null> {
+  return yield* validateSvgStructureSteps(svg, options, true);
+}
+
+function* validateSvgStructureSteps(
+  svg: string,
+  options: SafeSvgValidationStepOptions,
+  requireAutoUses: boolean,
+): Generator<void, SafeSvgValidation | null> {
   const inputBytes = options.totalInputBytes ?? new TextEncoder().encode(svg).byteLength;
   const pathsPerStep = options.pathsPerStep ?? DEFAULT_PATHS_PER_STEP;
   if (isInvalidStepInput(inputBytes, pathsPerStep)) {
@@ -324,6 +190,11 @@ export function* validateSafeSvgSteps(
     ...(prefix.root.version >= 2 ? { textElements: 0 } : {}),
   };
   const groups = {} as Record<keyof SafeSvgGroupRanges, SafeSvgGroupRange>;
+  const autoIds = new Set<bigint>();
+  const references = {
+    servers: prefix.autoPaintServers ?? new Map<string, SafeAutoPaintServer>(),
+    used: new Set<string>(),
+  };
   const bands = [
     "inkbook-background",
     ...(hasSafeImageBand(svg, prefix.root.version) ? ["inkbook-images-band"] : []),
@@ -343,9 +214,15 @@ export function* validateSafeSvgSteps(
         : yield* parsePathGroupSteps(
             svg,
             cursor,
-            group,
-            totals,
-            pathsPerStep,
+            {
+              id: group,
+              totals,
+              pathsPerStep,
+              version: prefix.root.version,
+              autoIds,
+              autoEnabled: prefix.autoDefinitions !== undefined,
+              references,
+            },
             options.deadlineExceeded,
           );
     if (parsedGroup === null) {
@@ -357,9 +234,7 @@ export function* validateSafeSvgSteps(
     groups[key] = parsedGroup.range;
     cursor = skipWhitespace(svg, parsedGroup.next);
   }
-  if (!svg.startsWith("</svg>", cursor) || skipWhitespace(svg, cursor + 6) !== svg.length) {
-    return null;
-  }
+  if (!validCompleteEnvelope(svg, cursor, references, requireAutoUses)) return null;
   return {
     ...safeResourceFields(prefix),
     groups,
@@ -375,6 +250,19 @@ export function* validateSafeSvgSteps(
     snapshotHash: prefix.root.snapshotHash,
     version: prefix.root.version,
   };
+}
+
+function validCompleteEnvelope(
+  svg: string,
+  cursor: number,
+  references: SafeAutoPaintReferences,
+  requireAutoUses: boolean,
+): boolean {
+  return (
+    svg.startsWith("</svg>", cursor) &&
+    skipWhitespace(svg, cursor + 6) === svg.length &&
+    (!requireAutoUses || references.used.size === references.servers.size)
+  );
 }
 
 function isInvalidStepInput(inputBytes: number, pathsPerStep: number): boolean {
@@ -409,24 +297,15 @@ function* parseSafeSvgPrefixSteps(
   const style = expectTextElement(svg, cursor, "style", { id: "inkbook-theme" });
   if (style === null || !isSupportedThemeStylesheet(style.text)) return null;
   cursor = skipWhitespace(svg, style.next);
-  let fontStylesheet: string | undefined;
-  let fontFaces: SafeSvgFontFace[] | undefined;
-  if (svg.startsWith('<style id="inkbook-fonts">', cursor)) {
-    const fonts = expectTextElement(svg, cursor, "style", { id: "inkbook-fonts" });
-    fontFaces = [];
-    const parsedFaces = fontFaces;
-    if (
-      root.version < 2 ||
-      fonts === null ||
-      !(yield* validateFontStylesheetSteps(fonts.text, (face) => parsedFaces.push(face)))
-    )
-      return null;
-    fontStylesheet = fonts.text;
-    cursor = skipWhitespace(svg, fonts.next);
-  }
+  const fonts = yield* parseOptionalFontsSteps(svg, cursor, root.version);
+  if (fonts === null) return null;
+  cursor = fonts.cursor;
   const images = yield* parseOptionalImageDefinitionsSteps(svg, cursor, root.version);
   if (images === null) return null;
   cursor = images.cursor;
+  const auto = yield* parseOptionalAutoSteps(svg, cursor, root, images.fields.imageResources ?? []);
+  if (auto === null) return null;
+  cursor = auto.cursor;
   const metadataTag = parseOpeningTag(svg, cursor);
   const metadataEncoding = metadataTag?.attributes.get("data-encoding");
   if (metadataEncoding !== "json" && metadataEncoding !== COMPACT_METADATA_ENCODING) return null;
@@ -438,12 +317,16 @@ function* parseSafeSvgPrefixSteps(
     ? null
     : {
         ...images.fields,
-        ...(fontStylesheet === undefined ? {} : { fontStylesheet }),
-        ...(fontFaces === undefined ? {} : { fontFaces }),
+        ...auto.fields,
+        ...fonts.fields,
         cursor: skipWhitespace(svg, metadata.next),
         metadataText: metadata.text,
         metadataEncoding,
-        requiresCanonicalRewrite: style.text !== CANONICAL_THEME_STYLESHEET,
+        requiresCanonicalRewrite:
+          style.text !== CANONICAL_THEME_STYLESHEET ||
+          (root.version >= 3 &&
+            root.version < 5 &&
+            (images.fields.imageResources?.length ?? 0) > 0),
         root,
       };
 }
@@ -455,12 +338,33 @@ function completeValidation<T>(steps: Generator<void, T>): T {
 }
 
 function safeResourceFields(
-  source: Pick<SafeSvgPrefix, "imageResources" | "fontFaces" | "fontStylesheet">,
+  source: Pick<
+    SafeSvgPrefix,
+    | "imageResources"
+    | "fontFaces"
+    | "fontStylesheet"
+    | "autoDefinitions"
+    | "autoPaintDefinitions"
+    | "autoPaintServers"
+  >,
 ) {
   return {
+    ...safeAutoFields(source),
     ...(source.imageResources === undefined ? {} : { imageResources: source.imageResources }),
     ...(source.fontFaces === undefined ? {} : { fontFaces: source.fontFaces }),
     ...(source.fontStylesheet === undefined ? {} : { fontStylesheet: source.fontStylesheet }),
+  };
+}
+
+function safeAutoFields(
+  source: Pick<SafeSvgPrefix, "autoDefinitions" | "autoPaintDefinitions" | "autoPaintServers">,
+) {
+  return {
+    ...(source.autoDefinitions === undefined ? {} : { autoDefinitions: source.autoDefinitions }),
+    ...(source.autoPaintDefinitions === undefined
+      ? {}
+      : { autoPaintDefinitions: source.autoPaintDefinitions }),
+    ...(source.autoPaintServers === undefined ? {} : { autoPaintServers: source.autoPaintServers }),
   };
 }
 
@@ -469,7 +373,7 @@ function* parseOptionalImageDefinitionsSteps(
   cursor: number,
   version: number,
 ): Generator<void, { cursor: number; fields: Pick<SafeSvgPrefix, "imageResources"> } | null> {
-  if (!svg.startsWith("<defs", cursor)) return { cursor, fields: {} };
+  if (!svg.startsWith('<defs id="inkbook-images"', cursor)) return { cursor, fields: {} };
   if (version < 3) return null;
   const images = yield* parseSafeImageDefinitionsSteps(svg, cursor);
   return images === null
@@ -477,5 +381,75 @@ function* parseOptionalImageDefinitionsSteps(
     : {
         cursor: skipWhitespace(svg, images.next),
         fields: { imageResources: images.resources },
+      };
+}
+
+function* parseOptionalFontsSteps(
+  svg: string,
+  start: number,
+  version: number,
+): Generator<
+  void,
+  {
+    cursor: number;
+    fields: Pick<SafeSvgPrefix, "fontStylesheet" | "fontFaces">;
+  } | null
+> {
+  let cursor = start;
+  let fontStylesheet: string | undefined;
+  let fontFaces: SafeSvgFontFace[] | undefined;
+  if (svg.startsWith('<style id="inkbook-fonts">', cursor)) {
+    const fonts = expectTextElement(svg, cursor, "style", { id: "inkbook-fonts" });
+    fontFaces = [];
+    const parsedFaces = fontFaces;
+    if (
+      version < 2 ||
+      fonts === null ||
+      !(yield* validateFontStylesheetSteps(fonts.text, (face) => parsedFaces.push(face)))
+    )
+      return null;
+    fontStylesheet = fonts.text;
+    cursor = skipWhitespace(svg, fonts.next);
+  }
+
+  return {
+    cursor,
+    fields: {
+      ...(fontStylesheet === undefined ? {} : { fontStylesheet }),
+      ...(fontFaces === undefined ? {} : { fontFaces }),
+    },
+  };
+}
+
+function* parseOptionalAutoSteps(
+  svg: string,
+  cursor: number,
+  root: SafeSvgRoot,
+  resources: readonly ImageResourceV3[],
+): Generator<
+  void,
+  {
+    cursor: number;
+    fields: Pick<SafeSvgPrefix, "autoDefinitions" | "autoPaintDefinitions" | "autoPaintServers">;
+  } | null
+> {
+  if (!svg.startsWith('<defs id="inkbook-auto"', cursor)) return { cursor, fields: {} };
+  if (root.version < 5) return null;
+  const auto = yield* parseSafeAutoDefinitionsSteps(svg, cursor, {
+    height: root.height,
+    resources,
+  });
+  if (auto === null) return null;
+  const paintsStart = skipWhitespace(svg, auto);
+  const paints = yield* parseSafeAutoPaintDefinitionsSteps(svg, paintsStart);
+  return paints === null
+    ? null
+    : {
+        cursor: skipWhitespace(svg, paints.next),
+        fields: {
+          autoDefinitions: svg.slice(cursor, auto),
+          autoPaintDefinitions: svg.slice(paintsStart, paints.next),
+          autoPaintServers: paints.servers,
+        },
       };
 }

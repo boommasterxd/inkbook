@@ -49,7 +49,8 @@
   text-align: end;
 }
 
-.inkbook-menu-control-description {
+.inkbook-menu-control-description,
+.inkbook-menu-controls .inkbook-neutral-color-description {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   font-weight: var(--font-normal);

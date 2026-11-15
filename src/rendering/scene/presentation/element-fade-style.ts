@@ -1,12 +1,23 @@
 import { NativeAnimation } from "motion";
 import { ERASE_EASING } from "../../motion/transitions";
 import type { SceneElementRecord } from "../types";
+import { clearImageOpacity } from "../content/image-opacity";
+
+export interface FadePlaybackControls {
+  stop(): void;
+  cancel(): void;
+}
+export type ImageFadeFactory = (
+  node: SVGElement,
+  frames: readonly string[],
+  duration: number,
+) => FadePlaybackControls | undefined;
 
 const FADE_ANIMATION = Symbol("inkbook-fade-animation");
 type FadeProperty = "opacity" | "fill-opacity";
 type FadeNode = SVGElement & {
   [FADE_ANIMATION]?: {
-    readonly animation: NativeAnimation<string>;
+    readonly animation: FadePlaybackControls;
     readonly property: FadeProperty;
   };
 };
@@ -74,6 +85,7 @@ export function setElementFadeNode(
   presentation: ElementFadePresentation,
   direction: ElementFadeDirection = "exit",
   generation?: number,
+  imageFade?: ImageFadeFactory,
 ): void {
   // Scene nodes belong to an isolated SVG document without Obsidian's setCssProps.
   const fadeNode = node as FadeNode;
@@ -93,13 +105,15 @@ export function setElementFadeNode(
   const frames = direction === "enter" ? [current || hidden, base] : [current || base, hidden];
   fadeNode[FADE_ANIMATION] = {
     property,
-    animation: new NativeAnimation({
-      element: node,
-      name: property === "fill-opacity" ? "fillOpacity" : "opacity",
-      keyframes: frames,
-      duration: durationMs,
-      ease: ERASE_EASING,
-    }),
+    animation:
+      imageFade?.(node, frames, durationMs) ??
+      new NativeAnimation({
+        element: node,
+        name: property === "fill-opacity" ? "fillOpacity" : "opacity",
+        keyframes: frames,
+        duration: durationMs,
+        ease: ERASE_EASING,
+      }),
   };
 }
 
@@ -119,7 +133,9 @@ function releaseFadeAnimation(
       ? ""
       : node.style.getPropertyValue(property);
   delete node[FADE_ANIMATION];
-  if (node.style.getPropertyValue(previousProperty)) node.style.removeProperty(previousProperty);
+  if (previousProperty === "opacity") clearImageOpacity(node);
+  else if (node.style.getPropertyValue(previousProperty))
+    node.style.removeProperty(previousProperty);
   return current;
 }
 

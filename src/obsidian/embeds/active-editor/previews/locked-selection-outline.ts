@@ -13,7 +13,7 @@ export function lockedSelectionOutline(
   const right = String(bottom.x);
   const y = String(top.y);
   const low = String(bottom.y);
-  const x = top.x + 8;
+  const x = bottom.x - 18;
   const lockY = top.y + 8;
   return [
     `M ${left} ${y} H ${right} V ${low} H ${left} Z`,

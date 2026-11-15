@@ -14,6 +14,7 @@ import { textTableGridPathSteps } from "../../../domain/geometry/text-table-grid
 import type { AffineMatrix } from "../../../domain/geometry/affine-matrix";
 import type { Bounds } from "../../../domain/geometry/primitives";
 import { MountedTextLines } from "./mounted-text-lines";
+import { hasAutoPaintBounds, readAutoPaintBounds, writeAutoPaintBounds } from "./auto-paint-bounds";
 
 /** One retained paint root, shared with the singleton runtime editing surface. */
 export class MountedTextPresentation {
@@ -77,17 +78,23 @@ export class MountedTextPresentation {
     )
       return undefined;
     const root = this.group.cloneNode(false) as SVGGElement;
+    const rootBounds = readAutoPaintBounds(this.group);
+    if (hasAutoPaintBounds(this.group)) writeAutoPaintBounds(root, rootBounds);
     root.removeAttribute("data-inkbook-text-editor-ready");
     root.style.removeProperty("opacity");
     root.style.removeProperty("transform");
     const content = this.content.cloneNode(false) as SVGGElement;
     content.removeAttribute("visibility");
     const background = this.#background.cloneNode(false) as SVGPathElement;
+    const backgroundBounds = readAutoPaintBounds(this.#background);
+    if (hasAutoPaintBounds(this.#background)) writeAutoPaintBounds(background, backgroundBounds);
     root.append(background, content);
     const nodes: SVGElement[] = [root, background, content];
     const clones = new Map<SVGElement, SVGElement>([[this.content, content]]);
     for (const node of this.paintNodes()) {
       const clone = node.cloneNode(false) as SVGElement;
+      const bounds = readAutoPaintBounds(node);
+      if (hasAutoPaintBounds(node)) writeAutoPaintBounds(clone, bounds);
       if (node.localName === "tspan") clone.textContent = node.textContent;
       clones.get(node.parentNode as SVGElement)?.append(clone);
       clones.set(node, clone);
@@ -248,6 +255,12 @@ export class MountedTextPresentation {
       if (d === "") continue;
       const path = this.content.ownerDocument.createElementNS(SVG_NAMESPACE, "path");
       this.write(path, "d", d);
+      writeAutoPaintBounds(path, {
+        minX: table.x,
+        minY: table.y,
+        maxX: table.x + table.width,
+        maxY: table.y + table.height,
+      });
       this.write(path, "transform", `translate(${element.x} ${element.y})`);
       this.color(path, element.style.color);
       this.write(path, "fill-opacity", String(element.style.opacity));
@@ -269,6 +282,7 @@ export class MountedTextPresentation {
       const group = this.content.ownerDocument.createElementNS(SVG_NAMESPACE, "g");
       nodes.push(group);
       this.write(group, "transform", `translate(${element.x + math.x} ${element.y + math.y})`);
+      writeAutoPaintBounds(group, { minX: 0, minY: 0, maxX: math.width, maxY: math.height });
       const style = { ...element.style, ...textStyleAt(segments, math.start) };
       this.color(group, style.color);
       this.write(group, "fill-opacity", String(style.opacity));

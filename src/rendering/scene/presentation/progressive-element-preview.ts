@@ -1,4 +1,5 @@
 import { ProgressiveFeedbackTransformCache, writeFeedback } from "./progressive-feedback-transform";
+import { publishCanonicalPreview } from "./progressive-feedback-transform";
 import { strokeLocalGeometry } from "../../../domain/geometry/stroke-position";
 import { buildElementPathParts } from "../../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../../domain/schema/public";
@@ -438,7 +439,7 @@ export class ProgressiveElementPreview {
 
   #apply(completed: CompletedPath): void {
     const id = completed.element.id;
-    if (!this.#content.applyCanonicalElementPreview(completed.element, completed.parts)) return;
+    if (!publishCanonicalPreview(this.#content, completed)) return;
     if (
       completed.element.kind === "text" &&
       this.#content.mountedText(id)?.element !== completed.element

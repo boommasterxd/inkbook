@@ -52,6 +52,20 @@ export interface ValidatedDeltaFacts {
   readonly connectionTargets: Map<string, number>;
 }
 
+/** Reuses validated local stroke bounds without reading immutable samples again. */
+export function elementFactBounds(element: InkElementV1, facts: ElementFacts | undefined) {
+  const bounds = facts?.strokeGeometry?.bounds;
+  if (element.kind !== "stroke" || bounds === undefined) return undefined;
+  const x = element.offset?.x ?? 0;
+  const y = element.offset?.y ?? 0;
+  return {
+    minX: bounds.minX + x,
+    minY: bounds.minY + y,
+    maxX: bounds.maxX + x,
+    maxY: bounds.maxY + y,
+  };
+}
+
 export function* elementFactsSteps(
   element: InkElementV1,
   derivation?: ElementValidationDerivation,

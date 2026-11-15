@@ -53,7 +53,24 @@ function appendElement(
   const tag = parseOpeningTag(markup, 0);
   if (
     tag === null ||
-    !["svg", "g", "path", "text", "tspan", "defs", "image", "use"].includes(tag.name)
+    ![
+      "svg",
+      "g",
+      "path",
+      "text",
+      "tspan",
+      "defs",
+      "image",
+      "use",
+      "rect",
+      "pattern",
+      "filter",
+      "feColorMatrix",
+      "feComponentTransfer",
+      "feFuncR",
+      "feFuncG",
+      "feFuncB",
+    ].includes(tag.name)
   ) {
     throw new Error("The validated Inkbook preview has unexpected markup.");
   }

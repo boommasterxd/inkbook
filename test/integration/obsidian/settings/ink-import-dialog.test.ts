@@ -278,7 +278,7 @@ it("explains a bounded scan with no convertible files and returns to settings", 
   const { dialog, service } = fixture();
   service.scan.mockResolvedValue({ ...preview(0), truncated: true });
   dialogButton("Scan vault").click();
-  await settle("Scan complete");
+  await settle("No supported handwriting found");
   expect(dialog.contentEl.textContent).toContain("Scan limit reached");
   expect(
     [...dialog.contentEl.querySelectorAll("button")].some(

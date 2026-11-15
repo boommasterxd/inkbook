@@ -1,6 +1,7 @@
 import type { MutableSceneInstrumentation, SceneElementRecord } from "../types";
 import type { SvgPathPart } from "../../../domain/geometry/element-path";
 import { SVG_NAMESPACE } from "../constants";
+import { writeAutoPaintBounds, elementAutoPaintBounds } from "./auto-paint-bounds";
 import {
   scaledDashPattern,
   scaledStrokeWidth,
@@ -26,6 +27,8 @@ export function createMountedPath(
 ): MountedPath {
   const node = ownerDocument.createElementNS(SVG_NAMESPACE, "path");
   const presentation = pathPresentation(record.element, part);
+  if (presentation.class !== null)
+    writeAutoPaintBounds(node, elementAutoPaintBounds(record.element, record.bounds));
   const mounted: MountedPath = {
     appliedD: "",
     appliedPresentation: presentation,

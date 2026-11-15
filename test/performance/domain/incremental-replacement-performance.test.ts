@@ -26,6 +26,7 @@ import {
 import { scaleSelectionUniformForTest } from "../../fixtures/editor/selection-transform-reference";
 import { CheckpointSliceScheduler, requireStroke } from "./domain-scenarios";
 import { createStandardDomainFixture, type StandardDomainFixture } from "./standard-domain-fixture";
+import { imageElement } from "../../fixtures/domain/images";
 
 let fixtureBase: StandardDomainFixture;
 
@@ -108,6 +109,52 @@ async function createObservedOwnedStore() {
   }
   return { fixture, observations, store };
 }
+
+function expectRetainedGeometryWork(
+  {
+    observations,
+    store,
+  }: Pick<Awaited<ReturnType<typeof createObservedOwnedStore>>, "observations" | "store">,
+  recordReplacements: number,
+  publishedDeltas: number,
+) {
+  expect(
+    observations.every(({ work }) => work.indexedReads === 0 && work.descriptorReads === 0),
+  ).toBe(true);
+  expect(store.instrumentation).toMatchObject({
+    fullStoreScans: 0,
+    timeSlicedIndexVisits: 0,
+    reverseDependencyVisits: 0,
+    recordReplacements,
+    publishedDeltas,
+  });
+}
+
+it("updates one image contrast without reading 10,000 strokes or rebuilding spatial geometry", async () => {
+  const { observations, store } = await createObservedOwnedStore();
+  const image = { ...imageElement(), id: "00000000-0000-4000-8000-000000999999" };
+  store.create(image);
+  const previous = store.get(image.id)!;
+  store.resetInstrumentation();
+  const geometry = vi.spyOn(bounds, "calculateElementBoundsSteps");
+  const spatial = vi.spyOn(UniformSpatialIndex.prototype, "prepareReplacementsTimeSliced");
+  try {
+    const prepared = await store.prepareElementReplacement([{ ...image, contrast: "dark" }], {
+      shouldYield: () => false,
+      yieldControl: async () => undefined,
+    });
+    const committed = store.commitPreparedElementReplacement(prepared.token!);
+    expect(committed.delta?.changes).toHaveLength(1);
+    expect(committed.delta?.changes[0]?.domains).toEqual(["paint"]);
+    expect(store.get(image.id)?.bounds).toBe(previous.bounds);
+    expect(geometry).not.toHaveBeenCalled();
+    for (const [replacements] of spatial.mock.calls) expect(replacements).toHaveLength(0);
+    expectRetainedGeometryWork({ observations, store }, 1, 1);
+  } finally {
+    geometry.mockRestore();
+    spatial.mockRestore();
+  }
+}, 30_000);
 
 it("reuses synchronous candidate planning without preparing commit resources during previews", async () => {
   const { fixture, observations, store } = await createObservedOwnedStore();
@@ -231,16 +278,7 @@ it("locks and replays 10,000 strokes without sample work or geometry rebuilding"
     expect(store.lockedCount).toBe(10_000);
     for (const probe of probes.slice(0, 3)) expect(probe).not.toHaveBeenCalled();
     for (const [replacements] of probes[3]!.mock.calls) expect(replacements).toHaveLength(0);
-    expect(
-      observations.every(({ work }) => work.indexedReads === 0 && work.descriptorReads === 0),
-    ).toBe(true);
-    expect(store.instrumentation).toMatchObject({
-      fullStoreScans: 0,
-      timeSlicedIndexVisits: 0,
-      reverseDependencyVisits: 0,
-      recordReplacements: 30_000,
-      publishedDeltas: 3,
-    });
+    expectRetainedGeometryWork({ observations, store }, 30_000, 3);
     expect(scheduler.checkpointCounts.length).toBeGreaterThan(1);
     expect(scheduler.checkpointCounts.every((count) => count <= 40)).toBe(true);
   } finally {

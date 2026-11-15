@@ -30,9 +30,10 @@ interface OwnedRun {
   frontierRank: number;
   transform: string | null;
   prefixTransform: string | null;
+  preparingPaint?: MountedSceneElement | undefined;
 }
 interface Options {
-  readonly dom: Pick<SceneDom, "group" | "ownerDocument">;
+  readonly dom: Pick<SceneDom, "group" | "ownerDocument"> & Partial<Pick<SceneDom, "autoPaint">>;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly paint?: (container: SVGGElement, active: boolean) => void;
 }
@@ -95,8 +96,14 @@ export class SelectionRunGroups {
       while (run.prepared < run.plan.entries.length) {
         if (now() >= deadline) return false;
         const entry = run.plan.entries[run.prepared]!;
-        if (onPrepareEntry(entry) === false) return false;
-        this.move(entry, run.suffix!);
+        if (run.preparingPaint !== entry) {
+          if (onPrepareEntry(entry) === false) return false;
+          this.move(entry, run.suffix!);
+          run.preparingPaint = entry;
+        }
+        const roots = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
+        if (this.options.dom.autoPaint?.prepareRun(roots, deadline, now) === false) return false;
+        run.preparingPaint = undefined;
         this.#membership.set(entry.id, { run, entry });
         run.prepared += 1;
       }
@@ -310,6 +317,9 @@ export class SelectionRunGroups {
     publication: ScenePublicationBudget,
   ): SVGGElement {
     const group = this.options.dom.ownerDocument.createElementNS(SVG_NAMESPACE, "g");
+    group.setAttribute("data-inkbook-auto-scope", "");
+    this.options.instrumentation.attributeWrites += 1;
+    this.options.instrumentation.contentAttributeWrites += 1;
     band.insertBefore(group, before);
     publication.remainingRoots -= 1;
     this.options.instrumentation.domRootsPublished += 1;

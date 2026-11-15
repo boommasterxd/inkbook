@@ -10,6 +10,10 @@ import {
 } from "../../../../src/persistence/serialization/public";
 import { createAllElementSnapshot, createDottedRectangleSnapshot } from "./fixtures";
 
+import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
+import { StrokeShapeCache } from "../../../../src/persistence/serialization/output/stroke-shape-cache";
+import { StrokeSampleEncodingCache } from "../../../../src/persistence/serialization/metadata/stroke-sample-encoding-cache";
+
 afterEach(() => vi.restoreAllMocks());
 
 describe("runtime export cache reuse", () => {
@@ -179,4 +183,110 @@ async function expectEquivalentExport(
   expect(actual.value.snapshotHash).toBe(expected.value.snapshotHash);
   expect(actual.value.totalBytes).toBe(expected.value.totalBytes);
   expect(actual.value.metadataBytes).toBe(expected.value.metadataBytes);
+}
+
+describe("cached Auto presentation", () => {
+  it("keeps ordinary exports unchanged and remembers a fixed-color element needs no Auto plan", async () => {
+    const options = autoFragmentOptions();
+    options.element.style.color = { type: "rgba", value: "#123456FF" };
+    const cache = new ElementFragmentCache();
+    const ordinary = await cache.resolveSliced({ ...options, auto: false });
+    expect(ordinary.fragments.autoPresentation).toBeUndefined();
+    const fixed = await cache.resolveSliced(options);
+    expect(fixed.fragments.autoPresentation).toBeNull();
+    expect(fixed.fragments.retainedBytes).toBe(ordinary.fragments.retainedBytes);
+    expect(fixed.fragments.svgUtf8).toBe(ordinary.fragments.svgUtf8);
+    const decode = vi.spyOn(TextDecoder.prototype, "decode");
+    expect((await cache.resolveSliced(options)).fragments).toBe(fixed.fragments);
+    expect(decode).not.toHaveBeenCalled();
+  });
+
+  it("retains shared contour buffers and adopts the plan only for matching canonical elements", async () => {
+    const options = autoFragmentOptions();
+    const cache = new ElementFragmentCache();
+    const { fragments } = await cache.resolveSliced(options);
+    const plan = fragments.autoPresentation!;
+    expect(plan.chunks.some((chunk) => chunk.buffer === fragments.svgUtf8.buffer)).toBe(true);
+    const wrappers = plan.chunks.filter((chunk) => chunk.buffer !== fragments.svgUtf8.buffer);
+    expect(plan.retainedBytes).toBe(
+      128 +
+        plan.chunks.length * 64 +
+        plan.servers.length * 512 +
+        wrappers.reduce((sum, chunk) => sum + chunk.byteLength, 0),
+    );
+    expect(cache.retainedBytes).toBe(fragments.retainedBytes);
+    expect((await cache.resolveSliced(options)).fragments).toBe(fragments);
+    const adopted = structuredClone(options.element);
+    const reset = cache.prepareResetSteps(new Map([[adopted.id, adopted]]), false);
+    let step = reset.next();
+    while (!step.done) step = reset.next();
+    expect(step.value.current(adopted)?.autoPresentation).toBe(plan);
+    step.value.adopt({ ...adopted, rotation: 1 });
+    expect(step.value.size).toBe(0);
+    cache.clear();
+    expect(cache.retainedBytes).toBe(0);
+  });
+
+  it.each(["cancelled", "stale"])("does not publish a %s plan after a checkpoint", async (mode) => {
+    const options = autoFragmentOptions();
+    const cache = new ElementFragmentCache();
+    const original = buildElementFragments(options.element);
+    cache.replace(original.element.id, original);
+    const controller = new AbortController();
+    let current = true;
+    await expect(
+      cache.resolveSliced({
+        ...options,
+        assembly: {
+          signal: controller.signal,
+          checkpoint: () => {
+            if (mode === "cancelled") controller.abort();
+            current = false;
+            return undefined;
+          },
+        },
+        isCurrent: () => current,
+      }),
+    ).rejects.toThrow();
+    expect(cache.current(options.element)).toBe(original);
+    expect(original.autoPresentation).toBeUndefined();
+    expect(cache.retainedBytes).toBe(original.retainedBytes);
+  });
+
+  it("charges Auto buffers to the same byte cap and evicts at the existing entry cap", () => {
+    const cache = new ElementFragmentCache();
+    const fragment = buildElementFragments(createTestStroke());
+    for (let index = 0; index <= 20_000; index++) cache.replace(String(index), fragment);
+    expect(cache.size).toBe(20_000);
+    expect([...cache.ids()][0]).toBe("1");
+    const owned = new Uint8Array(64 * 1024 * 1024);
+    const autoPresentation = {
+      chunks: [owned],
+      servers: [],
+      bytes: owned.byteLength,
+      retainedBytes: owned.byteLength + 192,
+    };
+    const oversized = {
+      ...fragment,
+      autoPresentation,
+      retainedBytes: fragment.retainedBytes + autoPresentation.retainedBytes,
+    };
+    cache.retainIfSpace(fragment.element.id, oversized);
+    expect(cache.size).toBe(20_000);
+    cache.replace(fragment.element.id, oversized);
+    expect(cache.size).toBe(0);
+    expect(cache.retainedBytes).toBe(0);
+  });
+});
+
+function autoFragmentOptions() {
+  return {
+    element: createTestStroke(),
+    bottom: 0,
+    shapeCache: new StrokeShapeCache(),
+    sampleCache: new StrokeSampleEncodingCache(),
+    assembly: {},
+    auto: true,
+    isCurrent: () => true,
+  };
 }

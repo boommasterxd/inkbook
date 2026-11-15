@@ -47,7 +47,7 @@ import {
 } from "./serialization-selection";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "../types";
 import { canonicalFontResource, snapshotTextResources } from "./text-fonts";
-import { snapshotImageResources } from "./image-markup";
+import { snapshotImageResources as imageResources } from "./image-markup";
 import { prepareSerializationDeltaResourcesSteps } from "./serialization-resource-preparation";
 export class IncrementalDocumentSerializer {
   #imageResources: NonNullable<InkSnapshotV1["imageResources"]> = [];
@@ -105,7 +105,7 @@ export class IncrementalDocumentSerializer {
     );
     if (snapshot === null) return null;
     const { fontResources: _resources, imageResources: _images, ...header } = snapshot;
-    return { ...header, ...snapshotTextResources(snapshot), ...snapshotImageResources(snapshot) };
+    return { ...header, ...snapshotTextResources(snapshot), ...imageResources(snapshot, true) };
   }
   public currentImageResources(): readonly NonNullable<InkSnapshotV1["imageResources"]>[number][] {
     return this.#imageResources;
@@ -160,7 +160,7 @@ export class IncrementalDocumentSerializer {
     if (element === undefined) return null;
     const bytes = this.#cache.prewarm(
       element,
-      this.#facts.get(id)!.bottom,
+      this.#facts.get(id)!,
       this.#shapeCache,
       this.sampleEncodingCache,
       maximumBytes,
@@ -254,9 +254,8 @@ export class IncrementalDocumentSerializer {
     this.#imageResources = model.imageResources;
     this.#fontResources = model.fontResources.map(canonicalFontResource);
     this.sampleEncodingCache.reconcileElements(model.elements);
-    for (const id of this.#shapeCache.ids()) {
+    for (const id of this.#shapeCache.ids())
       if (!model.elements.has(id)) this.#shapeCache.remove(id);
-    }
     this.#cache = cache;
     this.#elements = model.elements;
     this.#facts = model.facts;
@@ -422,17 +421,15 @@ export class IncrementalDocumentSerializer {
   ): Promise<DocumentCodecResult<SerializedInkbookDocument<Uint8Array<ArrayBuffer>>>> {
     if (options.signal?.aborted) return Promise.reject(new ChunkedOutputCancelledError());
     const snapshot = this.currentSnapshot();
-    if (snapshot === null) {
-      return Promise.resolve(
-        codecFailure("invalid-delta", "Serializer has no initialized document model."),
-      );
-    }
+    if (snapshot === null)
+      return Promise.resolve(codecFailure("invalid-delta", "Serializer has no document model."));
     const prepared = checkBackgroundLimit(snapshot.page, this.#aggregateFacts.maximumBottom);
     if (!prepared.ok) return Promise.resolve(prepared);
     return serializeRuntimeSnapshotToUtf8(
       snapshot,
       options,
-      (element) => this.#fragmentsForSliced(element, options),
+      (element) =>
+        this.#fragmentsForSliced(element, options, Infinity, !!this.#orders.image.length),
       this.#backgroundCache,
     );
   }
@@ -466,7 +463,7 @@ export class IncrementalDocumentSerializer {
     }
     const fragments = buildElementFragments(
       element,
-      this.#facts.get(element.id)?.bottom,
+      this.#facts.get(element.id),
       this.#shapeCache,
       this.sampleEncodingCache,
     );
@@ -478,17 +475,19 @@ export class IncrementalDocumentSerializer {
     element: InkElementV1,
     options: ChunkedOutputAssemblyOptions,
     maximumBytes = Infinity,
+    auto = false,
   ): ElementFragments | Promise<ElementFragments> {
-    const cached = this.#cache.current(element);
+    const cached = this.#cache.current(element, auto);
     if (cached && cached.bytes <= maximumBytes) return this.#fragmentsFor(element, cached);
     const epoch = this.#epoch;
     const pending = this.#cache.resolveSliced({
       element,
-      bottom: this.#facts.get(element.id)!.bottom,
+      bottom: this.#facts.get(element.id)!,
       shapeCache: this.#shapeCache,
       sampleCache: this.sampleEncodingCache,
       assembly: options,
       maximumBytes,
+      auto,
       isCurrent: () => epoch === this.#epoch && this.#elements.get(element.id) === element,
     });
     return pending.then(({ fragments, built }) => {

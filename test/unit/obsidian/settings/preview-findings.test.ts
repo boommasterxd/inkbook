@@ -1,7 +1,10 @@
 import { expect, it } from "vitest";
 
 import type { InkImportPreview, InkImportSource } from "../../../../src/obsidian/import/types";
-import { buildImportPreviewFindings } from "../../../../src/obsidian/settings/import/preview-findings";
+import {
+  buildImportPreviewFindings,
+  prepareImportPreviewFindings,
+} from "../../../../src/obsidian/settings/import/preview-findings";
 
 const BRUSH = "Stroke outlines, smoothing and pressure response use Inkbook's native brush.";
 
@@ -153,4 +156,73 @@ it("groups structured unresolved references across notes and preserves exact col
       notes: ["Folder: A.md", "Folder: B.md"],
     },
   ]);
+});
+
+it("updates shared source and note contributions while retaining exact global scan findings", () => {
+  const sources = [
+    source("Ink/a.svg", [BRUSH, BRUSH, "Shared warning", "Only A"], ["Shared.md", "A.md", "A.md"]),
+    source("Ink/b.svg", [BRUSH, "Shared warning"], ["Shared.md", "B.md"]),
+    source("Ink/clean.svg", [], ["Clean.md"]),
+  ];
+  const unresolved = "Unresolved writing reference in Folder: note.md: Ink: missing.svg";
+  const index = prepareImportPreviewFindings(
+    {
+      ...preview(sources, [
+        ...sources.flatMap((item) => item.warnings.map((warning) => `${item.path}: ${warning}`)),
+        "Shared warning",
+        unresolved,
+        "Search capacity reached",
+      ]),
+      truncated: true,
+      scanFindings: [
+        {
+          original: "Missing source: missing.svg",
+          message: "Missing source",
+          sources: ["missing.svg"],
+          notes: ["Missing.md"],
+        },
+      ],
+    },
+    new Set(["Ink/a.svg"]),
+  );
+  const brush = () => index.findings.find((finding) => finding.message === BRUSH);
+  const global = index.findings.find((finding) => finding.message === unresolved);
+  expect(brush()).toMatchObject({ sources: ["Ink/a.svg"], notes: ["Shared.md", "A.md"] });
+  index.setSelected("Ink/b.svg", true);
+  expect(brush()?.notes).toEqual(["Shared.md", "A.md", "B.md"]);
+  index.setSelected("Ink/a.svg", false);
+  expect(brush()).toMatchObject({ sources: ["Ink/b.svg"], notes: ["Shared.md", "B.md"] });
+  expect(index.findings.some((finding) => finding.message === "Only A")).toBe(false);
+  index.setSelected("Ink/a.svg", true);
+  expect(brush()).toMatchObject({
+    sources: ["Ink/a.svg", "Ink/b.svg"],
+    notes: ["Shared.md", "A.md", "B.md"],
+  });
+  index.setAllSelected(false);
+  expect(index.findings).toEqual([
+    { category: "warning", message: "Shared warning", sources: [], notes: [] },
+    {
+      category: "skipped",
+      message: "Missing source",
+      sources: ["missing.svg"],
+      notes: ["Missing.md"],
+    },
+    { category: "skipped", message: unresolved, sources: [], notes: [] },
+    {
+      category: "warning",
+      message: "Search capacity reached",
+      sources: [],
+      notes: [],
+      diagnostic: { code: "scanTruncated" },
+    },
+  ]);
+  expect(index.findings.find((finding) => finding.message === unresolved)).toBe(global);
+  const unchanged = index.findings;
+  index.setSelected("Ink/clean.svg", true);
+  index.setSelected("Ink/b.svg", false);
+  index.setSelected("missing.svg", false);
+  expect(index.findings).toBe(unchanged);
+  index.setAllSelected(true);
+  expect(brush()?.sources).toEqual(["Ink/a.svg", "Ink/b.svg"]);
+  expect(brush()?.notes).toEqual(["Shared.md", "A.md", "B.md"]);
 });

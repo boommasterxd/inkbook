@@ -59,6 +59,8 @@ export interface SceneStorePort {
     import("../../domain/geometry/prepared-scene-paths").ScenePathPreparation | undefined;
   pressureGeometry?(id: string, geometryVersion: number): PreparedPressureGeometryPort;
   get(id: string): SceneElementRecord | undefined;
+  /** Document-wide presence stays independent of the currently culled presentation. */
+  bandSize?(band: SceneBand): number;
   beginOrder?(): import("../../domain/store/mutations/order-cursor").StoreOrderCursor;
   beginQuery?(bounds: Bounds): SceneSpatialQueryCursor;
   query(bounds: Bounds, sink: SpatialQuerySink): void;
@@ -134,10 +136,12 @@ export interface LivePathState {
 
 export interface SceneLiveStrokeChunk {
   readonly geometry: Readonly<StrokePathGeometry>;
+  readonly bounds?: Bounds | undefined;
 }
 
 interface SceneLiveStrokeTail {
   readonly geometry: Readonly<StrokePathGeometry>;
+  readonly bounds?: Bounds | undefined;
 }
 
 /**

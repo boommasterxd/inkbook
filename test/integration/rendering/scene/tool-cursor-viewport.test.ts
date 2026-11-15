@@ -69,7 +69,8 @@ describe("viewport tool cursor surface", () => {
     h.renderer.requestToolCursorFrame(read);
     h.scheduler.runAll();
     const ring = h.cursor.nodes[0];
-    const iconGroup = h.cursor.nodes[1]!;
+    const lightRing = h.cursor.nodes[1];
+    const iconGroup = h.cursor.nodes[2]!;
     expect(h.surface.attributes.get("clip-path")).toBe(
       "polygon(20px 30px, 520px 30px, 520px 430px, 20px 430px)",
     );
@@ -86,7 +87,7 @@ describe("viewport tool cursor surface", () => {
     h.renderer.setCamera({ x: 15, zoom: 2 });
     h.scheduler.runAll();
     expect(h.surface.nodes[0]).toBe(h.cursor);
-    expect(h.cursor.nodes).toEqual([ring, iconGroup]);
+    expect(h.cursor.nodes).toEqual([ring, lightRing, iconGroup]);
     expect(iconGroup.nodes).toEqual([icon]);
     expect(h.cursor.attributes.get("transform")).toBe("translate(120 80)");
     expect(h.surface.attributes.get("clip-path")).toBe(

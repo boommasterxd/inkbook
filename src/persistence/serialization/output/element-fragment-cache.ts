@@ -13,6 +13,9 @@ import type { StrokeShapeCache } from "./stroke-shape-cache";
 import type { StrokeSampleEncodingCache } from "../metadata/stroke-sample-encoding-cache";
 import type { ChunkedOutputAssemblyOptions } from "./chunked-output-assembler";
 import { consumeSerializationSteps } from "./serialization-model-preparation";
+import type { Bounds } from "../../../domain/geometry/primitives";
+import type { ElementFacts } from "./incremental-validation";
+import { prepareAutoPresentationSteps } from "./auto-contrast-export";
 
 const MAXIMUM_ELEMENTS = 20_000;
 const MAXIMUM_BYTES = 64 * 1024 * 1024;
@@ -31,55 +34,80 @@ export class ElementFragmentCache {
   public ids(): IterableIterator<string> {
     return this.#entries.keys();
   }
-  public current(element: InkElementV1): ElementFragments | undefined {
+  public current(element: InkElementV1, auto = false): ElementFragments | undefined {
     const cached = this.#entries.get(element.id);
-    return cached?.element === element ? cached : undefined;
+    return cached?.element === element && (!auto || cached.autoPresentation !== undefined)
+      ? cached
+      : undefined;
   }
   public prewarm(
     element: InkElementV1,
-    bottom: number,
+    bottom: number | ElementFacts,
     shapeCache: StrokeShapeCache,
     sampleCache: StrokeSampleEncodingCache,
     maximumBytes: number,
+    bounds?: Bounds,
   ): number | null {
     if (this.current(element) !== undefined) {
       this.touch(element.id);
       return 0;
     }
-    const fragments = buildElementFragments(element, bottom, shapeCache, sampleCache);
+    const fragments = buildElementFragments(element, bottom, shapeCache, sampleCache, bounds);
     if (fragments.bytes > maximumBytes) return null;
     this.replace(element.id, fragments);
     return fragments.bytes;
   }
   public async resolveSliced(options: {
     readonly element: InkElementV1;
-    readonly bottom: number;
+    readonly bottom: number | ElementFacts;
     readonly shapeCache: StrokeShapeCache;
     readonly sampleCache: StrokeSampleEncodingCache;
     readonly assembly: ChunkedOutputAssemblyOptions;
     readonly isCurrent: () => boolean;
     readonly maximumBytes?: number;
+    readonly bounds?: Bounds | undefined;
+    readonly auto?: boolean;
   }): Promise<{ readonly fragments: ElementFragments; readonly built: boolean }> {
     const cached = this.current(options.element);
-    if (cached !== undefined) {
+    if (cached !== undefined && (!options.auto || cached.autoPresentation !== undefined)) {
       this.touch(options.element.id);
       return { fragments: cached, built: false };
     }
-    const fragments = await consumeSerializationSteps(
-      buildElementFragmentsSteps(
-        options.element,
-        options.bottom,
-        options.shapeCache,
-        options.sampleCache,
-        options.assembly.signal,
-      ),
-      options.assembly,
-    );
+    let fragments =
+      cached ??
+      (await consumeSerializationSteps(
+        buildElementFragmentsSteps(
+          options.element,
+          options.bottom,
+          options.shapeCache,
+          options.sampleCache,
+          options.assembly.signal,
+          options.bounds,
+        ),
+        options.assembly,
+      ));
+    if (options.auto) {
+      const autoPresentation = await consumeSerializationSteps(
+        prepareAutoPresentationSteps(fragments, options.assembly.signal),
+        options.assembly,
+      );
+      fragments = Object.defineProperties(
+        {},
+        {
+          ...Object.getOwnPropertyDescriptors(fragments),
+          autoPresentation: { value: autoPresentation, enumerable: true },
+          retainedBytes: {
+            value: fragments.retainedBytes + (autoPresentation?.retainedBytes ?? 0),
+            enumerable: true,
+          },
+        },
+      ) as ElementFragments;
+    }
     options.assembly.signal?.throwIfAborted();
     if (!options.isCurrent()) throw new Error("The fragment model changed during preparation.");
     const built = fragments.bytes <= (options.maximumBytes ?? Infinity);
     if (built) this.retainIfSpace(options.element.id, fragments);
-    return { fragments, built };
+    return { fragments, built: built && cached === undefined };
   }
   /** Called only after successful validation by composition that owns immutable runtime samples. */
   public retainRuntimeOwnership(element: InkElementV1): void {

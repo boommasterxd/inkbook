@@ -78,9 +78,10 @@ function canonicalMetadataMatches(
   input: string,
   snapshot: InkSnapshotV1,
   encoding: SnapshotMetadataEncoding,
+  sourceVersion: number,
 ): boolean {
   let offset = 0;
-  for (const fragment of canonicalMetadataFragments(snapshot, encoding, false)) {
+  for (const fragment of canonicalMetadataFragments(snapshot, encoding, false, sourceVersion)) {
     if (!input.startsWith(fragment, offset)) return false;
     offset += fragment.length;
   }
@@ -98,7 +99,7 @@ export function validateCurrentMetadataIntegrity(
   if (migrated.sourceVersion < 1) return { ok: true, value: undefined };
   if (
     validation === "canonical" &&
-    !canonicalMetadataMatches(metadataText, migrated.snapshot, encoding)
+    !canonicalMetadataMatches(metadataText, migrated.snapshot, encoding, migrated.sourceVersion)
   ) {
     return metadataFailure("invalid-json", "Snapshot metadata is not canonical compact JSON.");
   }
@@ -150,7 +151,7 @@ export function metadataPrefix(
       ? ""
       : `,"fontResources":${[...boundedJsonFragments(resources.fontResources.map(({ data: _data, ...descriptor }) => descriptor))].join("")}`;
   const images =
-    snapshot === undefined ? undefined : snapshotImageResources(snapshot).imageResources;
+    snapshot === undefined ? undefined : snapshotImageResources(snapshot, true).imageResources;
   const imageMetadata =
     images === undefined
       ? ""
@@ -165,14 +166,23 @@ function* canonicalMetadataFragments(
   snapshot: InkSnapshotV1,
   encoding: SnapshotMetadataEncoding = COMPACT_METADATA_ENCODING,
   normalizeBindings = true,
+  sourceVersion?: number,
 ): Iterable<string> {
   if (normalizeBindings) snapshot = bindSnapshotFontResources(snapshot);
-  yield metadataPrefix(
+  const prefix = metadataPrefix(
     snapshot.revision,
     snapshot.page,
     snapshot,
     !normalizeBindings && textFontBindingMode(snapshot) === "legacy",
   );
+  // Older image documents keep their declared reader contract during strict comparison.
+  // Writers still choose the current image format through metadataPrefix above.
+  yield sourceVersion === 3 || sourceVersion === 4
+    ? prefix.replace(
+        /^\{"format":"inkbook","version":\d+,/u,
+        `{"format":"inkbook","version":${sourceVersion},`,
+      )
+    : prefix;
   for (let index = 0; index < snapshot.elements.length; index += 1) {
     if (index > 0) yield ",";
     const element = snapshot.elements[index]!;

@@ -33,6 +33,7 @@ export function assertImageElement(
       "height",
       "assetId",
       "crop",
+      ...(value.contrast === undefined ? [] : ["contrast"]),
     ],
     path,
   );
@@ -41,6 +42,8 @@ export function assertImageElement(
     fail("invalid-range", path, "Image dimensions must be positive.");
   assertImageResourceId(value.assetId, `${path}.assetId`);
   assertImageCrop(value.crop, `${path}.crop`);
+  if (value.contrast !== undefined)
+    assertOneOf(value.contrast, ["light", "dark"] as const, `${path}.contrast`);
 }
 
 function assertImageResourceId(value: unknown, path: string): asserts value is string {

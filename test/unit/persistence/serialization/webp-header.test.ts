@@ -106,9 +106,9 @@ it("admits ordered metadata and ignores bounded unknown chunks without changing 
 it("preserves resource/source byte, pixel and axis capacities for WebP", () => {
   const bytes = webpBytes();
   const view = new DataView(bytes.buffer);
-  view.setUint32(21, 2000 | (1999 << 14), true);
+  view.setUint32(21, 4000 | (3999 << 14), true);
   expect(() => inspect(bytes)).toThrow(expect.objectContaining({ reason: "dimensions" }));
-  expect(inspect(bytes, true).result).toMatchObject({ width: 2001, height: 2000 });
+  expect(inspect(bytes, true).result).toMatchObject({ width: 4001, height: 4000 });
   view.setUint32(21, 16383 | (0 << 14), true);
   expect(inspect(bytes, true).result.width).toBe(16384);
   view.setUint32(21, 8191 | (4095 << 14), true);

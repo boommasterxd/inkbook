@@ -1,6 +1,7 @@
 /** Import and storage capacities; encoded byte limits refer to decoded Base64 bytes. */
 export const IMAGE_LIMITS = Object.freeze({
-  resourcePixels: 4_000_000,
+  resourcePixels: 16_000_000,
+  defaultRasterPixels: 4_000_000,
   sourcePixels: 32_000_000,
   documentPixels: 32_000_000,
   resourceAxis: 16_384,

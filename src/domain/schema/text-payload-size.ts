@@ -13,6 +13,7 @@ interface TextPayloadInput {
     readonly lines: readonly {
       readonly runs: readonly {
         readonly text: string;
+        readonly inkBounds?: object;
         readonly style?: { readonly fontFamily?: string } & BackgroundPayload;
       }[];
     }[];
@@ -54,6 +55,7 @@ function textLayoutBytes(layout: TextPayloadInput["layout"]): number {
     for (const run of line.runs)
       bytes +=
         128 +
+        (run.inkBounds === undefined ? 0 : 64) +
         run.text.length * 2 +
         (run.style?.fontFamily?.length ?? 0) * 2 +
         textBackgroundPayloadBytes(run.style);

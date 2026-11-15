@@ -117,5 +117,6 @@ function configureExportElement(element: Element, scheme: InkbookColorScheme): v
       break;
   }
   element.removeAttribute("class");
-  if (element.localName !== "image") element.removeAttribute("id");
+  if (element.localName !== "image" && !element.getAttribute("id")?.includes("inkbook-auto"))
+    element.removeAttribute("id");
 }

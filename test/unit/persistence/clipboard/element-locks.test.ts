@@ -30,7 +30,7 @@ it("preserves mixed locks, shared resources and worker parity when copying and p
   const selected = new Set(elements.map(({ id }) => id));
   const encoded = encodeRuntimeSelection(elements, selected, [font], [asset]);
   if (!encoded.ok) throw new Error(encoded.error.message);
-  expect(encoded.value.payload.version).toBe(4);
+  expect(encoded.value.payload.version).toBe(5);
   const context = { checkpoint: () => undefined, signal: new AbortController().signal };
   const worker = await encodeRuntimeSelectionChunked(
     elements,

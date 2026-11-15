@@ -8,6 +8,7 @@ import { consumeSerializationSteps } from "../output/serialization-model-prepara
 import { matchesFontStylesheetSteps, snapshotTextResources } from "../output/text-fonts";
 import { codecFailure } from "../codec-failure";
 import type { DocumentCodecResult } from "../types";
+import { matchesAutoDefinitionsSteps } from "./validated-auto-bindings";
 
 interface BoundSnapshot {
   readonly snapshot: InkSnapshotV1;
@@ -21,6 +22,12 @@ export async function prepareValidatedTextFontBindings(
   checkpoint: () => Promise<void> | undefined,
 ): Promise<DocumentCodecResult<BoundSnapshot>> {
   try {
+    if (
+      !(await consumeSerializationSteps(matchesAutoDefinitionsSteps(snapshot, prelude), {
+        checkpoint,
+      }))
+    )
+      return codecFailure("static-path-mismatch", "Contrast underlay does not match the snapshot.");
     const mode = textFontBindingMode(snapshot);
     if (mode === "mixed")
       return codecFailure("snapshot-invalid", "Text font bindings must be complete.");

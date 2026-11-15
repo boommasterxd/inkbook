@@ -1,12 +1,18 @@
 import { renderBandOf, RENDER_BANDS } from "../../../domain/commands/render-bands";
-import type { InkSnapshotV1 } from "../../../domain/schema/public";
+import type { InkSnapshotV1, TextElementV2 } from "../../../domain/schema/public";
 import type { ElementStore, StoreSliceScheduler } from "../../../domain/store/public";
+
+export interface VaultTextUnlockCandidate {
+  readonly element: TextElementV2;
+  readonly index: number;
+}
 
 /** Prove bounded batch adoption without serializing trusted worker elements again. */
 export async function verifyVaultUnlockIntegrity(options: {
   readonly snapshot: InkSnapshotV1;
   readonly store: ElementStore;
   readonly scheduler: StoreSliceScheduler;
+  readonly textCandidates?: VaultTextUnlockCandidate[];
 }): Promise<void> {
   const { snapshot, store, scheduler } = options;
   const checkpoint = async (): Promise<void> => {
@@ -31,6 +37,7 @@ export async function verifyVaultUnlockIntegrity(options: {
       throw divergence();
     previousBand = RENDER_BANDS.indexOf(band);
     ranks[band] += 1;
+    if (element.kind === "text") options.textCandidates?.push({ element, index });
     if (scheduler.shouldYield()) await checkpoint();
   }
   if (scheduler.isCancelled?.()) throw new Error("Unlock integrity verification cancelled.");

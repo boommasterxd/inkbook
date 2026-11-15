@@ -14,6 +14,7 @@ import type { EditableDocumentModel } from "../document-session/document-model-p
 import { registerAppliedDocumentMutation } from "./document-history";
 import { captureElementReplacementHistory, type ActiveEditorHistory } from "./history";
 import type { SvgSceneRenderer } from "../../../rendering/scene/scene-renderer";
+import type { PreviewCommitHandoff } from "../../../rendering/scene/presentation/preview-commit-handoff";
 
 export interface ActiveImageSessionOptions extends Pick<
   EditorChromeOpenings,
@@ -75,6 +76,29 @@ export class ActiveImageSession {
     return this.#selectedImage()?.id;
   }
 
+  public get selectedImageContrast(): "auto" | "light" | "dark" | undefined {
+    const image = this.#selectedImage();
+    return image === undefined || image.locked === true ? undefined : (image.contrast ?? "auto");
+  }
+
+  public setContrast(contrast: "auto" | "light" | "dark"): void {
+    const image = this.#selectedImage();
+    if (image === undefined || image.locked === true || (image.contrast ?? "auto") === contrast)
+      return;
+    const options = this.#options;
+    const revision = options.model.revision;
+    const selection = options.selection();
+    void this.#run(async (signal) => {
+      const isCancelled = () =>
+        options.selection() !== selection || !this.#currentImage(image, signal, revision);
+      if (isCancelled()) return;
+      const replacement = { ...image };
+      if (contrast === "auto") delete replacement.contrast;
+      else replacement.contrast = contrast;
+      if (await this.#replaceImage(image, replacement, isCancelled)) options.onCommitted(true);
+    });
+  }
+
   public import(point?: PointV1): void {
     if (!this.canImport) return;
     void this.#run(async (signal) => {
@@ -132,47 +156,58 @@ export class ActiveImageSession {
       signal.addEventListener("abort", clearPreview, { once: true });
       try {
         const crop = await options.onCropImage!(image, resource, signal, options.ownerWindow);
-        if (crop === undefined || !this.#currentCrop(image, signal, revision)) return;
+        if (crop === undefined || !this.#currentImage(image, signal, revision)) return;
         if (sameCrop(crop, image.crop)) return;
         const replacement = applyImageCrop(image, crop);
-        const captured = captureElementReplacementHistory([image], [replacement]);
-        const isCancelled = () => !this.#currentCrop(image, signal, revision);
-        const prepared = await options.model.prepareElementReplacement([replacement], {
-          isCancelled,
-          protectLocked: true,
-        });
-        if (prepared.status !== "prepared" || prepared.token === null || isCancelled()) return;
-        if (previewCommit !== undefined && !previewCommit.arm([image.id])) return;
-        if (
-          options.model.commitPreparedElementReplacement(prepared.token, captured.capture) !==
-          "committed"
-        )
-          return;
-        const replay = async (elements: readonly ImageElementV3[]) => {
-          const basis = options.model.revision;
-          const cancelled = () => options.history.isDisposed || options.model.revision !== basis;
-          const ready = await options.model.prepareElementReplacement(elements, {
-            isCancelled: cancelled,
-            protectLocked: false,
-          });
-          return (
-            ready.status === "prepared" &&
-            ready.token !== null &&
-            !cancelled() &&
-            options.model.commitPreparedElementReplacement(ready.token) === "committed"
-          );
-        };
-        options.history.registerApplied({
-          payloadBytes: captured.payloadBytes,
-          undo: () => replay(captured.previous as readonly ImageElementV3[]),
-          redo: () => replay(captured.replacements as readonly ImageElementV3[]),
-        });
-        options.onCommitted();
+        const isCancelled = () => !this.#currentImage(image, signal, revision);
+        if (await this.#replaceImage(image, replacement, isCancelled, previewCommit))
+          options.onCommitted();
       } finally {
         signal.removeEventListener("abort", clearPreview);
         clearPreview();
       }
     });
+  }
+
+  async #replaceImage(
+    image: ImageElementV3,
+    replacement: ImageElementV3,
+    isCancelled: () => boolean,
+    previewCommit?: Pick<PreviewCommitHandoff, "arm">,
+  ): Promise<boolean> {
+    const options = this.#options;
+    const captured = captureElementReplacementHistory([image], [replacement]);
+    const prepared = await options.model.prepareElementReplacement([replacement], {
+      isCancelled,
+      protectLocked: true,
+    });
+    if (prepared.status !== "prepared" || prepared.token === null || isCancelled()) return false;
+    if (previewCommit !== undefined && !previewCommit.arm([image.id])) return false;
+    if (
+      options.model.commitPreparedElementReplacement(prepared.token, captured.capture) !==
+      "committed"
+    )
+      return false;
+    const replay = async (elements: readonly ImageElementV3[]) => {
+      const basis = options.model.revision;
+      const cancelled = () => options.history.isDisposed || options.model.revision !== basis;
+      const ready = await options.model.prepareElementReplacement(elements, {
+        isCancelled: cancelled,
+        protectLocked: false,
+      });
+      return (
+        ready.status === "prepared" &&
+        ready.token !== null &&
+        !cancelled() &&
+        options.model.commitPreparedElementReplacement(ready.token) === "committed"
+      );
+    };
+    options.history.registerApplied({
+      payloadBytes: captured.payloadBytes,
+      undo: () => replay(captured.previous as readonly ImageElementV3[]),
+      redo: () => replay(captured.replacements as readonly ImageElementV3[]),
+    });
+    return true;
   }
 
   async #run(operation: (signal: AbortSignal) => Promise<void>): Promise<void> {
@@ -213,7 +248,7 @@ export class ActiveImageSession {
     return element?.kind === "image" ? element : undefined;
   }
 
-  #currentCrop(image: ImageElementV3, signal: AbortSignal, revision: number): boolean {
+  #currentImage(image: ImageElementV3, signal: AbortSignal, revision: number): boolean {
     const selected = this.#selectedImage();
     return selected === image && selected.locked !== true && this.#current(signal, revision);
   }

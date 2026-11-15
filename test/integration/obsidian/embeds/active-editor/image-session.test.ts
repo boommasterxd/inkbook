@@ -1,23 +1,14 @@
 // @vitest-environment happy-dom
 import { expect, it, vi } from "vitest";
 import { ElementStore } from "../../../../../src/domain/store/public";
-import type {
-  ImageCropV3,
-  ImageElementV3,
-  ImageResourceV3,
-} from "../../../../../src/domain/schema/public";
-import {
-  ActiveImageSession,
-  type ActiveImageSessionOptions,
-} from "../../../../../src/obsidian/embeds/active-editor/image-session";
-import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
+import type { ImageCropV3, ImageElementV3 } from "../../../../../src/domain/schema/public";
 import type { ImportedImageBatch } from "../../../../../src/obsidian/embeds/active-scene/editor-chrome-openings";
-import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/document-model-port";
 import {
-  elementMutationPorts,
-  elementReplacementPorts,
-} from "../../../../fixtures/obsidian/element-mutation-ports";
-import { imageElement, imageResource } from "../../../../fixtures/domain/images";
+  imageSessionFixture as harness,
+  deferredImageSession as deferred,
+  sessionImage as image,
+  sessionImageResource as resource,
+} from "../../../../fixtures/obsidian/image-session";
 import { PAGE } from "../../../../unit/domain/store/fixtures";
 import {
   createActiveEditorModel,
@@ -32,77 +23,6 @@ import { sceneDeltaEntries } from "../../../../fixtures/rendering/scene";
 import { useImageSceneCleanup } from "../../../../fixtures/rendering/image-scene";
 
 const ownScene = useImageSceneCleanup();
-
-const resource: ImageResourceV3 = { ...imageResource(), width: 4000, height: 1000 };
-const image: ImageElementV3 = {
-  ...imageElement(),
-  x: 24.3,
-  y: 24.3,
-  width: 400,
-  height: 100,
-  pivot: { x: 224.3, y: 74.3 },
-  crop: { x: 0, y: 0, width: 4000, height: 1000 },
-};
-
-function harness(
-  overrides: Partial<ActiveImageSessionOptions> = {},
-  initial: ImageElementV3[] = [],
-) {
-  const store = new ElementStore(initial);
-  let revision = 0;
-  const committed = () => {
-    revision += 1;
-  };
-  let selection: ReadonlySet<string> = new Set(initial.map(({ id }) => id));
-  const addImageResources = vi.fn(async () => undefined);
-  const model = {
-    store,
-    page: PAGE,
-    get revision() {
-      return revision;
-    },
-    imageResource: () => resource,
-    addImageResources,
-    ...elementMutationPorts(store, committed),
-    ...elementReplacementPorts(store, committed),
-  } as unknown as EditableDocumentModel;
-  const history = new ActiveEditorHistory(model);
-  const onCommitted = vi.fn();
-  const onFailed = vi.fn();
-  const options: ActiveImageSessionOptions = {
-    model,
-    history,
-    ownerWindow: window,
-    isEnabled: () => true,
-    finishText: async () => true,
-    selection: () => selection,
-    select: (next) => {
-      selection = next;
-    },
-    visibleCenter: () => ({ x: 2000, y: 300 }),
-    onImportImages: async () => ({
-      resources: [resource, { ...resource, id: "b".repeat(64), width: 100, height: 100 }],
-      source: "pdf",
-    }),
-    onCropImage: async () => ({ x: 1000, y: 250, width: 2000, height: 500 }),
-    onCommitted,
-    onFailed,
-    ...overrides,
-  };
-  const session = new ActiveImageSession(options);
-  return {
-    session,
-    store,
-    history,
-    model,
-    addImageResources,
-    options,
-    onCommitted,
-    onFailed,
-    changeRevision: committed,
-    selection: () => selection,
-  };
-}
 
 async function assertReversibleImport(
   owner: ReturnType<typeof harness>,
@@ -470,11 +390,3 @@ it("aborts the owning dialog on disable/dispose and admits no late resource resu
   expect(owner.history.commandCount).toBe(0);
   owner.session.dispose();
 });
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}

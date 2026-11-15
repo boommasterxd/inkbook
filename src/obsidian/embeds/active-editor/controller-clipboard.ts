@@ -27,6 +27,7 @@ import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { capturePastePlan } from "../../../persistence/clipboard/paste-plan-snapshot";
 import { copyTextSelection } from "./clipboard-text-copy";
 import { editableSelection } from "./controller-elements";
+import { prepareClipboardTextInkBounds } from "./clipboard-text-preparation";
 
 export type ClipboardControllerResult =
   | { readonly action: "copy" | "cut"; readonly kind: "copied" }
@@ -152,7 +153,6 @@ export class ActiveEditorClipboardController {
   #sessionPayload: ClipboardWritePayload | undefined;
   #sessionPlainText: string | undefined;
   #sessionPayloadFresherThanSystem = false;
-
   constructor(options: ActiveEditorClipboardOptions) {
     this.#adoptionGuard = new ClipboardAdoptionGuard(options.model.store);
     this.#currentSelection = options.currentSelection;
@@ -168,32 +168,26 @@ export class ActiveEditorClipboardController {
     this.#ownerWindow = options.ownerWindow;
     this.#workScheduler = options.workScheduler;
   }
-
   get canPaste(): boolean {
     return (
       !this.#pending &&
       (typeof this.#ownerWindow.navigator.clipboard?.read === "function" || this.hasPastePayload)
     );
   }
-
   get hasPastePayload(): boolean {
     return this.#sessionPayload !== undefined || this.#sessionPlainText !== undefined;
   }
-
   get canCopyOrCut(): boolean {
     return !this.#pending;
   }
-
   get pending(): boolean {
     return this.#pending;
   }
-
   dispose(): void {
     this.#beginOperation();
     this.#abort.abort();
     this.#adoptionGuard.dispose();
   }
-
   copy(selection: ReadonlySet<string>): Promise<ClipboardControllerResult> {
     return this.#runExclusive("copy", (operation) => this.#copyOrCut(selection, false, operation));
   }
@@ -277,10 +271,10 @@ export class ActiveEditorClipboardController {
     const previousRepeat = invocation.kind === "context-menu" ? undefined : this.#repeatState;
     const candidate = await this.#model.planClipboardPaste(candidates, invocation, previousRepeat);
     const plan = candidate === null ? null : capturePastePlan(candidate);
-    if (!this.#isOperationCurrent(operationGeneration)) {
-      return this.#reportUnavailable("paste", "stale-operation");
-    }
-    if (!clipboardDocumentBasisCurrent(this.#model, basis, plan)) {
+    if (
+      !this.#isOperationCurrent(operationGeneration) ||
+      !clipboardDocumentBasisCurrent(this.#model, basis, plan)
+    ) {
       return this.#reportUnavailable("paste", "stale-operation");
     }
     if (plan === null) return this.#pasteText(candidates, invocation, operationGeneration);
@@ -401,13 +395,20 @@ export class ActiveEditorClipboardController {
     expectedRevision: number,
     operationGeneration: number,
   ): Promise<import("../../../domain/store/public").AppliedElementMutation | null> {
-    const storeVersion = this.#model.store.mutationVersion;
+    const basis = captureClipboardDocumentBasis(this.#model);
     const cancelled = () =>
       this.#model.revision !== expectedRevision ||
-      this.#model.store.mutationVersion !== storeVersion ||
+      !clipboardDocumentBasisCurrent(this.#model, basis) ||
       !this.#isPresentationAttached() ||
       !this.#isOperationCurrent(operationGeneration);
-    const preparedAdoption = await this.#adoptionGuard.prepare(plan, {
+    const preparedPlan = await prepareClipboardTextInkBounds(plan, {
+      cancelled,
+      ownerWindow: this.#ownerWindow,
+      model: this.#model,
+      scheduler: this.#workScheduler,
+    });
+    if (preparedPlan === null || cancelled()) return null;
+    const preparedAdoption = await this.#adoptionGuard.prepare(preparedPlan, {
       isCancelled: cancelled,
       shouldYield: () => this.#workScheduler.shouldYield(),
       yieldControl: () => this.#workScheduler.checkpoint(undefined, "frame") ?? Promise.resolve(),

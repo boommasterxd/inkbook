@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { imageElement } from "../../../fixtures/domain/images";
-import { rasterResource } from "../../../fixtures/persistence/image-svg";
+import { rasterImage, rasterResource } from "../../../fixtures/persistence/image-svg";
 import { createSnapshot } from "./fixtures";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/document-codec";
 import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/output/incremental-document-serializer";
@@ -10,11 +9,7 @@ import { ChunkedInkbookInputParser } from "../../../../src/persistence/serializa
 
 it("round-trips one raster payload shared by independently cropped and rotated instances", async () => {
   const resource = rasterResource();
-  const image = {
-    ...imageElement(),
-    assetId: resource.id,
-    crop: { x: 0, y: 0, width: 1, height: 1 },
-  };
+  const image = rasterImage(resource);
   const second = {
     ...image,
     id: "00000000-0000-4000-8000-000000000011",
@@ -23,7 +18,7 @@ it("round-trips one raster payload shared by independently cropped and rotated i
   };
   const snapshot = {
     ...createSnapshot([image, second]),
-    version: 3 as const,
+    version: 5 as const,
     imageResources: [resource],
   };
   const output = serializeInkbookDocument(snapshot);

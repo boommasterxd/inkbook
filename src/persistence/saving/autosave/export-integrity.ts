@@ -66,7 +66,7 @@ export class AutosaveExportIntegrity {
         matches = await matchesCanonicalImageOutput(
           output,
           snapshotTextResources(value).fontResources ?? [],
-          snapshotImageResources(value).imageResources ?? [],
+          snapshotImageResources(value, true).imageResources ?? [],
           currentCheckpoint,
         );
     } catch {

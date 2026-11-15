@@ -164,7 +164,7 @@ function* validateSnapshotSteps(
       "$",
     );
     assertLiteral(value.format, INKBOOK_FORMAT, "$.format");
-    assertOneOf(value.version, [1, 2, 3, 4] as const, "$.version");
+    assertOneOf(value.version, [1, 2, 3, 4, 5] as const, "$.version");
     if (value.fontResources !== undefined) {
       if (value.version === 1)
         fail("invalid-literal", "$.version", "Font resources require snapshot version 2.");

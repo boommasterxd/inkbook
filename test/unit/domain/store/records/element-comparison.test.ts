@@ -64,6 +64,7 @@ describe("element comparison steps", () => {
         expected: ["paint"],
       },
       { before: picture, after: { ...picture, assetId: "b".repeat(64) }, expected: ["paint"] },
+      { before: picture, after: { ...picture, contrast: "light" }, expected: ["paint"] },
     ];
     for (const [index, { before, after, expected }] of cases.entries()) {
       expect(drain(classifyReplacementSteps(before, after, 1))).toEqual(expected);

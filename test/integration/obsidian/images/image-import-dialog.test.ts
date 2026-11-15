@@ -1,11 +1,8 @@
 // @vitest-environment happy-dom
-import "../../../fixtures/obsidian/menu-motion";
-import type { App } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { openImageImportDialog } from "../../../../src/obsidian/images/image-import-dialog";
+import { describe, expect, it, vi } from "vitest";
 import { Localization } from "../../../../src/domain/localization";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
-import { installDialogTestLifecycle, dialogButton } from "../../../fixtures/obsidian/dialog";
+import { dialogButton } from "../../../fixtures/obsidian/dialog";
 import { assertImageDialogSemantics } from "../../../fixtures/obsidian/image-dialog";
 import { capacityImageResource, validImageResource } from "../../../fixtures/persistence/images";
 import { IMAGE_LIMITS } from "../../../../src/domain/images/image-limits";
@@ -14,63 +11,20 @@ import { ImageHeaderError } from "../../../../src/persistence/images/image-heade
 import { webpBytes } from "../../../fixtures/persistence/webp-images";
 import { createImageResource } from "../../../../src/persistence/images/image-resources";
 
-vi.mock("../../../../src/obsidian/images/image-import", async (load) => ({
-  ...(await load<object>()),
-  readImageSource: vi.fn(async () => new Uint8Array([1])),
-  prepareRasterImage: vi.fn(),
-}));
-vi.mock("../../../../src/obsidian/images/pdf-image-source", () => ({
-  openPdfImageSource: vi.fn(),
-}));
-import { prepareRasterImage, readImageSource } from "../../../../src/obsidian/images/image-import";
-import { openPdfImageSource } from "../../../../src/obsidian/images/pdf-image-source";
-import type { PdfImageSource } from "../../../../src/obsidian/images/pdf-image-source";
+import {
+  beginImageReview,
+  beginPdfBatch,
+  changeImportField,
+  imageImportSubmit,
+  imageImportMocks,
+  installImageImportTestLifecycle,
+  selectImportFile as selectFile,
+  setupImageImport as setup,
+  setupPdfImport,
+} from "../../../fixtures/obsidian/image-import-dialog";
 
-installDialogTestLifecycle();
-
-function setup() {
-  const abort = new AbortController();
-  const pending = openImageImportDialog({
-    app: { workspace: { containerEl: document.body } } as App,
-    localization: new Localization(),
-    scheduler: new TestWorkScheduler(),
-    readMotion: () => "reduced",
-    signal: abort.signal,
-  });
-  return { pending, abort };
-}
-
-function selectFile(name = "source.png"): void {
-  const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
-  Object.defineProperty(input, "files", {
-    configurable: true,
-    value: [new File(["image"], name)],
-  });
-  input.dispatchEvent(new Event("change", { bubbles: true }));
-}
-
-async function beginImageReview() {
-  const state = setup();
-  selectFile();
-  await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
-  return { ...state, warning: document.querySelector<HTMLElement>('[role="status"]')! };
-}
-
-async function beginPdfBatch(
-  render: PdfImageSource["render"],
-  dispose: PdfImageSource["dispose"] = vi.fn(async () => undefined),
-) {
-  vi.mocked(readImageSource).mockResolvedValue(new TextEncoder().encode("%PDF-1.7"));
-  vi.mocked(openPdfImageSource).mockResolvedValue({ pageCount: 20, render, dispose });
-  const state = setup();
-  selectFile();
-  await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
-  document.querySelector<HTMLInputElement>('input[type="text"]')!.value = "1-20";
-  dialogButton("Insert").click();
-  return state;
-}
-
-beforeEach(() => vi.clearAllMocks());
+const { prepareRasterImage, readImageSource, openPdfImageSource } = imageImportMocks;
+installImageImportTestLifecycle();
 
 describe("image import review", () => {
   it("offers WebP files and reviews the actual selected encoding before insertion", async () => {
@@ -137,6 +91,39 @@ describe("image import review", () => {
 });
 
 describe("image downscale review", () => {
+  it("reuses source bytes for Ultra, blocks stale preview insertion on failure and recovers", async () => {
+    const standard = await capacityImageResource(1);
+    const ultra = await capacityImageResource(2, 4000);
+    vi.mocked(prepareRasterImage)
+      .mockResolvedValueOnce({ resource: standard })
+      .mockRejectedValueOnce(new ImageImportError("encodedSize", "private"))
+      .mockResolvedValueOnce({ resource: standard })
+      .mockResolvedValueOnce({ resource: ultra });
+    const { pending } = await beginImageReview();
+    const quality = document.querySelector<HTMLSelectElement>("select")!;
+    const change = (value: string) => {
+      quality.value = value;
+      quality.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    change("ultra");
+    await vi.waitFor(() => expect(quality.disabled).toBe(false));
+    expect(dialogButton("Insert").disabled).toBe(true);
+    expect(document.querySelector("img")?.hasAttribute("src")).toBe(false);
+    change("high");
+    await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
+    change("ultra");
+    await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
+    expect(prepareRasterImage).toHaveBeenLastCalledWith(
+      expect.any(Uint8Array),
+      expect.objectContaining({ maximumPixels: 16_000_000 }),
+    );
+    change("ultra");
+    dialogButton("Insert").click();
+    expect(await pending).toEqual({ resources: [ultra], source: "image" });
+    expect(prepareRasterImage).toHaveBeenCalledTimes(4);
+    expect(readImageSource).toHaveBeenCalledOnce();
+  });
+
   it("announces downscaling and inserts the reviewed resource without another decode", async () => {
     const resource = await capacityImageResource(1);
     vi.mocked(readImageSource).mockResolvedValue(new Uint8Array([1]));
@@ -197,28 +184,60 @@ describe("image downscale review", () => {
     });
     selectFile("page.pdf");
     expect(warning.hidden).toBe(true);
-    await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
+    await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
     expect(warning.textContent).toBe("");
-    dialogButton("Insert").click();
+    imageImportSubmit().click();
     expect(await pending).toEqual({ resources: [resource], source: "pdf" });
   });
 });
 
 describe("image import source ownership", () => {
+  it.each([
+    ["very-high", 300, 9_000_000],
+    ["ultra", 400, 16_000_000],
+  ] as const)(
+    "reviews %s PDF resolution with actual DPI and reuses the matching page on insertion",
+    async (quality, dpi, maximumPixels) => {
+      const resource = await capacityImageResource(1, 4000);
+      const render = vi.fn(async () => resource);
+      vi.mocked(readImageSource).mockResolvedValue(new TextEncoder().encode("%PDF-1.7"));
+      vi.mocked(openPdfImageSource).mockResolvedValue({
+        pageCount: 1,
+        render,
+        dispose: vi.fn(async () => undefined),
+        resolution: { page: 1, dpi: 250, limited: true },
+      });
+      const { pending } = setup();
+      selectFile();
+      await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
+      const select = document.querySelector<HTMLSelectElement>("select")!;
+      select.value = quality;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
+      expect(render).toHaveBeenLastCalledWith(
+        1,
+        expect.objectContaining({ scale: dpi / 72, maximumPixels }),
+      );
+      expect(document.querySelector("figcaption")?.textContent).toContain("approx. 250 dpi");
+      expect(document.querySelector(".inkbook-image-import-resize-warning")?.textContent).toBe(
+        new Localization().t("images.pdfResolutionLimited", { dpi: 250 }),
+      );
+      imageImportSubmit().click();
+      expect(await pending).toEqual({ resources: [resource], source: "pdf" });
+      expect(render).toHaveBeenCalledTimes(2);
+      expect(readImageSource).toHaveBeenCalledOnce();
+    },
+  );
+
   it("uses an explicit page range, reuses the current preview and inserts the selected pages in order", async () => {
-    const resource = await validImageResource();
-    const render = vi.fn(async (_page: number) => resource);
-    const dispose = vi.fn(async () => undefined);
-    vi.mocked(readImageSource).mockResolvedValue(new TextEncoder().encode("%PDF-1.7"));
-    vi.mocked(openPdfImageSource).mockResolvedValue({ pageCount: 5, render, dispose });
-    const { pending } = setup();
+    const { resource, render, dispose, pending } = await setupPdfImport();
     selectFile();
-    await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
+    await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
     const pages = document.querySelector<HTMLInputElement>('input[type="text"]')!;
-    pages.value = "5, 1, 3";
+    changeImportField(pages, "5, 1, 3");
     document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
     await assertImageDialogSemantics(["label", "select-name"]);
-    dialogButton("Insert").click();
+    imageImportSubmit().click();
     expect(await pending).toEqual({
       resources: [resource, resource, resource],
       source: "pdf",
@@ -269,41 +288,38 @@ describe("image import source ownership", () => {
 
 describe("import preview and recovery", () => {
   it("previews an explicitly chosen PDF page and resolution and recovers from an invalid page range", async () => {
-    const resource = await validImageResource();
-    const render = vi.fn(async (_page: number) => resource);
-    vi.mocked(readImageSource).mockResolvedValue(new TextEncoder().encode("%PDF-1.7"));
-    vi.mocked(openPdfImageSource).mockResolvedValue({
-      pageCount: 5,
-      render,
-      dispose: vi.fn(async () => undefined),
-    });
-    const { pending } = setup();
+    const { render, pending } = await setupPdfImport();
     const file = document.querySelector<HTMLInputElement>('input[type="file"]')!;
     const choose = vi.spyOn(file, "click");
     dialogButton("Choose image or PDF").click();
     expect(choose).toHaveBeenCalledOnce();
     selectFile();
-    await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
+    await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
     const page = document.querySelector<HTMLInputElement>('input[type="number"]')!;
     page.value = "3";
     page.dispatchEvent(new Event("change", { bubbles: true }));
     await vi.waitFor(() =>
       expect(render).toHaveBeenCalledWith(3, expect.objectContaining({ scale: 2 })),
     );
-    await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
+    await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
     const quality = document.querySelector<HTMLSelectElement>("select")!;
-    quality.value = "1";
+    quality.value = "standard";
     quality.dispatchEvent(new Event("change", { bubbles: true }));
     await vi.waitFor(() =>
       expect(render).toHaveBeenCalledWith(3, expect.objectContaining({ scale: 1 })),
     );
-    await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
-    document.querySelector<HTMLInputElement>('input[type="text"]')!.value = "0";
-    dialogButton("Insert").click();
+    await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
+    changeImportField(document.querySelector<HTMLInputElement>('input[type="text"]')!, "0");
+    expect(imageImportSubmit().disabled).toBe(true);
     await vi.waitFor(() =>
-      expect(document.querySelector('[role="alert"]')?.textContent).toBe(
-        new Localization().t("images.failurePages"),
+      expect(document.querySelector('input[type="text"]')?.getAttribute("aria-invalid")).toBe(
+        "true",
       ),
+    );
+    await vi.waitFor(() =>
+      expect(
+        [...document.querySelectorAll('[role="alert"]')].map((alert) => alert.textContent),
+      ).toContain(new Localization().t("images.failurePages")),
     );
     dialogButton("Cancel").click();
     expect(await pending).toBeUndefined();
@@ -349,9 +365,9 @@ describe("PDF import batch ownership", () => {
     }));
     const { pending } = await beginPdfBatch(render);
     await vi.waitFor(() =>
-      expect(document.querySelector('[role="alert"]')?.textContent).toBe(
-        new Localization().t("images.failureCapacity"),
-      ),
+      expect(
+        [...document.querySelectorAll('[role="alert"]')].map((alert) => alert.textContent),
+      ).toContain(new Localization().t("images.failureCapacity")),
     );
     expect(render.mock.calls.map(([page]) => page)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     dialogButton("Cancel").click();

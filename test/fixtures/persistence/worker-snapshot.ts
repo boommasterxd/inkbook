@@ -3,6 +3,7 @@ import type {
   InkSnapshotV1,
   StrokeElementV1,
 } from "../../../src/domain/schema/public";
+import { elementSnapshotVersion } from "../../../src/domain/schema/snapshot-version";
 
 export function createTestStroke(): StrokeElementV1 {
   return {
@@ -31,7 +32,11 @@ export function createMultiWindowPressureStroke(): StrokeElementV1 {
   };
 }
 
-export function createWorkerSnapshot(elements: InkElementV1[], revision = 0): InkSnapshotV1 {
+export function createWorkerSnapshot(
+  elements: InkElementV1[],
+  revision = 0,
+  version?: InkSnapshotV1["version"],
+): InkSnapshotV1 {
   return {
     elements,
     format: "inkbook",
@@ -43,6 +48,6 @@ export function createWorkerSnapshot(elements: InkElementV1[], revision = 0): In
       margin: 24.3,
     },
     revision,
-    version: 1,
+    version: version ?? elementSnapshotVersion(elements),
   };
 }

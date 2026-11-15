@@ -57,35 +57,45 @@ it("normalizes one admitted image without upscaling and releases its native reso
   expect(decode).toHaveBeenCalledOnce();
 });
 
-it("decodes a 25.4MP source once and draws and encodes only one 4MP raster", async () => {
-  const resource = await capacityImageResource(1);
-  const bytes = Uint8Array.from(atob(resource.data), (char) => char.charCodeAt(0));
-  const source = imageHeaderBytes(bytes, 5040, 5040);
-  const close = vi.fn();
-  const bitmap = { width: 5040, height: 5040, close };
-  close.mockImplementation(() => {
-    bitmap.width = 0;
-    bitmap.height = 0;
-  });
-  const decode = vi.fn(async () => bitmap);
-  vi.stubGlobal("createImageBitmap", decode);
-  const boundary = installImageRasterBoundary(bytes);
-  const { draw, contexts, draws } = boundary;
-  boundary.encode.mockImplementation((callback) => {
-    expect(close).toHaveBeenCalledOnce();
-    expect(draw).toHaveBeenCalledOnce();
-    callback(new Blob([bytes], { type: "image/png" }));
-  });
-  expect(await prepareRasterImage(source, rasterOptions())).toEqual({
-    resource,
-    resizedFrom: { width: 5040, height: 5040 },
-  });
-  expect(decode).toHaveBeenCalledOnce();
-  expect(draw).toHaveBeenCalledExactlyOnceWith(bitmap, 0, 0, 2000, 2000);
-  expect(draws).toEqual([{ width: 2000, height: 2000 }]);
-  expect(contexts[0]).toMatchObject({ imageSmoothingEnabled: true, imageSmoothingQuality: "high" });
-  expectReleasedRaster(boundary, close);
-});
+it.each([2000, 4000] as const)(
+  "decodes a 25.4MP source once and draws and encodes one %spx raster",
+  async (axis) => {
+    const resource = await capacityImageResource(1, axis);
+    const bytes = Uint8Array.from(atob(resource.data), (char) => char.charCodeAt(0));
+    const source = imageHeaderBytes(bytes, 5040, 5040);
+    const close = vi.fn();
+    const bitmap = { width: 5040, height: 5040, close };
+    close.mockImplementation(() => {
+      bitmap.width = 0;
+      bitmap.height = 0;
+    });
+    const decode = vi.fn(async () => bitmap);
+    vi.stubGlobal("createImageBitmap", decode);
+    const boundary = installImageRasterBoundary(bytes);
+    const { draw, contexts, draws } = boundary;
+    boundary.encode.mockImplementation((callback) => {
+      expect(close).toHaveBeenCalledOnce();
+      expect(draw).toHaveBeenCalledOnce();
+      callback(new Blob([bytes], { type: "image/png" }));
+    });
+    const options = {
+      ...rasterOptions(),
+      ...(axis === 4000 ? { maximumPixels: 16_000_000 } : {}),
+    };
+    expect(await prepareRasterImage(source, options)).toEqual({
+      resource,
+      resizedFrom: { width: 5040, height: 5040 },
+    });
+    expect(decode).toHaveBeenCalledOnce();
+    expect(draw).toHaveBeenCalledExactlyOnceWith(bitmap, 0, 0, axis, axis);
+    expect(draws).toEqual([{ width: axis, height: axis }]);
+    expect(contexts[0]).toMatchObject({
+      imageSmoothingEnabled: true,
+      imageSmoothingQuality: "high",
+    });
+    expectReleasedRaster(boundary, close);
+  },
+);
 
 it("closes a decoded bitmap when its owner cancels before rasterization", async () => {
   const { bytes, abort, close } = await cancellationFixture();

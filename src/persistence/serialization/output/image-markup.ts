@@ -31,10 +31,15 @@ export function imageDefinitionsMarkup(resources: readonly ImageResourceV3[]): s
   return [...imageDefinitionsFragments(resources)].join("");
 }
 
-export function snapshotImageResources(snapshot: InkSnapshotV1): {
+export function snapshotImageResources(
+  snapshot: InkSnapshotV1,
+  validatedSnapshot = false,
+): {
   imageResources?: ImageResourceV3[];
 } {
   if (snapshot.version < 3) return {};
+  // Only authoritative schema-validated callers may attest that absent resources prove no images.
+  if (validatedSnapshot && (snapshot.imageResources?.length ?? 0) === 0) return {};
   const steps = usedImageResourcesSteps(snapshot.elements, snapshot.imageResources ?? []);
   let step = steps.next();
   while (!step.done) step = steps.next();

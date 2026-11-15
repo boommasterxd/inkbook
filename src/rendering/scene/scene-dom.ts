@@ -3,25 +3,31 @@ import { PAGE_WIDTH, PORTABLE_PALETTE_V1, type BackgroundV1 } from "../../domain
 import type { RenderBand } from "../../domain/commands/render-bands";
 import { createToolCursorDom, type SceneToolCursorDom } from "./tool-cursor";
 import { SVG_NAMESPACE } from "./constants";
-import type { DocumentScheme, SceneInputHandlers, SceneRendererOptions } from "./types";
+import type {
+  DocumentScheme,
+  MutableSceneInstrumentation,
+  SceneInputHandlers,
+  SceneRendererOptions,
+} from "./types";
 import { SceneSurface } from "./scene-surface";
 import { SCENE_SURFACE_STYLES } from "./scene-surface-styles";
 import { SceneImageResources } from "./content/image-resources";
+import { SceneAutoPaint } from "./scene-auto-paint";
 
 type InputEventName = keyof SceneInputHandlers;
 type SurfaceOptions = Pick<
   SceneRendererOptions,
   "surfaceThemeRoot" | "onSurfaceFailure" | "imageResource"
->;
+> & {
+  readonly store?: SceneRendererOptions["store"];
+  readonly instrumentation?: MutableSceneInstrumentation;
+  readonly workScheduler?: SceneRendererOptions["workScheduler"];
+};
 type SceneDomOptions = Pick<
   SceneRendererOptions,
-  | "container"
-  | "accessibleName"
-  | "inputHandlers"
-  | "surfaceThemeRoot"
-  | "onSurfaceFailure"
-  | "imageResource"
->;
+  "container" | "accessibleName" | "inputHandlers"
+> &
+  SurfaceOptions;
 
 let nextBackgroundPatternId = 0;
 
@@ -34,6 +40,7 @@ export class SceneDom {
   public readonly highlightGroup: SVGGElement;
   public readonly imageGroup: SVGGElement;
   public readonly imageResources: SceneImageResources;
+  public readonly autoPaint: SceneAutoPaint;
   public readonly inputSurface: HTMLDivElement;
   public readonly liveGroup: SVGGElement;
   public readonly liveStrokeGroup: SVGGElement;
@@ -152,6 +159,7 @@ export class SceneDom {
     this.imageResources = new SceneImageResources(defs, options.imageResource ?? (() => undefined));
     defs.append(this.#backgroundPattern);
     this.svg.append(themeStyle, this.cameraGroup, overlayGroup, defs);
+    this.autoPaint = this.createAutoPaint(defs, container, options);
 
     this.configureInputSurface(accessibleName);
     this.svg.setAttribute("height", "100%");
@@ -166,6 +174,33 @@ export class SceneDom {
 
   public readSurface(): void {
     this.#surface.read();
+  }
+
+  public memoryUsage(): number {
+    return this.imageResources.memoryUsage() + this.autoPaint.memoryUsage();
+  }
+
+  private createAutoPaint(
+    defs: SVGDefsElement,
+    container: HTMLElement,
+    options: SurfaceOptions,
+  ): SceneAutoPaint {
+    return new SceneAutoPaint({
+      defs,
+      page: this.pageSurface,
+      images: this.imageGroup,
+      root: this.cameraGroup,
+      observer: container.ownerDocument.defaultView?.MutationObserver,
+      hasImages: () => {
+        const size = options.store?.bandSize?.("image");
+        return size === undefined ? undefined : size > 0;
+      },
+      invalidate: () => this.onSurfaceInvalidated(),
+      now: () => options.workScheduler?.now() ?? 0,
+      ...(options.instrumentation === undefined
+        ? {}
+        : { instrumentation: options.instrumentation }),
+    });
   }
 
   private configureBandGroups(): void {
@@ -332,6 +367,7 @@ export class SceneDom {
   }
 
   public release(): void {
+    this.autoPaint.release();
     this.imageResources.release();
     this.releaseInputSurface();
     this.#surface.release();

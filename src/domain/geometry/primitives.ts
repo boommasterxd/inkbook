@@ -198,6 +198,16 @@ export function boundsFromPoints(points: readonly PointV1[]): Bounds {
   return bounds;
 }
 
+/** Clockwise rectangle corners, starting at the upper left. */
+export function boundsCorners(bounds: Bounds): [PointV1, PointV1, PointV1, PointV1] {
+  return [
+    { x: bounds.minX, y: bounds.minY },
+    { x: bounds.maxX, y: bounds.minY },
+    { x: bounds.maxX, y: bounds.maxY },
+    { x: bounds.minX, y: bounds.maxY },
+  ];
+}
+
 /** Extends an owned accumulator without allocating or rescanning its existing points. */
 export function includeBoundsPoint(bounds: Bounds, point: PointV1): void {
   bounds.minX = Math.min(bounds.minX, point.x);

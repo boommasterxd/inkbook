@@ -2,8 +2,9 @@ import { deriveRenderBands } from "../../../domain/commands/render-bands";
 import type { InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
 
 import { serializeBackgroundPaths } from "../output/background";
-import { serializeElementPaths } from "../output/path-markup";
+import { serializeAutoElementPaths, serializeElementPaths } from "../output/path-markup";
 import { serializeTextMarkupFragments } from "../output/text-markup";
+import { AutoPaintServerRegistry } from "../output/auto-contrast-servers";
 
 interface ExpectedToken {
   readonly allowLeadingWhitespace?: boolean;
@@ -19,6 +20,9 @@ interface ExpectedToken {
  */
 export class StreamingStaticIntegrityMatcher {
   readonly #tokens: Iterator<ExpectedToken>;
+  readonly #registry = new AutoPaintServerRegistry();
+  readonly #expectedPaints: string | undefined;
+  #registryValidated: boolean | undefined;
   #current: ExpectedToken | null = null;
   #failure: "invalid-svg" | "static-path-mismatch" = "static-path-mismatch";
   #finished = false;
@@ -29,8 +33,9 @@ export class StreamingStaticIntegrityMatcher {
   #possibleAlternatives = 0;
   #alternativeComplete = false;
 
-  public constructor(snapshot: InkSnapshotV1, lockedHeight: number) {
-    this.#tokens = staticTokens(snapshot, lockedHeight)[Symbol.iterator]();
+  public constructor(snapshot: InkSnapshotV1, lockedHeight: number, expectedPaints?: string) {
+    this.#expectedPaints = expectedPaints;
+    this.#tokens = staticTokens(snapshot, lockedHeight, this.#registry)[Symbol.iterator]();
   }
 
   public get failure(): "invalid-svg" | "static-path-mismatch" {
@@ -84,6 +89,28 @@ export class StreamingStaticIntegrityMatcher {
     if (!this.#valid) return false;
     this.#advancePastEmptyTokens();
     return this.#finished;
+  }
+
+  /** Compare the registry populated by the existing canonical atom pass without rebuilding geometry. */
+  public *validateRegistrySteps(): Generator<void, boolean> {
+    if (!this.#valid || !this.#finished) return false;
+    if (this.#registryValidated !== undefined) return this.#registryValidated;
+    if (this.#expectedPaints === undefined) {
+      this.#registryValidated = this.#registry.contentByteLength === 0;
+      return this.#registryValidated;
+    }
+    let cursor = 0;
+    for (const token of this.#registry.fragments()) {
+      if (!this.#expectedPaints.startsWith(token, cursor)) {
+        this.#registryValidated = this.#valid = false;
+        return false;
+      }
+      cursor += token.length;
+      yield;
+    }
+    this.#registryValidated = cursor === this.#expectedPaints.length;
+    this.#valid = this.#registryValidated;
+    return this.#registryValidated;
   }
 
   #matchAlternative(input: string, cursor: number): number {
@@ -148,8 +175,13 @@ export class StreamingStaticIntegrityMatcher {
   }
 }
 
-function* staticTokens(snapshot: InkSnapshotV1, lockedHeight: number): Iterable<ExpectedToken> {
+function* staticTokens(
+  snapshot: InkSnapshotV1,
+  lockedHeight: number,
+  registry: AutoPaintServerRegistry,
+): Iterable<ExpectedToken> {
   const bands = deriveRenderBands(snapshot.elements);
+  const auto = snapshot.version >= 5 && bands.image.length > 0;
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-background">' };
   for (const fragment of serializeBackgroundPaths(snapshot.page.background, lockedHeight)) {
     yield { text: fragment };
@@ -157,21 +189,27 @@ function* staticTokens(snapshot: InkSnapshotV1, lockedHeight: number): Iterable<
   yield { text: "</g>" };
   if (snapshot.version >= 3) {
     yield { allowLeadingWhitespace: true, text: '<g id="inkbook-images-band">' };
-    yield* elementTokens(bands.image);
+    yield* elementTokens(bands.image, false, registry);
     yield { text: "</g>" };
   }
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-highlights">' };
-  yield* elementTokens(bands.highlight);
+  yield* elementTokens(bands.highlight, auto, registry);
   yield { text: "</g>" };
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-content">' };
-  yield* elementTokens(bands.content);
+  yield* elementTokens(bands.content, auto, registry);
   yield { text: "</g>" };
   yield { allowLeadingWhitespace: true, text: "</svg>" };
 }
 
-function* elementTokens(elements: readonly InkElementV1[]): Iterable<ExpectedToken> {
+function* elementTokens(
+  elements: readonly InkElementV1[],
+  auto: boolean,
+  registry: AutoPaintServerRegistry,
+): Iterable<ExpectedToken> {
   for (const element of elements) {
-    if (element.kind === "text") yield* serializeTextMarkupFragments(element, true);
+    if (auto) {
+      for (const text of serializeAutoElementPaths(element, undefined, registry)) yield { text };
+    } else if (element.kind === "text") yield* serializeTextMarkupFragments(element, true);
     else yield { text: serializeElementPaths(element).join("") };
   }
 }

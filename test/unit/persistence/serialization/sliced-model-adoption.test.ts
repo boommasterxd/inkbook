@@ -37,7 +37,7 @@ it("rejects an oversized public collection before staging element or sample valu
   const copy = vi.spyOn(sampleCopy, "copySampleRange");
   try {
     expect(
-      await serializer.resetRuntimeSliced(createWorkerSnapshot(elements, 1), {
+      await serializer.resetRuntimeSliced(createWorkerSnapshot(elements, 1, 1), {
         signal: new AbortController().signal,
         checkpoint: () => undefined,
       }),

@@ -13,7 +13,7 @@ The required XML structure, standalone page surface, portable light and dark pal
 ```ts
 interface InkSnapshotV1 {
   format: "inkbook";
-  version: 1 | 2 | 3 | 4;
+  version: 1 | 2 | 3 | 4 | 5;
   revision: number;
   page: PageV1;
   elements: InkElementV1[];
@@ -36,11 +36,9 @@ type BackgroundV1 =
   | { type: "squares"; spacing: 25 | 33.333333333333336 | 50 | 100 };
 ```
 
-The 2,000-unit width is the patterned writing area. The 24.3-unit margin surrounds it on every side and is writable. The total SVG width is therefore exactly 2,048.6 page units.
+The 2,000-unit width is the patterned writing area. The 24.3-unit margin surrounds it on every side and is writable. The total SVG width is therefore exactly 2,048.6 page units. Element coordinates use the outer SVG's top-left corner as `(0, 0)`. Positive `x` points right and positive `y` points down. Elements may extend into the margin but MUST remain within the enforced numeric limits.
 
 Page values are copied from vault defaults when the file is created. Background changes are file commands. Later vault-default changes never alter this `PageV1` implicitly. Current writers use the shared absolute 25, 100 / 3, 50, and 100 page-unit series for every patterned background. The serialized IEEE-754 value for 100 / 3 is `33.333333333333336`; layout treats it as exactly three intervals per canonical 100-unit row. The fixed 100-unit layout step is an implementation and format invariant rather than redundant per-file state. `activeBufferLines` is an integer from 1 through 8, and current writers emit the canonical locked value `1`.
-
-Element coordinates use the outer SVG's top-left corner as `(0, 0)`. Positive `x` points right and positive `y` points down. Elements may extend into the margin but MUST remain within the enforced numeric limits.
 
 ## Shared Types
 
@@ -97,7 +95,7 @@ Validation rules:
 - IDs are lowercase UUID v4 strings and unique within the document.
 - `createdAt` is a non-negative integer Unix timestamp in milliseconds.
 - RGBA colors use exactly `#RRGGBBAA`.
-- `theme-text` is preserved semantically and resolves through the versioned portable light and dark document palette in [Standalone SVG Envelope and Theme Rendering](svg-envelope.md). It never captures a transient Community-theme value.
+- `theme-text` is the semantic Auto color. It resolves against the portable page and image underlay as defined in [Standalone SVG Envelope and Theme Rendering](svg-envelope.md). It never captures a transient Community-theme value.
 - Current editors create outline widths from the same `2, 4, 8, 14, 22` XS-through-XL scale as pen strokes. Readers continue to accept legacy outline widths `1` and `12` so existing version 1 documents retain their exact appearance.
 
 The `elements` array is partitioned into three fixed render bands: images, highlights, then content. Images appear first; highlighter and straight-highlighter elements follow; every other element occupies content. Each band retains back-to-front order. Writers MUST emit this partition and readers reject a lower-band element after a higher band has begun. No separate layer field is persisted. The image geometry, resource schema, version 3 extension and capacities are defined in [Images and PDF Pages](images.md).
@@ -109,9 +107,7 @@ Arrange commands change only array order inside a render band. Frontward means t
 - Bring to front uses a stable partition that places unselected elements first and selected elements last.
 - Send to back uses the inverse stable partition.
 
-A mixed selection applies the same operation independently to each band in one command. Relative selected order is preserved. A boundary no-op does not change revision or history.
-
-For example, with back-to-front order `[A*, B, C*, D, E]`, where `*` is selected, Bring forward produces `[B, A*, D, C*, E]`. Send backward on `[A, B*, C, D*]` produces `[B*, A, D*, C]`.
+A mixed selection applies the same operation independently to each band in one command. Relative selected order is preserved. A boundary no-op does not change revision or history. For example, with back-to-front order `[A*, B, C*, D, E]`, where `*` is selected, Bring forward produces `[B, A*, D, C*, E]`. Send backward on `[A, B*, C, D*]` produces `[B*, A, D*, C]`.
 
 ## Element Union
 
@@ -241,9 +237,7 @@ An endpoint connection targets a closed shape, coordinate system, table, line, o
 - coordinate systems use `coordinate-origin` and each current `coordinate-axis-end` index
 - lines and arrows use `linear-endpoint` with `endpoint` set to `start` or `end`
 
-`box` positions use the named corners and side midpoints of the unrotated bounds. Ellipse angles are clockwise in page coordinates: the user-facing points are 90 at the bottom, 180 at the left, 270 at the top, and 360 at the right; persisted 360 is canonicalized to 0. Polygon indices use the normalized vertex order defined below; edge midpoint `i` lies halfway from vertex `i` to vertex `(i + 1) mod vertexCount`. Coordinate-axis indices are zero-based positions in `axes`.
-
-The deterministic semantic anchor order is: `box` positions in their `BoxAnchorV1` declaration order; ellipse angles 0, 90, 180, 270; polygon vertices by ascending index before polygon edge midpoints by ascending index; coordinate origin before axis endpoints by ascending index. Equal-distance candidates compare frontmost render rank, target ID, then this anchor order.
+`box` positions use the named corners and side midpoints of the unrotated bounds. Ellipse angles are clockwise in page coordinates: the user-facing points are 90 at the bottom, 180 at the left, 270 at the top, and 360 at the right; persisted 360 is canonicalized to 0. Polygon indices use the normalized vertex order defined below; edge midpoint `i` lies halfway from vertex `i` to vertex `(i + 1) mod vertexCount`. Coordinate-axis indices are zero-based positions in `axes`. The deterministic semantic anchor order is: `box` positions in their `BoxAnchorV1` declaration order; ellipse angles 0, 90, 180, 270; polygon vertices by ascending index before polygon edge midpoints by ascending index; coordinate origin before axis endpoints by ascending index. Equal-distance candidates compare frontmost render rank, target ID, then this anchor order.
 
 Resolve an anchor in the target's unrotated canonical geometry, then rotate it clockwise around the target pivot. `start` and `end` store the last successfully resolved page point and MUST equal the current resolved anchor within 0.001 page units while connected. A dangling target, incompatible anchor kind, invalid index, cycle, or mismatched resolved point makes a file invalid and read-only.
 
@@ -431,14 +425,14 @@ interface ClipboardElementV1 {
 
 interface InkClipboardV1 {
   format: "inkbook-elements";
-  version: 1 | 2 | 3 | 4;
+  version: 1 | 2 | 3 | 4 | 5;
   elements: ClipboardElementV1[];
   fontResources?: FontResourceV2[];
   imageResources?: ImageResourceV3[];
 }
 ```
 
-- Copy assigns compact unique `clipId` values in selection order, removes `id` and `createdAt`, and preserves geometry, style, element locks, render-band order, and relative positions. A connection whose target is selected becomes `targetClipId`; a connection to an unselected target becomes `null` at its resolved endpoint. A payload containing a locked element uses version 4.
+- Copy assigns compact unique `clipId` values in selection order, removes `id` and `createdAt`, and preserves geometry, style, element locks, image contrast overrides, measured text ink bounds, render-band order, and relative positions. A connection whose target is selected becomes `targetClipId`; a connection to an unselected target becomes `null` at its resolved endpoint. A payload containing an image or measured text ink bounds uses version 5; an otherwise locked selection uses version 4.
 - Paste first validates `InkClipboardV1` against clipboard limits. It maps every `clipId` to a new UUID, assigns `createdAt = pasteCommandTimestamp`, resolves connection targets through that complete map, translates the group, validates the resulting document limits, and commits atomically. Pasted elements enter the front of their respective render bands while retaining clipboard order. A failed step changes nothing.
 - On read, the prefixed system custom format takes precedence over the system `text/plain` representation, which takes precedence over the in-session fallback, when each candidate validates. Copy writes one `text/plain`-only `ClipboardItem` during the initiating user activation because that well-known format is the interoperable system representation and already contains the complete prefixed Inkbook payload. The optional standards-prefixed custom format remains read-compatible but is not written because unsupported custom types may reject the complete multi-format operation. Every write path retains the validated in-session payload, and a failed standard system write is reported without attempting a late retry after activation.
 - Codec execution, operation identity, revision synchronization, and worker fallback are defined in [Rendering and Performance](rendering-and-performance.md#document-worker-autosave-and-export).
@@ -485,12 +479,12 @@ Readers continue to accept `data-encoding="json"` with flat numeric triples. Ope
 
 ## Versioning and Migration
 
-- Writers emit version 4 for documents containing a locked element, version 3 for documents containing images without locked elements, version 2 for documents containing text without images or locked elements, and canonical version 1 otherwise. Version 4 retains the version 3 image and version 2 text capabilities and adds the shared element lock field without changing the visible graphic. The [image extension](images.md#persistence-clipboard-and-safe-svg) defines resource descriptors and the single embedded raster payload. The [text extension](text-fields.md#persistence-clipboard-and-pdf) preserves legacy reading and uses font descriptors without binary data in disk metadata. Logical runtime and clipboard resources retain their `data` fields. Older strict readers require an update before editing version 4 files.
+- Writers emit version 5 for documents containing images or text with measured ink bounds, version 4 for otherwise locked documents, version 2 for remaining text documents, and canonical version 1 otherwise. Version 5 adds image-underlay contrast behavior, optional per-image overrides and measured text ink bounds; version 4 adds the shared element lock field. Legacy documents remain readable. The [image extension](images.md#persistence-clipboard-and-safe-svg) defines resource descriptors and the single embedded raster payload. The [text extension](text-fields.md#persistence-clipboard-and-pdf) defines font descriptors and text-layout compatibility. Logical runtime and clipboard resources retain their `data` fields. Older strict readers require an update before editing version 5 files.
 - Inkbook may display a replacement preview for a newer unsupported version only after its static SVG passes the same exact element-and-attribute allowlist as generated output; otherwise it leaves the native image host-owned and noninteractive, or replaces its owned presentation with a non-rendering placeholder. The document cannot be edited.
 - Version 0 uses the same envelope, snapshot fields, ordering, connections, and canonical geometry as version 1 except that both the root `data-inkbook-version` and snapshot `version` are `0` and the root omits `data-inkbook-snapshot-sha256`. Its only migration changes the snapshot discriminator to `1`. The first version 1 save adds the canonical metadata hash; the version 1 exact-text and hash requirements do not block loading the supported legacy source.
-- Version 0 migrates in memory to version 1 through a pure migration in the document worker during unlock. Versions 1 through 4 are validated as supported versions without requiring a migration to version 4. Runtime batches and the export baseline are created only after the resulting snapshot passes schema and byte, depth, container, element, geometry, and connection limits. Cancellation applies between migration and validation slices. The equivalent bounded main-thread fallback uses the same registry, checkpoints, limits, and failure result when workers are unavailable.
-- Before the first write that would replace a successfully migrated document, preserve the exact original content as `<base>.backup-v<old-version>.svg`. Creation uses the public Vault boundary and is read back before replacement. If that collision-safe path already exists, it is accepted only when its content exactly equals the original; Inkbook never replaces a different existing backup. The verified backup is required exactly once per adopted migrated source.
-- Migration or unlock cancellation leaves the original untouched and the presentation static/read-only. Backup creation or verification failure prevents the version 1 replacement and leaves the session in recovery-required state with the original still untouched.
+- Version 0 migrates in memory to version 1 through a pure migration in the document worker during unlock. Versions 1 through 5 are validated as supported versions. Legacy image documents and legacy text layouts requiring measured ink bounds are canonically rewritten to version 5. Runtime batches and the export baseline are created only after the resulting snapshot passes schema and byte, depth, container, element, geometry, and connection limits. Cancellation applies between migration and validation slices. The equivalent bounded main-thread fallback uses the same registry, checkpoints, limits, and failure result when workers are unavailable.
+- Before the first write that would replace a migrated or version-upgraded document, preserve the exact original content as `<base>.backup-v<old-version>.svg`. Creation uses the public Vault boundary and is read back before replacement. If that collision-safe path already exists, it is accepted only when its content exactly equals the original; Inkbook never replaces a different existing backup. The verified backup is required exactly once per adopted upgraded source. A canonical stylesheet rewrite with no version upgrade does not create a migration backup.
+- Migration or unlock cancellation leaves the original untouched and the presentation static/read-only. Backup creation or verification failure prevents replacement and leaves the session in recovery-required state with the original still untouched.
 - Unknown properties in the current schema are rejected rather than silently discarded.
 
 ## Related Documentation

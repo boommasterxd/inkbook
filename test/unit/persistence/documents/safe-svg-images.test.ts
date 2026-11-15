@@ -20,6 +20,22 @@ import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snaps
 import { webpBytes } from "../../../fixtures/persistence/webp-images";
 import { createImageResource } from "../../../../src/persistence/images/image-resources";
 
+it("keeps a complete 16MP raster through SVG serialization, safe validation and preview inspection", async () => {
+  const resource = await capacityImageResource(0, 4000);
+  const element = {
+    ...imageElement(),
+    assetId: resource.id,
+    crop: { x: 0, y: 0, width: 4000, height: 4000 },
+  };
+  const svg = serializeSvgEnvelope(
+    { ...createWorkerSnapshot([element]), version: 5, imageResources: [resource] },
+    1000,
+    { background: [], images: [serializeImageMarkup(element)], highlights: [], content: [] },
+  );
+  expect(validateSafeSvg(svg)?.imageResources).toEqual([resource]);
+  expect(await inspectPreviewSvg(svg, { workScheduler: new TestWorkScheduler() })).not.toBeNull();
+});
+
 it.each(["lossless", "lossy", "alpha"] as const)(
   "retains a verified %s WebP data URL through safe SVG and locked preview inspection",
   async (kind) => {

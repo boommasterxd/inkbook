@@ -1,3 +1,4 @@
+import { createInputStaticMatcher, finishInputStaticMatcher } from "./input-static-matcher";
 import { StreamingSafeStaticValidator } from "./streaming-safe-static";
 import { SafeStaticProof } from "./safe-static-proof";
 import { StrokeSampleEncodingCache } from "../metadata/stroke-sample-encoding-cache";
@@ -34,7 +35,6 @@ import { prepareValidatedTextFontBindings } from "./validated-text-font-bindings
 import { ChunkedInputHash } from "./chunked-input-hash";
 import type { MigratedSnapshot } from "../metadata/document-migration";
 import type { DocumentCodecResult, ParsedInkbookDocument } from "../types";
-import { StreamingStaticIntegrityMatcher } from "./streaming-static-integrity";
 import {
   StreamingSvgMetadataParser,
   type CompleteStreamingSvgMetadata,
@@ -46,8 +46,6 @@ const METADATA_INPUT_CODE_UNITS_PER_STEP = 16 * 1024;
 const IMMEDIATE_CHUNKED_INPUT_CHECKPOINT: ChunkedInputCheckpoint = () => undefined;
 
 export type { ChunkedInkbookInputOptions, ChunkedInputCheckpoint };
-
-/** Incrementally decodes bounded input and drives safe-SVG and snapshot validation steps. */
 export class ChunkedInkbookInputParser {
   readonly #checkpoint: ChunkedInputCheckpoint;
   readonly #decoder = new TextDecoder("utf-8", { fatal: true });
@@ -70,7 +68,7 @@ export class ChunkedInkbookInputParser {
   #prelude: SafeSvgPrelude | null = null;
   #runtimeSnapshot: InkSnapshotV1 | null = null;
   #state: "cancelled" | "collecting" | "finishing" | "finished" = "collecting";
-  #staticMatcher: StreamingStaticIntegrityMatcher | StreamingSafeStaticValidator | null = null;
+  #staticMatcher: ReturnType<typeof createInputStaticMatcher> = null;
   #streamPhase: "metadata" | "prefix" | "static" = "prefix";
 
   public constructor(options: ChunkedInkbookInputOptions = {}) {
@@ -169,16 +167,19 @@ export class ChunkedInkbookInputParser {
       if (this.#failure !== null) return this.#failure;
       const flushed = await this.#flushDecoder();
       if (!flushed.ok) return flushed;
+      const staticResult = await finishInputStaticMatcher(
+        this.#staticMatcher,
+        this.#safeStaticProof,
+        () => this.#runCheckpoint() ?? undefined,
+      );
+      if (!staticResult.ok) return staticResult;
       if (
         this.#streamPhase !== "static" ||
-        (this.#safeStaticProof === undefined &&
-          (this.#staticMatcher === null || !this.#staticMatcher.finish())) ||
         this.#migrated === null ||
         this.#runtimeSnapshot === null ||
         this.#prelude === null
-      ) {
+      )
         return failure("invalid-svg", "Document does not satisfy the safe SVG envelope.");
-      }
       await this.#adoption.finish();
       this.#throwIfCancelled();
       const beforeHash = this.#runCheckpoint();
@@ -434,16 +435,13 @@ export class ChunkedInkbookInputParser {
       return failure("static-path-mismatch", "Static SVG background exceeds the canonical limit.");
     }
     this.#migrated = migrated;
-    this.#staticMatcher =
-      this.#safeStaticProof !== undefined
-        ? null
-        : this.#staticValidation === "safe"
-          ? new StreamingSafeStaticValidator(
-              () => this.#runCheckpoint() ?? undefined,
-              prelude.version,
-              prelude.imageResources ?? [],
-            )
-          : new StreamingStaticIntegrityMatcher(snapshot, prelude.lockedHeight);
+    this.#staticMatcher = createInputStaticMatcher({
+      checkpoint: () => this.#runCheckpoint() ?? undefined,
+      prelude,
+      proof: this.#safeStaticProof,
+      snapshot,
+      validation: this.#staticValidation,
+    });
     this.#runtimeSnapshot = bound.value.snapshot;
     if (bound.value.requiresCanonicalRewrite)
       this.#prelude = { ...prelude, requiresCanonicalRewrite: true };
@@ -488,11 +486,13 @@ export class ChunkedInkbookInputParser {
   }
 
   #releaseBuffers(): void {
+    this.#maximumStaticChunkCharacters = this.maximumRetainedStaticInputCharacters;
     this.#stagedSampleEncodings?.clear();
     this.#inputHash.release();
     this.#metadata.release();
     this.#prefix.clear();
     this.#prelude = null;
+    this.#staticMatcher = null;
   }
   #markFinished(): void {
     if (this.#state !== "cancelled") this.#state = "finished";

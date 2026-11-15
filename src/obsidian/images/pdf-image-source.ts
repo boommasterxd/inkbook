@@ -34,9 +34,16 @@ interface PdfLibrary {
   getDocument(options: Record<string, unknown>): unknown;
 }
 
+export interface PdfImageResolution {
+  readonly page: number;
+  readonly dpi: number;
+  readonly limited: boolean;
+}
+
 /** A single owned PDF loading task. Rendering is serialized by the caller. */
 export interface PdfImageSource {
   readonly pageCount: number;
+  readonly resolution?: PdfImageResolution | undefined;
   render(
     page: number,
     options: ImageRasterOptions & { readonly scale?: number },
@@ -97,6 +104,7 @@ export async function openPdfImageSource(
   const task = rawTask as unknown as PdfLoadingTask;
   let disposed = false;
   let rendering: PdfRenderTask | undefined;
+  let resolution: PdfImageResolution | undefined;
   const dispose = async (): Promise<void> => {
     if (disposed) return;
     disposed = true;
@@ -121,6 +129,9 @@ export async function openPdfImageSource(
     const document = rawDocument as unknown as PdfDocument;
     return {
       pageCount: document.numPages,
+      get resolution() {
+        return resolution;
+      },
       dispose,
       render: async (number, options) => {
         if (disposed || rendering !== undefined)
@@ -132,7 +143,7 @@ export async function openPdfImageSource(
           throw new Error("The host PDF page is incompatible.");
         const page = rawPage as unknown as PdfPage;
         try {
-          return await rasterizePdfPage(
+          const prepared = await rasterizePdfPage(
             page,
             options,
             (active) => {
@@ -140,6 +151,8 @@ export async function openPdfImageSource(
             },
             () => disposed,
           );
+          resolution = { page: number, dpi: prepared.dpi, limited: prepared.limited };
+          return prepared.resource;
         } finally {
           rendering = undefined;
           page.cleanup();
@@ -157,7 +170,11 @@ async function rasterizePdfPage(
   options: ImageRasterOptions & { readonly scale?: number },
   active: (task: PdfRenderTask | undefined) => void,
   disposed: () => boolean,
-): Promise<ImageResourceV3> {
+): Promise<{
+  readonly resource: ImageResourceV3;
+  readonly dpi: number;
+  readonly limited: boolean;
+}> {
   options.signal.throwIfAborted();
   if (disposed()) throw new Error("PDF source is closed.");
   const unit = page.getViewport({ scale: 1 });
@@ -168,7 +185,13 @@ async function rasterizePdfPage(
     unit.height <= 0
   )
     throw new RangeError("Invalid PDF page dimensions.");
-  const { scale } = fitImageRasterSize(unit.width, unit.height, options.scale ?? 2);
+  const requestedScale = options.scale ?? 2;
+  const { scale } = fitImageRasterSize(
+    unit.width,
+    unit.height,
+    requestedScale,
+    options.maximumPixels,
+  );
   const viewport = page.getViewport({ scale });
   const canvas = options.document.createElement("canvas");
   let task: PdfRenderTask | undefined;
@@ -187,7 +210,8 @@ async function rasterizePdfPage(
     active(task);
     await task.promise;
     options.signal.throwIfAborted();
-    return await encodeImageCanvas(canvas, "image/png", options);
+    const resource = await encodeImageCanvas(canvas, "image/png", options);
+    return { resource, dpi: 72 * scale, limited: scale + 1e-9 < requestedScale };
   } finally {
     options.signal.removeEventListener("abort", abort);
     active(undefined);

@@ -77,3 +77,22 @@ it("counts retained unique assets against the pixel budget and rejects an overfl
   expect(images.resource(assets[8]!.id)).toBeUndefined();
   expect(images.changes).toBeUndefined();
 });
+
+it("admits two Ultra resources without increasing the retained session pixel capacity", async () => {
+  const images = new SessionImageResources(snapshot([]));
+  const context = { active: () => true, scheduler: new TestWorkScheduler() };
+  const assets = await Promise.all([
+    capacityImageResource(0, 4000),
+    capacityImageResource(1, 4000),
+  ]);
+  await images.add(assets, context);
+  const retained = images.resources;
+  expect(retained).toEqual(assets);
+  expect(retained.reduce((sum, asset) => sum + asset.width * asset.height, 0)).toBe(
+    IMAGE_LIMITS.documentPixels,
+  );
+  await expect(images.add([await validImageResource()], context)).rejects.toThrow(
+    "including retained history",
+  );
+  expect(images.resources).toBe(retained);
+});

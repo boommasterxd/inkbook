@@ -22,6 +22,8 @@ import {
 type UnknownRecord = Record<string, unknown>;
 
 const RGBA_COLORS = new Set([
+  "#000000FF",
+  "#FFFFFFFF",
   "#EF4444FF",
   "#F97316FF",
   "#EAB308FF",

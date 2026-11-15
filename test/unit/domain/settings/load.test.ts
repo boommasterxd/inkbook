@@ -150,7 +150,7 @@ describe("vault settings field loading", () => {
   });
 
   it.each([
-    ["unlisted color", { type: "rgba", value: "#FFFFFFFF" }],
+    ["unlisted color", { type: "rgba", value: "#123456FF" }],
     ["malformed color", { type: "rgba", value: "#EF4444" }],
     ["color with an unknown property", { type: "theme-text", extra: true }],
   ])("rejects an %s", (_label, color) => {

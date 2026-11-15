@@ -19,6 +19,8 @@ import {
 } from "../../../../src/persistence/worker/runtime/wire/wire-codec";
 import { ClipboardAdoptionGuard } from "../../../../src/obsidian/embeds/active-editor/clipboard-adoption-guard";
 import * as elementCopy from "../../../../src/domain/elements/runtime-element-copy";
+import { prepareClipboardTextInkBounds } from "../../../../src/obsidian/embeds/active-editor/clipboard-text-preparation";
+import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 
 function clipboardCapacityWire() {
   const elements = createClipboardLimitFixture();
@@ -213,7 +215,7 @@ describe("validated model paste work", () => {
       validation.mockRestore();
     }
   });
-  it("plans a small paste into 10,000 strokes without rescanning existing geometry", () => {
+  it("plans a small paste into 10,000 strokes without rescanning existing geometry or reading native text state", async () => {
     const snapshot = createStandardPersistenceFixture();
     const model = new DocumentModelRuntime();
     model.initialize(snapshot);
@@ -233,7 +235,28 @@ describe("validated model paste work", () => {
     );
 
     expect(plan.ok).toBe(true);
-    if (plan.ok) expect(plan.value.elements).toHaveLength(1);
+    if (plan.ok) {
+      expect(plan.value.elements).toHaveLength(1);
+      const nativeReads = vi.fn(() => {
+        throw new Error("Unexpected native text access.");
+      });
+      const fonts = vi.fn(() => []);
+      const ownerWindow = Object.defineProperty({}, "document", { get: nativeReads }) as Window;
+      expect(
+        await prepareClipboardTextInkBounds(plan.value, {
+          ownerWindow,
+          model: {
+            get fontResources() {
+              return fonts();
+            },
+          },
+          scheduler: new TestWorkScheduler(),
+          cancelled: () => false,
+        }),
+      ).toBe(plan.value);
+      expect(nativeReads).not.toHaveBeenCalled();
+      expect(fonts).not.toHaveBeenCalled();
+    }
     expect(bounds.mock.calls.length).toBeLessThanOrEqual(2);
     expect(snapshots).toHaveBeenCalledTimes(0);
     expect(model.instrumentation.fullValidationRuns).toBe(1);

@@ -6,6 +6,7 @@ import {
 import type { Bounds } from "../../../domain/geometry/primitives";
 import { intersects } from "../visibility/visibility-bounds";
 import type { PendingElementFade as PendingFade } from "./scene-motion-types";
+import { SceneImageFades } from "./scene-image-fades";
 import {
   elementFadePresentation,
   elementFadeTarget,
@@ -30,6 +31,7 @@ interface EntranceFinish {
 
 /** Starts element feedback in bounded batches without truncating queued exits. */
 export class SceneElementFades {
+  readonly #images = new SceneImageFades();
   readonly #pending = new Map<string, PendingFade>();
   readonly #visibleMemberships = new Map<string, PendingFade>();
   readonly #finishes = new Map<string, PendingFade>();
@@ -115,12 +117,14 @@ export class SceneElementFades {
   public get pending(): boolean {
     return (
       this.#pending.size + this.#entranceFinishes.size > 0 ||
+      this.#images.pending ||
       this.#settlingExits !== undefined ||
       this.#prune !== undefined
     );
   }
   public memoryUsage(): number {
     return (
+      this.#images.memoryUsage() +
       (this.#pending.size + this.#entrances.size + this.#entranceFinishes.size) * 64 +
       (this.#memberships.size + this.#finishes.size + this.#generations.size) * 48 +
       this.#finishes.size * 64 + // Retained PendingFade records, including shared partial exits.
@@ -190,6 +194,7 @@ export class SceneElementFades {
   public interruptMembership(): void {
     if (!this.#generations.has(this.#generation)) return;
     this.membershipGate?.(this.#generation, true);
+    this.#images.interrupt(this.#generation);
     this.#interruptedThrough = this.#generation;
     this.#generation += 1;
   }
@@ -199,6 +204,7 @@ export class SceneElementFades {
   public flush(deadline: number, now: () => number): boolean {
     this.settleExits(deadline, now);
     this.write(deadline, now);
+    this.#images.advance(deadline, now);
     this.cleanupEntrances(deadline, now);
     this.pruneEntrances(deadline, now);
     this.#remaining = FADE_NODES_PER_FRAME;
@@ -233,6 +239,7 @@ export class SceneElementFades {
       : (this.#finishes.get(id)?.finish ?? 0);
   }
   public release(): void {
+    this.#images.release();
     for (const entry of this.mounted.values())
       if (entry.fadeActive) setMountedElementFade(entry, null);
     this.#pending.clear();
@@ -342,7 +349,7 @@ export class SceneElementFades {
     do {
       const node = elementFadeTarget(entry, fade.index, presentation);
       if (node !== undefined) {
-        setElementFadeNode(node, duration, presentation, fade.direction, fade.generation);
+        this.#images.apply(node, duration, presentation, fade, now);
         if (node.style.getPropertyValue("visibility")) node.style.removeProperty("visibility");
       }
       if (entry.group?.style.getPropertyValue("visibility"))

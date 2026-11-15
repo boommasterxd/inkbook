@@ -11,8 +11,8 @@ const IMAGE_PREFIX =
 
 export function hasSafeImageBand(input: string, version: number): boolean {
   return (
-    (version >= 3 && version <= 4) ||
-    (version > 4 && input.includes('<g id="inkbook-images-band">'))
+    (version >= 3 && version <= 5) ||
+    (version > 5 && input.includes('<g id="inkbook-images-band">'))
   );
 }
 
@@ -96,26 +96,24 @@ export function parseSafeImageInstance(
   input: string,
   start: number,
   resources: ReadonlyMap<string, Pick<ImageResourceV3, "width" | "height">>,
+  allowContrastOverride = false,
 ): SafeImageInstance | null {
   const source = input.slice(start, start + 4096);
-  const parsed = parseImageInstanceMarkup(source, resources);
+  const parsed = parseImageInstanceMarkup(source, resources, allowContrastOverride);
   return parsed === null ? null : { ...parsed, next: start + parsed.next };
 }
 
 function parseImageInstanceMarkup(
   input: string,
   resources: ReadonlyMap<string, Pick<ImageResourceV3, "width" | "height">>,
+  allowContrastOverride: boolean,
 ): SafeImageInstance | null {
   const group = parseOpeningTag(input, 0);
   if (!isImageTransformGroup(group)) return null;
   const svg = parseOpeningTag(input, skipWhitespace(input, group.next));
   if (svg?.name !== "svg" || svg.selfClosing || !validImageViewport(svg.attributes)) return null;
   const use = parseOpeningTag(input, skipWhitespace(input, svg.next));
-  if (use?.name !== "use" || !use.selfClosing || use.attributes.size !== 1) return null;
-  const href = use.attributes.get("href");
-  const resource =
-    href?.startsWith("#inkbook-image-") === true ? resources.get(href.slice(15)) : undefined;
-  if (resource === undefined || !validCrop(svg.attributes.get("viewBox")!, resource)) return null;
+  if (use === null || !validImageLeaf(use, svg, resources, allowContrastOverride)) return null;
   let cursor = skipWhitespace(input, use.next);
   if (!input.startsWith("</svg>", cursor)) return null;
   cursor = skipWhitespace(input, cursor + 6);
@@ -125,6 +123,31 @@ function parseImageInstanceMarkup(
     next: cursor + 4,
     ...imageVerticalBounds(group.attributes.get("transform")!, svg.attributes),
   };
+}
+
+function validImageLeaf(
+  leaf: NonNullable<ReturnType<typeof parseOpeningTag>>,
+  viewport: NonNullable<ReturnType<typeof parseOpeningTag>>,
+  resources: ReadonlyMap<string, Pick<ImageResourceV3, "width" | "height">>,
+  allowContrastOverride: boolean,
+): boolean {
+  if (!leaf.selfClosing) return false;
+  if (allowContrastOverride && leaf.name === "rect") {
+    const [x, y, width, height] = viewport.attributes.get("viewBox")!.split(" ");
+    const fill = leaf.attributes.get("fill");
+    return (
+      (fill === "#000000FF" || fill === "#FFFFFFFF") &&
+      hasExactAttributes(leaf.attributes, { x: x!, y: y!, width: width!, height: height!, fill }) &&
+      validCrop(viewport.attributes.get("viewBox")!, {
+        width: IMAGE_LIMITS.resourceAxis,
+        height: IMAGE_LIMITS.resourceAxis,
+      })
+    );
+  }
+  if (leaf.name !== "use" || leaf.attributes.size !== 1) return false;
+  const href = leaf.attributes.get("href");
+  const resource = href?.startsWith("#inkbook-image-") ? resources.get(href.slice(15)) : undefined;
+  return resource !== undefined && validCrop(viewport.attributes.get("viewBox")!, resource);
 }
 
 function validImageViewport(attributes: ReadonlyMap<string, string>): boolean {

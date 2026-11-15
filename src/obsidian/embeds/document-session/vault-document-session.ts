@@ -304,7 +304,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
   });
   #adoptLoadedDocument(loaded: loader.LoadedVaultDocument, executor: DocumentRuntimePort): void {
     const { snapshot, outputHash, requiresCanonicalRewrite, store, sourceVersion } = loaded;
-    this.#migrationBackup.version = sourceVersion < snapshot.version ? sourceVersion : undefined;
+    const outputVersion = store.bandSize("image") > 0 ? 5 : snapshot.version;
+    this.#migrationBackup.version = sourceVersion < outputVersion ? sourceVersion : undefined;
     const fonts = new fontState.SessionFontResources(snapshot);
     const images = new SessionImageResources(snapshot);
     this.#page = snapshot.page;
@@ -387,8 +388,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       state: {
         fontResources: () => fonts.resources,
         imageResources: () => images.resources,
-        formatVersion: () =>
-          fonts.version === 4 ? 4 : images.resources.length > 0 ? 3 : fonts.version,
+        formatVersion: () => (images.resources.length > 0 ? 5 : fonts.version),
         mutationAvailability: () =>
           this.#revision < Number.MAX_SAFE_INTEGER ? "available" : "revision-exhausted",
         page: () => modelPorts.requireVaultPage(this.#page),

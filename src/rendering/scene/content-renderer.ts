@@ -26,10 +26,13 @@ type ContentOptions = ScenePreparationOptions & {
   readonly canPrepareGeometry?: () => boolean;
   readonly zoom?: () => number;
 };
+type CanonicalPreviewArguments = Parameters<
+  SceneGeometryPublication["applyCanonicalElementPreview"]
+>;
 import type { SceneVisibilityPriority } from "./visibility/scene-entrant-priority";
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
-
 export class SceneContentRenderer {
+  public readonly paintReady: (id: string) => boolean;
   public onTextElementStateChanged: (id: string, state: "published" | "removed") => void = () =>
     undefined;
   #pinnedTextId: string | undefined;
@@ -75,6 +78,7 @@ export class SceneContentRenderer {
     options: ContentOptions = {},
   ) {
     this.#dom = dom;
+    this.paintReady = (id) => dom.autoPaint.ready(this.#mounted.get(id));
     this.#detachedCache = options.detachedCache;
     this.#selectionTraces = new SceneSelectionTraces(
       dom.selectionTraceGroup,
@@ -182,7 +186,7 @@ export class SceneContentRenderer {
   public previewMemoryUsage(): number {
     return (
       // Reserve one six-coefficient preview matrix per mounted entry, including aliases.
-      this.#mounted.size * 6 * 8 +
+      this.#mounted.size * (6 * 8 + 40) +
       this.#selectionTraces.memoryUsage() +
       this.#selectionRuns.memoryUsage() +
       this.#publication.memoryUsage() +
@@ -197,15 +201,14 @@ export class SceneContentRenderer {
   public previewMountedIds(context?: PreviewMembershipContext): Iterable<string> {
     return mountedPreviewIds(this.#mounted, this.#visibility, context);
   }
-  public hasMounted(id: string): boolean {
-    return this.#mounted.has(id);
-  }
+  public readonly hasMounted = (id: string): boolean => this.#mounted.has(id);
   public mountedText(id: string) {
     return this.#mounted.get(id)?.text;
   }
   public mountedImageRoot(id: string): SVGGElement | undefined {
     return this.#mounted.get(id)?.image?.group;
   }
+  public readonly mountedBounds = (id: string): Bounds | undefined => this.#mounted.get(id)?.bounds;
   public textMotionSnapshot(element: InkElementV1, maximumNodes: number, maximumBytes: number) {
     return element.kind === "text"
       ? this.#mounted.get(element.id)?.text?.motionSnapshot(element, maximumNodes, maximumBytes)
@@ -385,11 +388,8 @@ export class SceneContentRenderer {
   public readCanonicalStrokePath(element: InkElementV1): readonly SvgPathPart[] | undefined {
     return this.#publication.readCanonicalStrokePath(element);
   }
-  public applyCanonicalElementPreview(
-    element: InkElementV1,
-    parts: readonly SvgPathPart[],
-  ): boolean {
-    return this.#publication.applyCanonicalElementPreview(element, parts);
+  public applyCanonicalElementPreview(...args: CanonicalPreviewArguments): boolean {
+    return this.#publication.applyCanonicalElementPreview(...args);
   }
   public clearElementPreview(id: string): void {
     this.#publication.clearElementPreview(id);

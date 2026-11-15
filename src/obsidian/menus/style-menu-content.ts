@@ -11,6 +11,7 @@ import type { StyleChoiceOption, StyleControl } from "./editor-menu-types";
 import { OPACITY_ICON_ID, PRESSURE_SENSITIVITY_ICON_ID } from "../../rendering/ui/icon-ids";
 import { configureMenuTooltips, menuDomWindow } from "./menu-dom";
 import { createStyleControlSync } from "./style-control-sync";
+import { NeutralColorChoice } from "./neutral-color-choice";
 import { formatStyleNumber, valueCharacterWidth } from "./style-number-format";
 import {
   createStyleToggleButtons,
@@ -28,6 +29,7 @@ export interface StyleMenuContentOptions
   readonly controls: readonly StyleControl[];
   readonly numberInputMode?: "clamp" | "reject";
   readonly ownerDocument: Document;
+  readonly mutateLayout?: ((update: () => void) => void) | undefined;
   readonly onChange: (controlId: string, value: boolean | number | string) => void;
   readonly onPreview?: ((controlId: string, value: boolean | number | string) => void) | undefined;
   readonly onInvalidValue?: (controlId: string) => void;
@@ -190,9 +192,28 @@ function createChoices(
     body.classList.add("inkbook-menu-selection-inclusion-grid");
   }
   const valueLabel = field.querySelector<HTMLElement>(".inkbook-menu-control-value-label");
+  const neutral =
+    control.id.endsWith("color") && control.options.some(({ value }) => value === "theme-text")
+      ? new NeutralColorChoice(field, body, control, options)
+      : undefined;
+  const choiceOptions =
+    neutral === undefined
+      ? options
+      : {
+          ...options,
+          onChange: (id: string, value: boolean | number | string): void => {
+            neutral.setValue(String(value));
+            options.onChange(id, value);
+          },
+        };
   for (const option of control.options) {
-    body.append(createChoiceButton(options, control, option, valueLabel));
+    body.append(
+      option.value === "theme-text" && neutral !== undefined
+        ? neutral.trigger
+        : createChoiceButton(choiceOptions, control, option, valueLabel),
+    );
   }
+  neutral?.setValue(control.value);
   return field;
 }
 

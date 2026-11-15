@@ -82,10 +82,10 @@ it("admits only lossless WebP when encoding requires pixel fidelity", async () =
   ).resolves.toMatchObject({ mimeType: "image/webp", width: 3, height: 2 });
 });
 
-it("keeps persisted raster resources limited to 4MP despite larger source admission", async () => {
+it("keeps persisted raster resources limited to 16MP despite larger source admission", async () => {
   const resource = rasterResource();
   const bytes = Uint8Array.from(atob(resource.data), (character) => character.charCodeAt(0));
   await expect(
-    createImageResource(imageHeaderBytes(bytes, 2001, 2000), "image/png", new TestWorkScheduler()),
+    createImageResource(imageHeaderBytes(bytes, 4001, 4000), "image/png", new TestWorkScheduler()),
   ).rejects.toMatchObject({ reason: "dimensions" });
 });

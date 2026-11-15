@@ -2,6 +2,10 @@ export const inkImport = {
   "import.title": "Aus Obsidian Ink importieren",
   "import.close": "Schließen",
   "import.scan": "Vault durchsuchen",
+  "import.scanAgain": "Erneut suchen",
+  "import.emptyHeading": "Keine unterstützte Handschrift gefunden",
+  "import.emptyDescription": "Gesucht wird in den Handschrift-Verweisen deiner Notizen.",
+  "import.scanEmptyStatus": "Keine unterstützte Handschrift gefunden. Du kannst erneut suchen.",
   "import.back": "Zurück",
   "import.import": "Handschrift importieren",
   "import.scanPending": "Vault wird durchsucht…",
@@ -33,8 +37,9 @@ export const inkImport = {
   "import.stop": "Stoppen",
   "import.stoppingStatus": "Wird nach dem aktuellen sicheren Schritt gestoppt…",
   "import.entryHeading": "Importiere deine Handschrift",
-  "import.entrySummary":
-    "Behalte deine bestehenden Notizen und bearbeite ihre Handschrift in Inkbook.",
+  "import.entrySummary": "Finde unterstützte Handschrift, ohne deine Dateien zu verändern.",
+  "import.entryHelp": "Beispiele und Ablauf",
+  "import.entryHelpDescription": "Vergleiche die Darstellung und erfahre, wie der Import abläuft.",
   "import.controlTitle": "Du behältst die Kontrolle",
   "import.controlDescription":
     "Originaldateien bleiben erhalten, Zeichenflächen bleiben unverändert und du kannst den Import später rückgängig machen.",

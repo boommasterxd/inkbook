@@ -1,6 +1,6 @@
 export interface InkSnapshotV1 {
   format: "inkbook";
-  version: 1 | 2 | 3 | 4;
+  version: 1 | 2 | 3 | 4 | 5;
   revision: number;
   page: PageV1;
   elements: InkElementV1[];
@@ -200,6 +200,8 @@ export interface TextLayoutRunV2 {
   end: number;
   x: number;
   width: number;
+  /** Measured glyph bounds relative to the run origin and baseline, after textLength scaling. */
+  inkBounds?: { minX: number; minY: number; maxX: number; maxY: number };
   style?: TextRangeStyleV2;
 }
 
@@ -294,6 +296,7 @@ export interface ImageElementV3 extends ElementBaseV1 {
   height: number;
   assetId: string;
   crop: ImageCropV3;
+  contrast?: "light" | "dark";
 }
 
 export type InkElementV1 =
@@ -325,7 +328,7 @@ export interface ClipboardElementV1 {
 
 export interface InkClipboardV1 {
   format: "inkbook-elements";
-  version: 1 | 2 | 3 | 4;
+  version: 1 | 2 | 3 | 4 | 5;
   elements: ClipboardElementV1[];
   fontResources?: FontResourceV2[];
   imageResources?: ImageResourceV3[];

@@ -11,6 +11,9 @@ import {
   serializeCanonicalElementMetadataSteps,
 } from "../metadata/canonical-element-fragments";
 import { serializedPathDataByteLength, serializeElementPaths, serializeParts } from "./path-markup";
+import type { Bounds } from "../../../domain/geometry/primitives";
+import { elementFactBounds, type ElementFacts } from "./incremental-validation";
+import type { AutoPaintServer } from "./auto-contrast-servers";
 
 const decoder = new TextDecoder();
 interface FragmentEncoding {
@@ -19,7 +22,21 @@ interface FragmentEncoding {
   readonly svgUtf8: Uint8Array<ArrayBuffer>;
 }
 
+export interface AutoPresentation {
+  readonly servers: readonly AutoPaintServer[];
+  readonly chunks: readonly Uint8Array[];
+  readonly bytes: number;
+  readonly retainedBytes: number;
+}
+
 export interface ElementFragments {
+  readonly autoPresentation?: AutoPresentation | null | undefined;
+  readonly bounds?: Bounds | undefined;
+  readonly presentation?:
+    | {
+        readonly chunks: readonly Uint8Array[];
+      }
+    | undefined;
   readonly bottom: number;
   readonly bytes: number;
   readonly canonicalMetadata: string;
@@ -44,11 +61,21 @@ export function elementRenderBand(element: InkElementV1): RenderBand {
 
 export function buildElementFragments(
   element: InkElementV1,
-  bottom = calculateElementBounds(element).maxY,
+  bottom: number | ElementFacts = calculateElementBounds(element).maxY,
   shapeCache?: StrokeShapeCache,
   sampleCache?: StrokeSampleEncodingCache,
+  bounds?: Bounds,
 ): ElementFragments {
-  const steps = elementFragmentSteps(element, bottom, shapeCache, sampleCache, undefined, true);
+  const steps = elementFragmentSteps(
+    element,
+    typeof bottom === "number" ? bottom : bottom.bottom,
+    shapeCache,
+    sampleCache,
+    {
+      synchronous: true,
+      bounds: bounds ?? elementFactBounds(element, typeof bottom === "number" ? undefined : bottom),
+    },
+  );
   let step = steps.next();
   while (!step.done) step = steps.next();
   return step.value;
@@ -57,12 +84,23 @@ export function buildElementFragments(
 /** Yield markers offer scheduler checkpoints; they never require a task handoff. */
 export function* buildElementFragmentsSteps(
   element: InkElementV1,
-  bottom: number,
+  bottom: number | ElementFacts,
   shapeCache?: StrokeShapeCache,
   sampleCache?: StrokeSampleEncodingCache,
   signal?: AbortSignal,
+  bounds?: Bounds,
 ): Generator<void, ElementFragments> {
-  return yield* elementFragmentSteps(element, bottom, shapeCache, sampleCache, signal, false);
+  return yield* elementFragmentSteps(
+    element,
+    typeof bottom === "number" ? bottom : bottom.bottom,
+    shapeCache,
+    sampleCache,
+    {
+      synchronous: false,
+      signal,
+      bounds: bounds ?? elementFactBounds(element, typeof bottom === "number" ? undefined : bottom),
+    },
+  );
 }
 
 function* elementFragmentSteps(
@@ -70,9 +108,13 @@ function* elementFragmentSteps(
   bottom: number,
   shapeCache: StrokeShapeCache | undefined,
   sampleCache: StrokeSampleEncodingCache | undefined,
-  signal: AbortSignal | undefined,
-  synchronous: boolean,
+  options: {
+    readonly signal?: AbortSignal | undefined;
+    readonly synchronous: boolean;
+    readonly bounds?: Bounds | undefined;
+  },
 ): Generator<void, ElementFragments> {
+  const { signal, synchronous } = options;
   signal?.throwIfAborted();
   const canonicalMetadata = synchronous
     ? serializeCanonicalElementMetadata(element, sampleCache)
@@ -116,7 +158,7 @@ function* elementFragmentSteps(
     canonicalMetadata,
     metadata,
     svg,
-    { bytes, ranges, encoding },
+    { bytes, ranges, encoding, bounds: options.bounds },
     bottom,
   );
 }
@@ -182,6 +224,7 @@ function elementFragments(
     readonly bytes: number;
     readonly ranges: readonly StrokeFragmentPathRange[] | undefined;
     readonly encoding?: FragmentEncoding | undefined;
+    readonly bounds?: Bounds | undefined;
   },
   bottom: number,
 ): ElementFragments {
@@ -196,6 +239,7 @@ function elementFragments(
   const metadataBytes = metadataUtf8.byteLength;
   const bytes = metadataBytes + svgUtf8.byteLength;
   return {
+    ...(paths.bounds === undefined ? {} : { bounds: paths.bounds }),
     bottom,
     bytes,
     get canonicalMetadata() {

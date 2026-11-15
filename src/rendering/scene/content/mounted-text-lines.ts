@@ -7,6 +7,8 @@ import type {
 } from "../../../domain/schema/types";
 import { MAX_MOTION_PATHS, SVG_NAMESPACE } from "../constants";
 import { TextLineIndex } from "./text-line-index";
+import { writeAutoPaintBounds } from "./auto-paint-bounds";
+import { textRunPaintBounds } from "../../../domain/geometry/text-paint-bounds";
 
 interface LineNode {
   readonly line: TextLayoutLineV2;
@@ -119,6 +121,11 @@ export class MountedTextLines {
     write(root, "xml:space", "preserve");
     for (const run of line.runs) {
       const span = document.createElementNS(SVG_NAMESPACE, "tspan");
+      if ((run.style?.color ?? this.element.style.color).type === "theme-text")
+        writeAutoPaintBounds(
+          span,
+          run.inkBounds === undefined ? undefined : textRunPaintBounds(this.element, line, run),
+        );
       write(span, "x", String(this.element.x + line.x + run.x));
       write(span, "y", String(this.element.y + line.y + line.baseline));
       if (run.text.length && run.width > 0) {

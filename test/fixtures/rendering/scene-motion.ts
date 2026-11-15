@@ -5,6 +5,7 @@ import type { SceneDom } from "../../../src/rendering/scene/scene-dom";
 import { createInstrumentation } from "../../../src/rendering/scene/instrumentation";
 import { SceneMotionController } from "../../../src/rendering/scene/presentation/scene-motion-controller";
 import { FakeDocument, FakeNode, fakeRectangleRecord } from "../../unit/rendering/scene/fakes";
+import type { Bounds } from "../../../src/domain/geometry/primitives";
 
 export function createMotionHarness(count: number, budget: number) {
   let time = 0;
@@ -18,6 +19,7 @@ export function createMotionHarness(count: number, budget: number) {
     clearElementPreview: vi.fn(),
     setElementMotion: vi.fn(),
     readCanonicalStrokePath: () => undefined,
+    mountedBounds: vi.fn<() => Bounds | undefined>(() => undefined),
   };
   const document = new FakeDocument();
   const dom = {

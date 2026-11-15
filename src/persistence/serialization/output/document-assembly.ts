@@ -1,4 +1,9 @@
-import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
+import type {
+  ImageElementV3,
+  InkElementV1,
+  InkSnapshotV1,
+  PageV1,
+} from "../../../domain/schema/public";
 import { elementSnapshotVersion } from "../../../domain/schema/snapshot-version";
 import { serializeSvgNumber } from "../../documents/svg-number";
 import { CANONICAL_THEME_STYLESHEET } from "../../documents/svg-theme";
@@ -8,9 +13,16 @@ import { encodedByteLength } from "./encoded-byte-budget";
 import { COMPACT_METADATA_ENCODING } from "../metadata/stroke-sample-codec";
 import { imageDefinitionsFragments } from "./image-markup";
 import { fontStylesheetMarkupFragments } from "./text-fonts";
+import { autoDefinitionsFragments } from "./auto-contrast-definitions";
+import {
+  autoPaintDefinitionsFragments,
+  type AutoPaintServerRegistry,
+} from "./auto-contrast-servers";
 
 interface FragmentAssembly<T> {
+  readonly autoPaints?: AutoPaintServerRegistry;
   readonly snapshot?: InkSnapshotV1;
+  readonly underlayImages?: readonly ImageElementV3[];
   readonly image?: Iterable<T>;
   readonly content: Iterable<T>;
   readonly highlight: Iterable<T>;
@@ -66,6 +78,8 @@ function* assembleDocumentFragments<T>(
     envelope.lockedHeight,
     envelope.metadataHash,
     assembly.snapshot,
+    assembly.underlayImages,
+    assembly.autoPaints,
   ))
     yield encode(fragment);
   yield encode(envelope.metadataPrefix);
@@ -95,6 +109,7 @@ export function documentStaticByteLength(
   metadataPrefix: string,
   background: string,
   snapshot?: InkSnapshotV1,
+  underlayImages?: readonly ImageElementV3[],
 ): number {
   return [
     // All trusted envelope, CSS and Base64 resource tokens are ASCII.
@@ -108,7 +123,7 @@ export function documentStaticByteLength(
     "</g></svg>",
   ].reduce(
     (bytes, fragment) => bytes + encodedByteLength(fragment),
-    [...rootFragments(revision, lockedHeight, "0".repeat(64), snapshot)].reduce(
+    [...rootFragments(revision, lockedHeight, "0".repeat(64), snapshot, underlayImages)].reduce(
       (bytes, fragment) => bytes + fragment.length,
       0,
     ),
@@ -162,13 +177,20 @@ export function orderedSnapshotValue(
 export function envelope(
   revision: number,
   lockedHeight: number,
-  metadata: Readonly<{ hash: string; text: string; snapshot?: InkSnapshotV1; images?: string }>,
+  metadata: Readonly<{
+    hash: string;
+    text: string;
+    snapshot?: InkSnapshotV1;
+    images?: string;
+    underlayImages?: readonly ImageElementV3[];
+    autoPaints?: AutoPaintServerRegistry;
+  }>,
   background: string,
   highlights: string,
   content: string,
 ): string {
   return (
-    `${rootPrefix(revision, lockedHeight, metadata.hash, metadata.snapshot)}${metadata.text}</metadata>` +
+    `${rootPrefix(revision, lockedHeight, metadata.hash, metadata.snapshot, metadata.underlayImages, metadata.autoPaints)}${metadata.text}</metadata>` +
     `<g id="inkbook-background">${background}</g>` +
     ((metadata.snapshot?.version ?? 1) >= 3
       ? `<g id="inkbook-images-band">${metadata.images ?? ""}</g>`
@@ -183,8 +205,12 @@ function rootPrefix(
   lockedHeight: number,
   metadataHash: string,
   snapshot?: InkSnapshotV1,
+  underlayImages?: readonly ImageElementV3[],
+  autoPaints?: AutoPaintServerRegistry,
 ): string {
-  return [...rootFragments(revision, lockedHeight, metadataHash, snapshot)].join("");
+  return [
+    ...rootFragments(revision, lockedHeight, metadataHash, snapshot, underlayImages, autoPaints),
+  ].join("");
 }
 
 function* rootFragments(
@@ -192,6 +218,8 @@ function* rootFragments(
   lockedHeight: number,
   metadataHash: string,
   snapshot?: InkSnapshotV1,
+  underlayImages?: readonly ImageElementV3[],
+  autoPaints?: AutoPaintServerRegistry,
 ): Iterable<string> {
   yield `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048.6 ${serializeSvgNumber(lockedHeight)}" ` +
     `data-inkbook-format="inkbook" data-inkbook-version="${snapshot?.version ?? 1}" data-inkbook-revision="${revision}" ` +
@@ -199,5 +227,7 @@ function* rootFragments(
     `<style id="inkbook-theme">${CANONICAL_THEME_STYLESHEET}</style>`;
   yield* fontStylesheetMarkupFragments(snapshot?.fontResources ?? []);
   yield* imageDefinitionsFragments(snapshot?.imageResources ?? []);
+  yield* autoDefinitionsFragments(snapshot, lockedHeight, underlayImages);
+  yield* autoPaintDefinitionsFragments(snapshot, autoPaints, underlayImages);
   yield `<metadata id="inkbook-snapshot" data-encoding="${COMPACT_METADATA_ENCODING}">`;
 }

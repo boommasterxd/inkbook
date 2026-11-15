@@ -9,7 +9,7 @@ export function* restoreCompactImageResourcesSteps(
     typeof value !== "object" ||
     value === null ||
     !("version" in value) ||
-    (value.version !== 3 && value.version !== 4) ||
+    ![3, 4, 5].includes(value.version as number) ||
     !("imageResources" in value)
   )
     return false;
