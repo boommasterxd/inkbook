@@ -103,10 +103,7 @@ export function selectionTargetAt(
     selectionContext !== undefined && "geometry" in selectionContext
       ? selectionContext.geometry()
       : selectedGeometry(store, selection);
-  if (
-    (selected.length !== 1 || selected[0]?.element.kind !== "text") &&
-    selectionOverlayContainsPoint(selected, point, selectionFrames?.current(selected) ?? null)
-  ) {
+  if (selectionOverlayContainsPoint(selected, point, selectionFrames?.current(selected) ?? null)) {
     return { elementId: selected[0]!.element.id, isSelected: true };
   }
   const elementId = store.hit(point, pointerType, zoom);
@@ -138,10 +135,7 @@ export function selectedTargetAt(
 ): { readonly elementId: string; readonly isSelected: true } | undefined {
   const first = selected[0];
   if (first === undefined) return undefined;
-  if (
-    (selected.length !== 1 || first.element.kind !== "text") &&
-    selectionOverlayContainsPoint(selected, point, frame)
-  ) {
+  if (selectionOverlayContainsPoint(selected, point, frame)) {
     return { elementId: first.element.id, isSelected: true };
   }
   const bounds = first.bounds;
