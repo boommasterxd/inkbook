@@ -24,6 +24,33 @@ const policy = JSON.parse(
 );
 const cleanup = warm.split("\n  cleanup:\n")[1];
 
+it("publishes the compatible native prefix without evaluating hashFiles in action outputs", () => {
+  const directory = mkdtempSync(join(tmpdir(), "inkbook-cache-identity-"));
+  const output = join(directory, "output");
+  const script = install.match(/ {6}run: \|\n([\s\S]+?)\n {4}- name: Restore npm downloads/)?.[1];
+  expect(script).toBeTruthy();
+  try {
+    execFileSync("bash", ["--noprofile", "--norc", "-e", "-o", "pipefail"], {
+      input: script,
+      env: {
+        ...process.env,
+        GITHUB_OUTPUT: output,
+        RUNNER_OS: "Linux",
+        RUNNER_ARCH: "X64",
+        INSTALL_CONFIG_HASH: "a".repeat(64),
+      },
+      timeout: 5_000,
+    });
+    expect(readFileSync(output, "utf8")).toMatch(
+      new RegExp(
+        `^prefix=npm-v1-Linux-X64-node${process.versions.node.split(".")[0]}-npm[0-9]+-${"a".repeat(64)}-\\n$`,
+      ),
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 it("transfers the native key and compatibility prefix into the producer receipt", () => {
   const directory = mkdtempSync(join(tmpdir(), "inkbook-cache-receipt-"));
   const output = join(directory, "output");
@@ -56,9 +83,12 @@ it("transfers the native key and compatibility prefix into the producer receipt"
 describe("cache lifecycle integration", () => {
   it("publishes the native producer identity only after the complete dependency installation", () => {
     expect(install).toContain("value: ${{ steps.restore.outputs.cache-primary-key }}");
+    expect(install).toContain("value: ${{ steps.identity.outputs.prefix }}");
+    expect(install.split("\nruns:\n")[0]).not.toContain("hashFiles(");
     expect(install).toContain(
-      "value: npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.identity.outputs.compatibility }}-${{ hashFiles('.npmrc') }}-",
+      "key: ${{ steps.identity.outputs.prefix }}${{ hashFiles('package-lock.json') }}",
     );
+    expect(install).toContain("restore-keys: ${{ steps.identity.outputs.prefix }}");
     expect(warm).toContain("replacements: ${{ steps.receipt.outputs.replacements }}");
     expect(warm.indexOf("- name: Publish native replacement identity")).toBeGreaterThan(
       warm.indexOf("uses: ./.github/actions/install-dependencies"),
