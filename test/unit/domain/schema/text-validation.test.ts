@@ -2,6 +2,25 @@ import { describe, expect, it } from "vitest";
 import { validateInkElementV1, validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { snapshot, textElement } from "./fixtures";
 
+it("accepts measured run overhang and rejects invalid or noncanonical ink bounds", () => {
+  const text = textElement();
+  const run = text.layout.lines[0]!.runs[0]!;
+  const bounds = { minX: -2.125, minY: -24, maxX: run.width + 10, maxY: 4 };
+  run.inkBounds = bounds;
+  expect(validateInkElementV1(text).ok).toBe(true);
+  for (const invalid of [
+    { minX: Number.NaN },
+    { maxY: Number.POSITIVE_INFINITY },
+    { minY: -0.0001 },
+    { maxX: bounds.minX - 1 },
+    { maxY: bounds.minY - 1 },
+    { maxX: 1_000_001 },
+  ]) {
+    run.inkBounds = { ...bounds, ...invalid };
+    expect(validateInkElementV1(text).ok).toBe(false);
+  }
+});
+
 it("accepts coherent bounded table frames and rejects invalid row geometry and combined layout overflow", () => {
   const text = textElement();
   const table = {
@@ -74,7 +93,7 @@ describe("native text snapshot validation", () => {
       ok: false,
       error: { code: "invalid-literal", path: "$.version" },
     });
-    expect(validateInkSnapshotV1({ ...snapshot(), version: 3 }).ok).toBe(false);
+    expect(validateInkSnapshotV1({ ...snapshot(), version: 3 }).ok).toBe(true);
   });
 
   it.each([

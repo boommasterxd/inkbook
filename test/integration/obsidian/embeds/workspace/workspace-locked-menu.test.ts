@@ -17,6 +17,7 @@ import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { nativeModalStack, simulateNativeModalBack } from "../../../../adapters/obsidian/settings";
 import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 import { createLockedEmbedPreview } from "../../../../fixtures/obsidian/locked-embed-preview";
+import * as editorChrome from "../../../../../src/obsidian/embeds/active-scene/editor-chrome-loader";
 
 const disposables: Array<{ dispose(): void }> = [];
 
@@ -92,6 +93,32 @@ function clickAction(title: string): void {
   if (item === undefined) throw new Error(`Missing menu action: ${title}`);
   item.click();
 }
+
+describe("workspace editor preparation intent", () => {
+  it("prepares on pointer, keyboard and touch intent only, retries failure and releases with its owner", async () => {
+    const release = vi.fn();
+    const prepare = vi
+      .spyOn(editorChrome, "prepareEditorChrome")
+      .mockReturnValueOnce({ ready: Promise.resolve(false), release })
+      .mockReturnValue({ ready: Promise.resolve(true), release });
+    const test = harness();
+    expect(prepare).not.toHaveBeenCalled();
+    test.preview.dispatchEvent(new Event("pointerenter"));
+    test.preview.dispatchEvent(new Event("focusin", { bubbles: true }));
+    expect(prepare).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    test.preview.dispatchEvent(new PointerEvent("pointerdown", { pointerType: "touch" }));
+    test.preview.dispatchEvent(new Event("focusin", { bubbles: true }));
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(prepare).toHaveBeenLastCalledWith(window);
+    expect(test.activate).not.toHaveBeenCalled();
+    expect(test.root.dataset.inkbookState).toBe("locked");
+    for (const menu of disposables.splice(0)) menu.dispose();
+    test.preview.dispatchEvent(new Event("pointerenter"));
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(release).toHaveBeenCalledOnce();
+  });
+});
 
 describe("workspace locked menu action binding", () => {
   it("cancels the phone sheet with Back, then opens its SVG without activating the editor", async () => {

@@ -1,6 +1,10 @@
 import { assertSafeCounter } from "./identity";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
-import type { ElementValidationDerivation, FontResourceV2 } from "../../domain/schema/public";
+import type {
+  ElementValidationDerivation,
+  FontResourceV2,
+  ImageResourceV3,
+} from "../../domain/schema/public";
 import type { DocumentRevision, ElementId, RenderBand } from "./protocol";
 
 export interface ExportDelta<TElement, TPage> {
@@ -8,6 +12,7 @@ export interface ExportDelta<TElement, TPage> {
   readonly changedElements?: readonly TElement[];
   readonly dirtyBands?: readonly RenderBand[];
   readonly fontResources?: readonly FontResourceV2[];
+  readonly imageResources?: readonly ImageResourceV3[];
   readonly modelRevision: DocumentRevision;
   readonly page?: TPage;
   readonly removedIds?: readonly ElementId[];
@@ -18,6 +23,7 @@ interface IncrementalExportPlan<TElement, TPage> {
   readonly changedElementDerivations?: readonly ElementValidationDerivation[];
   readonly changedElements: readonly TElement[];
   readonly fontResources?: readonly FontResourceV2[];
+  readonly imageResources?: readonly ImageResourceV3[];
   readonly modelRevision: DocumentRevision;
   readonly orderChanges: Readonly<Partial<Record<RenderBand, readonly ElementId[]>>>;
   readonly page?: TPage;
@@ -52,6 +58,7 @@ export class CoalescedExportTarget<TElement, TPage> {
   #modelRevision: DocumentRevision;
   #latestPage: TPage | undefined;
   #latestFontResources: readonly FontResourceV2[] | undefined;
+  #latestImageResources: readonly ImageResourceV3[] | undefined;
   #hasPage = false;
   #requiresFullSnapshot = false;
 
@@ -99,6 +106,11 @@ export class CoalescedExportTarget<TElement, TPage> {
       this.#latestPage = delta.page;
       this.#hasPage = true;
     }
+    if (delta.imageResources !== undefined) {
+      this.#latestImageResources = Object.freeze(
+        delta.imageResources.map((resource) => Object.freeze({ ...resource })),
+      );
+    }
     if (delta.fontResources !== undefined) {
       this.#latestFontResources = Object.freeze(
         delta.fontResources.map((font) =>
@@ -128,6 +140,7 @@ export class CoalescedExportTarget<TElement, TPage> {
     this.#dirtyBands.clear();
     this.#latestPage = undefined;
     this.#latestFontResources = undefined;
+    this.#latestImageResources = undefined;
     this.#hasPage = false;
   }
 
@@ -158,6 +171,9 @@ export class CoalescedExportTarget<TElement, TPage> {
         ? {}
         : { changedElementDerivations: [...this.#changedElementDerivations.values()] }),
       ...(this.#hasPage ? { page: this.#latestPage as TPage } : {}),
+      ...(this.#latestImageResources === undefined
+        ? {}
+        : { imageResources: this.#latestImageResources }),
       ...(this.#latestFontResources === undefined
         ? {}
         : { fontResources: this.#latestFontResources }),

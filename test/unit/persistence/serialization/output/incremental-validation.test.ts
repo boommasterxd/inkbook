@@ -214,7 +214,7 @@ function stroke(index: number): StrokeElementV1 {
     points: [100, 100, 0.5],
     rotation: 0,
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba" as const, value: "#000000FF" as const },
       opacity: 1,
       pressureEnabled: false,
       smoothing: 0.5,
@@ -236,7 +236,7 @@ function capacityRectangle(index: number, memberships: number): BoxShapeElementV
     style: {
       fillColor: null,
       fillOpacity: 0,
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 4,

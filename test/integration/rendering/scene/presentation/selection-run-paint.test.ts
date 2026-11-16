@@ -1,3 +1,4 @@
+import { fakeRectangleRecord } from "../../../../unit/rendering/scene/fakes";
 import { expect, it } from "vitest";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
 import {
@@ -19,7 +20,6 @@ import {
   palette,
   WIDTH,
 } from "../../../../fixtures/rendering/selection-run-paint";
-import { fakeRectangleRecord } from "../../../../unit/rendering/scene/fakes";
 
 it("keeps idle attributes/styles native and all zoom work strictly idle", () => {
   const f = fixture();

@@ -13,7 +13,7 @@ import { StreamingSafeStaticValidator } from "../../../../src/persistence/serial
 import { consumeSerializationSteps } from "../../../../src/persistence/serialization/output/serialization-model-preparation";
 
 const SPAN =
-  '<tspan x="-12.5" y="32" font-family="inkbook-inter" font-size="24" font-weight="400" font-style="normal" text-decoration="none" fill="#222222FF" fill-opacity="1" class="inkbook-theme-fill">Ä &lt; &amp; 😀</tspan>';
+  '<tspan x="-12.5" y="32" font-family="inkbook-inter" font-size="24" font-weight="400" font-style="normal" text-decoration="none" fill="#000000FF" fill-opacity="1">Ä &lt; &amp; 😀</tspan>';
 const TEXT = `<text transform="rotate(30 0 0)">${SPAN}</text>`;
 const FONT =
   '@font-face{font-family:"inkbook-inter";font-style:normal;font-weight:400;src:url("data:font/woff2;base64,d09GMg==") format("woff2")}';
@@ -123,6 +123,20 @@ describe("strict XML whitespace syntax", () => {
 });
 
 describe("safe text SVG envelopes", () => {
+  it("accepts only the canonical theme binding and fallback in text runs", async () => {
+    const content = TEXT.replace('fill="#000000FF"', 'class="inkbook-theme-fill" fill="#222222FF"');
+    expect(validateSafeSvg(svg(content))).not.toBeNull();
+    expect(await streamed(content, 7)).toBe(true);
+    for (const invalid of [
+      content.replace('fill="#222222FF"', 'fill="#000000FF"'),
+      content.replace('class="inkbook-theme-fill"', 'class="inkbook-theme-stroke"'),
+      content.replace('class="inkbook-theme-fill"', 'class="inkbook-theme-fill other"'),
+    ]) {
+      expect(validateSafeSvg(svg(invalid))).toBeNull();
+      expect(await streamed(invalid, 7)).toBe(false);
+    }
+  });
+
   it("accepts embedded fonts, escaped Unicode runs, and legacy geometry", () => {
     expect(validateSafeSvg(svg())).toMatchObject({ fontStylesheet: FONT, version: 2 });
     expect(validateSafeSvg(svg("", "", 1))).toMatchObject({ version: 1 });
@@ -131,10 +145,10 @@ describe("safe text SVG envelopes", () => {
   });
 
   it("keeps supported future presentation fallback separate from editable versions", () => {
-    expect(validateSafeSvg(svg(TEXT, FONT, 3))).toBeNull();
+    expect(validateSafeSvg(svg(TEXT, FONT, 6))).toBeNull();
     expect(
-      exhaust(validateSafeSvgSteps(svg(TEXT, FONT, 3), { versionPolicy: "newer" })).result,
-    ).toMatchObject({ version: 3 });
+      exhaust(validateSafeSvgSteps(svg(TEXT, FONT, 6), { versionPolicy: "newer" })).result,
+    ).toMatchObject({ version: 6 });
   });
 
   it.each([1, 7, 4096])(
@@ -150,9 +164,8 @@ describe("safe text SVG envelopes", () => {
     TEXT.replace("inkbook-inter", "Arial"),
     TEXT.replace('font-size="24"', 'font-size="0"'),
     TEXT.replace('x="-12.5"', 'x="-0"'),
-    TEXT.replace('class="inkbook-theme-fill"', 'style="fill:red"'),
-    TEXT.replace("#222222FF", "url(https://invalid)"),
-    TEXT.replace("#222222FF", "#FFFFFFFF"),
+    TEXT.replace('fill-opacity="1"', 'fill-opacity="1" style="fill:red"'),
+    TEXT.replace("#000000FF", "url(https://invalid)"),
     TEXT.replace("Ä &lt; &amp; 😀", "<script>run()</script>"),
     TEXT.replace("Ä &lt; &amp; 😀", "&#65;"),
     TEXT.replace("Ä &lt; &amp; 😀", "\u0000"),
@@ -177,7 +190,7 @@ describe("safe text SVG envelopes", () => {
 
   it("accepts bounded math path placement only from version 2", async () => {
     const path =
-      '<path transform="rotate(-30 20 30) translate(12.5 -2)" d="M 0 0 L 1 1" fill="#222222FF"/>';
+      '<path transform="rotate(-30 20 30) translate(12.5 -2)" d="M 0 0 L 1 1" fill="#000000FF"/>';
     expect(validateSafeSvg(svg(path))).not.toBeNull();
     expect(validateSafeSvg(svg(path, "", 1))).toBeNull();
     expect(await streamed(path, 5)).toBe(true);

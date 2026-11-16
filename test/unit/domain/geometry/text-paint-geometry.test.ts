@@ -92,7 +92,7 @@ describe("retained text backgrounds and structured content", () => {
   it("subtracts transparent background overrides and retains rounded clipping", () => {
     const element = textElement();
     element.style.opacity = 0;
-    element.backgroundColor = { type: "theme-text" };
+    element.backgroundColor = { type: "rgba", value: "#000000FF" };
     element.backgroundOpacity = 1;
     const run = element.layout.lines[0]!.runs[0]!;
     run.style = { backgroundColor: null };
@@ -112,7 +112,7 @@ describe("retained text backgrounds and structured content", () => {
     element.layout.lines[0]!.x = -10;
     element.layout.lines[0]!.y = -5;
     element.layout.lines[0]!.runs[0]!.style = {
-      backgroundColor: { type: "theme-text" },
+      backgroundColor: { type: "rgba", value: "#000000FF" },
       backgroundOpacity: 0.5,
     };
     expect(prepare(element).regions).toMatchObject([{ x: 0, y: 0, width: 30, height: 15 }]);
@@ -127,7 +127,10 @@ describe("retained text backgrounds and structured content", () => {
     expect(regionsAt(prepare(element), 25, 30)).toHaveLength(1);
     element.layout.math[0]!.paths = [];
     expect(prepare(element).regions).toEqual([]);
-    element.ranges[0]!.style = { backgroundColor: { type: "theme-text" }, backgroundOpacity: 1 };
+    element.ranges[0]!.style = {
+      backgroundColor: { type: "rgba", value: "#000000FF" },
+      backgroundOpacity: 1,
+    };
     expect(regionsAt(prepare(element), 25, 30)).toHaveLength(1);
   });
 

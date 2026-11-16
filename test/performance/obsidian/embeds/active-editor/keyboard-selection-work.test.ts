@@ -5,6 +5,7 @@ import { SelectionFrameSession } from "../../../../../src/editor/selection/publi
 import { CanvasKeyboardSelection } from "../../../../../src/obsidian/embeds/active-editor/input/canvas-keyboard-selection";
 import { KeyboardHandleInteraction } from "../../../../../src/obsidian/embeds/active-editor/previews/keyboard-handle-interaction";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
+import { imageElement } from "../../../../fixtures/domain/images";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import * as geometry from "../../../../../src/domain/geometry/public";
 import type { ActiveEditorControllerOptions } from "../../../../../src/obsidian/embeds/active-editor/controller-types";
@@ -17,7 +18,11 @@ import {
   elementReplacementPorts,
 } from "../../../../fixtures/obsidian/element-mutation-ports";
 import { activeEditorPreparedHistory } from "../../../../fixtures/obsidian/active-editor";
-import { pausedWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
+import {
+  immediateWorkScheduler,
+  pausedWorkScheduler,
+} from "../../../../fixtures/obsidian/immediate-work-scheduler";
+import { ElementLockSession } from "../../../../../src/obsidian/embeds/active-editor/element-lock-session";
 import { createSelectionPreviewRenderer } from "../../../../fixtures/obsidian/selection-preview-renderer";
 import {
   createConnectedTranslationFixture,
@@ -26,18 +31,74 @@ import {
 
 beforeEach(installObsidianDomHelpers);
 
+it("selects all locked objects in one cooperative document traversal and reuses its summary", async () => {
+  const count = 10_000;
+  const store = new ElementStore(
+    Array.from({ length: count }, (_, index) => ({
+      ...indexedStroke(index),
+      ...(index % 10 === 0 ? { locked: true } : {}),
+    })),
+  );
+  const model = createActiveEditorModel(store);
+  const history = new ActiveEditorHistory(model);
+  let selection: ReadonlySet<string> = new Set();
+  const read = vi.spyOn(store, "get");
+  const order = vi.spyOn(store, "beginOrder");
+  const canonical = vi.spyOn(geometry, "calculateElementBounds");
+  const materialize = vi.spyOn(store, "materializeSnapshot");
+  const pending = vi.fn();
+  const session = new ElementLockSession({
+    model,
+    history,
+    workScheduler: immediateWorkScheduler(),
+    currentSelection: () => selection,
+    setSelection: (next) => {
+      selection = next;
+    },
+    isEnabled: () => true,
+    isAttached: () => true,
+    onPendingChanged: pending,
+    onStateChanged: vi.fn(),
+    onFailed: vi.fn(),
+  });
+  try {
+    store.resetInstrumentation();
+    session.selectLocked();
+    await vi.waitFor(() => expect(pending).toHaveBeenLastCalledWith(false));
+    expect(selection.size).toBe(count / 10);
+    expect(read).toHaveBeenCalledTimes(count);
+    expect(order).toHaveBeenCalledOnce();
+    expect(materialize).not.toHaveBeenCalled();
+    expect(canonical).not.toHaveBeenCalled();
+    expect(store.instrumentation.recordReplacements).toBe(0);
+    expect(store.instrumentation.publishedDeltas).toBe(0);
+    read.mockClear();
+    expect(session.selectionState).toEqual({ locked: count / 10, unlocked: 0 });
+    expect(session.selectionState).toEqual({ locked: count / 10, unlocked: 0 });
+    expect(read).toHaveBeenCalledTimes(count / 10);
+    expect(history.commandCount).toBe(0);
+  } finally {
+    session.dispose();
+    history.dispose();
+    vi.restoreAllMocks();
+  }
+});
+
 it.each([100, 10_000])(
   "bounds keyboard navigation record and order work with %s strokes",
   (count) => {
-    const store = new ElementStore(
-      Array.from({ length: count }, (_, index) => indexedStroke(index)),
-    );
+    const store = new ElementStore([
+      imageElement(),
+      { ...imageElement(), id: "00000000-0000-4000-8000-000000000012" },
+      ...Array.from({ length: count }, (_, index) => indexedStroke(index)),
+    ]);
     const input = document.body.createDiv();
     let selection: ReadonlySet<string> = new Set();
     const read = vi.spyOn(store, "get");
     const rank = vi.spyOn(store, "getRank");
     const at = vi.spyOn(store, "idAtRank");
     const order = vi.spyOn(store, "materializeBandOrder");
+    const bands = vi.spyOn(store, "bandSize");
     const revealBounds = vi.fn();
     const keyboard = new CanvasKeyboardSelection({
       controller: { model: { store }, renderer: { inputSurface: input } } as never,
@@ -58,18 +119,20 @@ it.each([100, 10_000])(
         read.mockClear();
         rank.mockClear();
         at.mockClear();
+        bands.mockClear();
         expect(send(key)).toBe(true);
         expect(read).toHaveBeenCalledTimes(1);
         expect(at).toHaveBeenCalledTimes(1);
         expect(rank.mock.calls.length).toBeLessThanOrEqual(1);
         expect(order).not.toHaveBeenCalled();
+        expect(bands.mock.calls.length).toBeLessThanOrEqual(6);
       }
       const current = selection.values().next().value!;
       store.remove(new Set([current]));
       read.mockClear();
       at.mockClear();
       send("PageDown");
-      expect(selection.has(store.idAtRank("content", 0)!)).toBe(true);
+      expect(selection.has(store.idAtRank("image", 0)!)).toBe(true);
       expect(read).toHaveBeenCalledTimes(1);
       expect(at.mock.calls.length).toBeLessThanOrEqual(2);
       expect(revealBounds).toHaveBeenCalledTimes(5);

@@ -1,5 +1,5 @@
 import { AppliedCommandHistory } from "../../../domain/commands/history";
-import type { RenderBand } from "../../../domain/commands/render-bands";
+import { RENDER_BANDS, type RenderBand } from "../../../domain/commands/render-bands";
 import type { InkElementV1, PageV1 } from "../../../domain/schema/public";
 import type {
   DocumentMutationAvailability,
@@ -385,7 +385,7 @@ function estimateElementPayloadBytes(
 }
 
 function sameBandOrder(left: ActiveEditorBandOrder, right: ActiveEditorBandOrder): boolean {
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of RENDER_BANDS) {
     const leftOrder = left[band];
     const rightOrder = right[band];
     if (
@@ -404,7 +404,7 @@ function estimateBandOrderPayloadBytes(
 ): number {
   let bytes = 0;
   for (const order of [previous, replacement]) {
-    for (const band of ["highlight", "content"] as const) {
+    for (const band of RENDER_BANDS) {
       for (const id of order[band]) bytes += 8 + id.length * 2;
     }
   }

@@ -56,7 +56,7 @@ export async function prepareArrangementMutation(
     relativeOrderPreserved[band] = false;
   }
   if (scheduler.isCancelled?.()) return "cancelled";
-  if (!dirtyBands.content && !dirtyBands.highlight) return null;
+  if (!dirtyBands.image && !dirtyBands.content && !dirtyBands.highlight) return null;
   return { mutation: { bands }, order };
 }
 

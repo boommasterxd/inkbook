@@ -11,7 +11,7 @@ import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler"
 async function fixture(inline = false, rotation = 15) {
   const element = textElement();
   element.style.fontFamily = "inter";
-  element.backgroundColor = { type: "theme-text" };
+  element.backgroundColor = { type: "rgba" as const, value: "#000000FF" as const };
   element.backgroundOpacity = 0.7;
   element.rotation = rotation;
   if (inline) {

@@ -17,6 +17,35 @@ function queuedPriorityScenario(inputEndTime: number, includeFrame: boolean) {
   return { host, scheduler, order };
 }
 
+it("distinguishes admissions with equal deadlines while sharing identity across priorities", () => {
+  const host = new ManualHost();
+  const scheduler = new SharedFrameScheduler(host);
+  const observed: { admission: number; deadline: number }[] = [];
+  const observe = () =>
+    observed.push({ admission: scheduler.admissionId(), deadline: scheduler.deadline() });
+  scheduler.deadline();
+  scheduler.requestFrame(observe, "input");
+  scheduler.requestFrame(() => {
+    observe();
+    scheduler.requestFrame(observe);
+  });
+  scheduler.requestFrame(observe, "background");
+  host.frame();
+  expect(observed).toHaveLength(3);
+  expect(new Set(observed.map(({ admission }) => admission)).size).toBe(1);
+  const first = scheduler.admissionId();
+  expect(scheduler.admissionId()).toBe(first);
+  host.timer(0);
+  host.frame();
+  expect(observed).toHaveLength(4);
+  expect(observed[3]!.admission).toBeGreaterThan(first);
+  expect(observed.map(({ deadline }) => deadline)).toEqual([4, 4, 4, 4]);
+  expect(host.time).toBe(0);
+  scheduler.dispose();
+  expect(host.pendingFrames).toBe(0);
+  expect(host.pendingTimers).toBe(0);
+});
+
 describe("SharedFrameScheduler", () => {
   it("shares one deadline and defers competing callbacks after the first consumes it", () => {
     const host = new ManualHost();

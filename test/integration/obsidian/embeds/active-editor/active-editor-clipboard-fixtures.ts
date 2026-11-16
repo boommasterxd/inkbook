@@ -95,6 +95,12 @@ export function createClipboardDocumentModel(options: {
         options.prepareElementMutation(
           {
             bands: {
+              image: [
+                ...options.store.materializeBandOrder("image"),
+                ...elements
+                  .filter((element) => renderBandOf(element) === "image")
+                  .map(({ id }) => id),
+              ],
               content: [
                 ...options.store.materializeBandOrder("content"),
                 ...elements

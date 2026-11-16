@@ -37,7 +37,7 @@ it("scales field corners with the text inset and clamps narrow or short fields",
       [
         {
           ...strip,
-          color: { type: "theme-text" },
+          color: { type: "rgba", value: "#000000FF" },
           opacity: 0.5,
         },
       ],
@@ -88,7 +88,7 @@ it("intersects a partially covered corner with its circle instead of rounding ea
 });
 
 it("keeps overlapping corner cutouts out of the base and composites their paint once", () => {
-  const color = { type: "theme-text" } as const;
+  const color = { type: "rgba", value: "#000000FF" } as const;
   const rectangles = [
     { x: 0, y: 0, width: 1, height: 1, color, opacity: 0.2 },
     { x: 0.5, y: 0.5, width: 1, height: 1, color, opacity: 0.2 },

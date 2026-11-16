@@ -60,7 +60,7 @@ it("remounts a batch after retaining more than 2,048 paths without geometry rebu
 
   renderer.resetInstrumentation();
   const creation = vi.spyOn(fakeNode(renderer.svg).ownerDocument, "createElementNS");
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   const insertion = vi.spyOn(content, "insertBefore");
   expect(content.nodes).toHaveLength(0);
   showOffset(renderer, scheduler, 0);
@@ -374,7 +374,7 @@ it.each([false, true])(
         expect(boundary.mock.calls.length).toBe(canonicalIntersections);
         expect(renderer.instrumentation().geometryBuilds).toBe(1);
         // The retained path cache must reuse the completed output on remount.
-        expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!.attributes.get("d")).toBe(
+        expect(fakeNode(renderer.svg).nodes[1]!.nodes[5]!.nodes[0]!.attributes.get("d")).toBe(
           expected[0]!.d,
         );
         renderer.setCamera({ x: -100_000, zoom: 1 });

@@ -19,6 +19,7 @@ import {
   FakeSceneStore,
   fakeNode,
   fakeRectangleRecord,
+  sceneBandNode,
 } from "../../../../unit/rendering/scene/fakes";
 
 const VIEWPORT = { height: 100, left: 0, top: 0, width: 100 };
@@ -45,7 +46,7 @@ it.each(["immediate", "progressive", "transform"] as const)(
     for (const record of [protectedRecord, middle, final]) store.records.set(record.id, record);
     const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, VIEWPORT);
     scheduler.runAll();
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = sceneBandNode(fakeNode(renderer.svg), "content");
     const protectedNode = content.nodes[content.nodes.length - 1]!;
     const removal = vi.spyOn(protectedNode, "remove");
     try {
@@ -93,7 +94,7 @@ it("releases invalidated detached roots before fresh publication on an immediate
   const viewport = { ...VIEWPORT, width: 4_000 };
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
   scheduler.runAll();
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(renderer.svg), "content");
   const oldPaths = content.nodes.map((node) => node.attributes.get("d")!);
   renderer.setViewport({ ...viewport, top: 10_000 });
   scheduler.runAll();
@@ -168,7 +169,7 @@ it("drops staged entries outside the new viewport and releases an interrupted mo
   renderer.setViewport({ height: 100, left: 0, top: 10_000, width: 100 });
   scheduler.runAll();
   expect(renderer.mountedCount).toBe(0);
-  expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(0);
+  expect(sceneBandNode(fakeNode(renderer.svg), "content").nodes).toHaveLength(0);
 
   renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
   scheduler.runNext();
@@ -191,7 +192,7 @@ it("rejects stale staged geometry after a store delta during camera motion", () 
   renderer.setCamera({ x: -50, zoom: 1 });
   scheduler.runAll();
 
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(renderer.svg), "content");
   expect(content.nodes[content.nodes.length - 1]?.attributes.get("d")).toBe(
     buildElementPathParts(replacement.element)[0]!.d,
   );
@@ -335,12 +336,12 @@ it.each(["immediate", "progressive", "transform"] as const)(
       renderer.setViewport({ ...VIEWPORT, top: 120 });
       scheduler.runAll();
       expect(renderer.mountedCount).toBe(1);
-      expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(1);
+      expect(sceneBandNode(fakeNode(renderer.svg), "content").nodes).toHaveLength(1);
       store.records.set(next.id, next);
       setNavigationPreview(renderer, next, kind, 2);
       scheduler.runAll();
       expect(renderer.mountedCount).toBe(0);
-      expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(0);
+      expect(sceneBandNode(fakeNode(renderer.svg), "content").nodes).toHaveLength(0);
       expect(renderer.instrumentation().detachedCacheEntries).toBe(1);
     } finally {
       renderer.destroy();
@@ -384,7 +385,7 @@ it.each(["progressive", "transform"] as const)(
       scheduler.runAll();
       expect(renderer.mountedIds("content")).toEqual([old.id]);
       expect(selectedIds()).toEqual([old.id]);
-      const oldNode = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
+      const oldNode = sceneBandNode(fakeNode(renderer.svg), "content").nodes[0]!;
       if (kind === "transform") expect(oldNode.attributes.get("transform")).toBe("translate(5 0)");
       renderer.setViewport({ ...VIEWPORT, top: 500 });
       scheduler.runAll();

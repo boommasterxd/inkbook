@@ -1,8 +1,8 @@
+import { FakeSceneStore, fakeNode, sceneBandNode } from "../../../../unit/rendering/scene/fakes";
 import { expect, it, vi } from "vitest";
 import { createSceneFixture, createSceneRecord } from "../../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../../fixtures/rendering/pressure-navigation";
 import { stroke } from "../../../../unit/domain/schema/fixtures";
-import { FakeSceneStore, fakeNode } from "../../../../unit/rendering/scene/fakes";
 
 it.each(["pen", "highlighter"] as const)(
   "detaches and reuses the complete %s root without changing its children or paint",
@@ -14,7 +14,10 @@ it.each(["pen", "highlighter"] as const)(
     const viewport = { height: 500, left: 0, top: 0, width: 500 };
     const { document, renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
     scheduler.runAll();
-    const band = fakeNode(renderer.svg).nodes[1]!.nodes[tool === "highlighter" ? 3 : 4]!;
+    const band = sceneBandNode(
+      fakeNode(renderer.svg),
+      tool === "highlighter" ? "highlight" : "content",
+    );
     const original = [...band.nodes];
     const children = original.map((node) => [...node.nodes]);
     const paint = original.map((node) => new Map(node.attributes));

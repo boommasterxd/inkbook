@@ -85,7 +85,10 @@ it("accounts a composed matrix on the actual renderer and releases its mounted r
     const other = { ...rectangle(indexedStroke(9).id, 300, 100) };
     renderer.applyDelta({ affected: sceneDeltaEntries(store.create([original, other])!) });
     scheduler.runAll();
-    const reservation = 2 * 6 * Float64Array.BYTES_PER_ELEMENT;
+    const matrixReservation = 2 * 6 * Float64Array.BYTES_PER_ELEMENT;
+    // Mounted entries also reserve their source-bound metadata, independent of current paint.
+    const paintBoundsReservation = 2 * 40;
+    const reservation = matrixReservation + paintBoundsReservation;
     expect(content.previewMemoryUsage()).toBe(empty + reservation);
     const ids = [original.id, other.id],
       base = [1, 0, 0, 1, 5, 0] as const;

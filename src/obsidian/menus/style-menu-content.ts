@@ -28,6 +28,7 @@ export interface StyleMenuContentOptions
   readonly controls: readonly StyleControl[];
   readonly numberInputMode?: "clamp" | "reject";
   readonly ownerDocument: Document;
+  readonly mutateLayout?: ((update: () => void) => void) | undefined;
   readonly onChange: (controlId: string, value: boolean | number | string) => void;
   readonly onPreview?: ((controlId: string, value: boolean | number | string) => void) | undefined;
   readonly onInvalidValue?: (controlId: string) => void;
@@ -209,6 +210,8 @@ function createChoiceButton(
 
   button.setAttribute("aria-pressed", String(control.value === option.value));
   button.dataset.value = option.value;
+  const emptyColor = control.id.endsWith("color") && option.value === "none";
+  if (emptyColor) button.classList.add("inkbook-menu-empty-color-choice");
   if (control.id.endsWith("width")) button.classList.add("inkbook-menu-width-choice");
   const preview = createChoicePreview(options, control.id, option.value);
   const label = button.createSpan({ cls: "inkbook-menu-choice-label" });
@@ -219,7 +222,8 @@ function createChoiceButton(
     if (valueLabel !== null && button.getAttribute("aria-pressed") === "true")
       valueLabel.textContent = text;
   });
-  if (isVisualOnlyChoice(control.id)) label.classList.add("inkbook-menu-visually-hidden");
+  if (isVisualOnlyChoice(control.id) && !emptyColor)
+    label.classList.add("inkbook-menu-visually-hidden");
   if (preview !== null) button.append(preview);
   button.append(label);
   button.addEventListener("click", (event: MouseEvent) => {

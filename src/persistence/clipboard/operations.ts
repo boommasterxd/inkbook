@@ -27,6 +27,7 @@ import type {
   PasteRepeatState,
 } from "./types";
 import { getValidatedClipboardBounds } from "./validation";
+import { usedImageResourcesSteps } from "../images/used-image-resources";
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -317,11 +318,16 @@ function* planPasteInternalSteps(
         );
   if (!documentLimits.ok) return documentLimits;
   const grouped = yield* groupPlannedElementsSteps(translated);
+  const imageResources = yield* planImageResourcesSteps(
+    translated,
+    options.decoded.payload.imageResources,
+  );
   return {
     ok: true,
     value: {
       ...grouped,
       elements: translated,
+      ...imageResources,
       ...(options.decoded.payload.fontResources === undefined
         ? {}
         : { fontResources: options.decoded.payload.fontResources }),
@@ -334,15 +340,26 @@ function* planPasteInternalSteps(
   };
 }
 
+function* planImageResourcesSteps(
+  elements: readonly InkElementV1[],
+  resources: PastePlan["imageResources"],
+): Generator<void, Pick<PastePlan, "imageResources">> {
+  if (resources === undefined || resources.length === 0) return {};
+  const imageResources = yield* usedImageResourcesSteps(elements, resources);
+  return imageResources.length === 0 ? {} : { imageResources };
+}
+
 function* groupPlannedElementsSteps(
   translated: readonly InkElementV1[],
-): Generator<void, Pick<PastePlan, "selectedIds" | "highlightIds" | "contentIds">> {
+): Generator<void, Pick<PastePlan, "selectedIds" | "highlightIds" | "contentIds" | "imageIds">> {
+  const imageIds: string[] = [];
   const selectedIds: string[] = [];
   const highlightIds: string[] = [];
   const contentIds: string[] = [];
   for (const element of translated) {
     selectedIds.push(element.id);
-    if (
+    if (element.kind === "image") imageIds.push(element.id);
+    else if (
       element.kind === "straight-highlighter" ||
       (element.kind === "stroke" && element.tool === "highlighter")
     ) {
@@ -352,5 +369,5 @@ function* groupPlannedElementsSteps(
     }
     yield;
   }
-  return { selectedIds, highlightIds, contentIds };
+  return { selectedIds, highlightIds, contentIds, imageIds };
 }

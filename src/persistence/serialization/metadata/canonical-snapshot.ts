@@ -13,8 +13,10 @@ import {
   type TableElementV1,
   type FontResourceV2,
 } from "../../../domain/schema/public";
+import { elementSnapshotVersion } from "../../../domain/schema/snapshot-version";
 import { copyValidatedSampleExtrema } from "../../../domain/schema/stroke-sample-extrema";
 import { canonicalTextElement, canonicalTextElementSteps } from "./text-canonical";
+import { snapshotImageResources } from "../output/image-markup";
 import { snapshotTextResources } from "../output/text-fonts";
 import {
   bindSnapshotFontResources,
@@ -37,10 +39,11 @@ export function canonicalSnapshot(
   snapshot = bindSnapshotFontResources(snapshot);
   return {
     format: "inkbook",
-    version: snapshot.elements.some((element) => element.kind === "text") ? 2 : 1,
+    version: elementSnapshotVersion(snapshot.elements),
     revision: snapshot.revision,
     page: canonicalPage(snapshot.page),
     ...snapshotTextResources(snapshot),
+    ...snapshotImageResources(snapshot),
     elements: snapshot.elements.map((element) =>
       canonicalElement(element, preserveRuntimeStrokeBuffers, copyRuntimeStrokeBuffers),
     ),
@@ -77,8 +80,10 @@ export function canonicalElement(
     createdAt: element.createdAt,
     rotation: element.rotation,
     pivot: canonicalPoint(element.pivot),
+    ...(element.locked === true ? { locked: true } : {}),
   };
   if (element.kind === "text") return canonicalTextElement(element);
+  if (element.kind === "image") return canonicalImageElement(element, base);
   if (element.kind === "stroke") {
     return {
       ...base,
@@ -276,4 +281,25 @@ function canonicalAnchor(anchor: ShapeAnchorV1): ShapeAnchorV1 {
     return { endpoint: anchor.endpoint, kind: "linear-endpoint" };
   }
   return { kind: anchor.kind, index: anchor.index };
+}
+
+function canonicalImageElement(
+  element: Extract<InkElementV1, { kind: "image" }>,
+  base: CanonicalElementBase,
+): InkElementV1 {
+  return {
+    ...base,
+    kind: "image",
+    x: element.x,
+    y: element.y,
+    width: element.width,
+    height: element.height,
+    assetId: element.assetId,
+    crop: {
+      x: element.crop.x,
+      y: element.crop.y,
+      width: element.crop.width,
+      height: element.crop.height,
+    },
+  };
 }

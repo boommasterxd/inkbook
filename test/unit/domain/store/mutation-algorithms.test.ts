@@ -33,14 +33,14 @@ describe("element mutation algorithm bounds", () => {
       {
         capacity: new DocumentCapacity(),
         index: new UniformSpatialIndex<string>(),
-        bands: { content, highlight: [] },
+        bands: { image: [], content, highlight: [] },
         geometryVersion: 0,
         paintVersion: 0,
         ranks: new Map([[element.id, { band: "content", rank: 0 }]]),
         records: new Map([[element.id, record]]),
         reverseConnections: new Map(),
       },
-      { bands: { content: [element.id], highlight: [] } },
+      { bands: { image: [], content: [element.id], highlight: [] } },
       scheduler,
     );
 
@@ -56,7 +56,7 @@ describe("element mutation algorithm bounds", () => {
     const readSource = vi.fn(() => ({
       capacity,
       index,
-      bands: { content: [element.id], highlight: [] },
+      bands: { image: [], content: [element.id], highlight: [] },
       geometryVersion: 0,
       mutationVersion: 0,
       paintVersion: 0,
@@ -72,7 +72,7 @@ describe("element mutation algorithm bounds", () => {
     }));
     const prepared = await mutations.prepare(
       {
-        bands: { content: [], highlight: [] },
+        bands: { image: [], content: [], highlight: [] },
         removeIds: [element.id],
       },
       scheduler,
@@ -120,8 +120,11 @@ describe("element mutation delta cancellation", () => {
       try {
         const prepared = await store.prepareElementMutation(
           kind === "insertion"
-            ? { bands: { content: [element.id, added.id], highlight: [] }, elements: [added] }
-            : { bands: { content: [], highlight: [] }, removeIds: [element.id] },
+            ? {
+                bands: { image: [], content: [element.id, added.id], highlight: [] },
+                elements: [added],
+              }
+            : { bands: { image: [], content: [], highlight: [] }, removeIds: [element.id] },
           {
             shouldYield: () => deltaWork,
             isCancelled: () => cancelled,
@@ -149,7 +152,7 @@ describe("empty reverse connection preparation", () => {
     const original = store.get(element.id);
     await expect(
       store.prepareElementMutation(
-        { bands: { content: [element.id], highlight: [] }, removeIds: ["missing"] },
+        { bands: { image: [], content: [element.id], highlight: [] }, removeIds: ["missing"] },
         scheduler,
       ),
     ).rejects.toThrow("Unknown element ID: missing");
@@ -176,7 +179,7 @@ describe("empty reverse connection preparation", () => {
         });
       try {
         const prepared = await store.prepareElementMutation(
-          { bands: { content: [], highlight: [] }, removeIds: [element.id] },
+          { bands: { image: [], content: [], highlight: [] }, removeIds: [element.id] },
           {
             shouldYield: () => collected,
             isCancelled: () => cancelled,
@@ -228,8 +231,11 @@ describe("structural capacity preparation cancellation", () => {
     try {
       const result = await store.prepareElementMutation(
         kind === "insertion"
-          ? { bands: { content: [element.id, inserted.id], highlight: [] }, elements: [inserted] }
-          : { bands: { content: [], highlight: [] }, removeIds: [element.id] },
+          ? {
+              bands: { image: [], content: [element.id, inserted.id], highlight: [] },
+              elements: [inserted],
+            }
+          : { bands: { image: [], content: [], highlight: [] }, removeIds: [element.id] },
         { ...scheduler, isCancelled: () => cancelled },
       );
       expect(result).toEqual({ status: "cancelled", token: null });

@@ -29,7 +29,7 @@ export function mountedGeometryPath(
   record: SceneElementRecord,
   context: GeometryPathContext,
 ): readonly SvgPathPart[] | undefined {
-  if (record.element.kind === "text") return [];
+  if (record.element.kind === "text" || record.element.kind === "image") return [];
   const { retained, runs, paths, pressure, deadline, now } = context;
   const pending =
     retained.has(record.id) ||

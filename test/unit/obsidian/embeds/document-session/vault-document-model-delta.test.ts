@@ -10,7 +10,9 @@ function removalExportTarget(delta: StoreDelta) {
   const target = new CoalescedExportTarget(7, ({ id }: { readonly id: string }) => id);
   target.record({
     ...prepareVaultStoreDelta(delta),
-    dirtyBands: (["highlight", "content"] as const).filter((band) => delta.dirtyBands[band]),
+    dirtyBands: (["image", "highlight", "content"] as const).filter(
+      (band) => delta.dirtyBands[band],
+    ),
     modelRevision: 8,
   });
   return target;
@@ -32,7 +34,7 @@ describe("vault document model deltas", () => {
         orderByBand: { content: store.materializeBandOrder("content") },
       });
 
-      expect(delta.dirtyBands).toEqual({ content: true, highlight: false });
+      expect(delta.dirtyBands).toEqual({ image: false, content: true, highlight: false });
       expect(plan).toMatchObject({
         changedElements: [],
         orderChanges: { content: scope === "tail" ? [first.id] : [] },
@@ -94,6 +96,21 @@ describe("vault document model deltas", () => {
       }),
     ]);
   });
+
+  it("exports lock-only interaction changes with retained element geometry", () => {
+    const element = rectangle();
+    const store = new ElementStore([element]);
+    const before = store.get(element.id)!;
+    const delta = store.replace(element.id, { ...element, locked: true });
+    if (delta === null) throw new Error("Expected a lock delta.");
+
+    const prepared = prepareVaultStoreDelta(delta);
+    expect(prepared.changedElements).toEqual([expect.objectContaining({ locked: true })]);
+    expect(prepared.changedElementDerivations[0]?.bounds).toBe(before.bounds);
+    expect(prepared.removedIds).toEqual([]);
+    expect(store.get(element.id)?.geometryVersion).toBe(before.geometryVersion);
+    expect(store.get(element.id)?.paintVersion).toBe(before.paintVersion);
+  });
 });
 
 describe("vault delta projection boundaries", () => {
@@ -116,7 +133,7 @@ describe("vault delta projection boundaries", () => {
         domains: domain,
         id: String(index),
       })),
-      dirtyBands: { content: true, highlight: false },
+      dirtyBands: { image: false, content: true, highlight: false },
       geometryVersion: 1,
       paintVersion: 1,
     };
@@ -155,7 +172,7 @@ describe("vault delta projection boundaries", () => {
     }));
     const delta: StoreDelta = {
       changes,
-      dirtyBands: { content: true, highlight: false },
+      dirtyBands: { image: false, content: true, highlight: false },
       geometryVersion: 1,
       paintVersion: 0,
     };

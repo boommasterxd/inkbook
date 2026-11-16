@@ -1,5 +1,6 @@
-import type { FontResourceV2 } from "../../../domain/schema/public";
+import type { FontResourceV2, ImageResourceV3 } from "../../../domain/schema/public";
 import { fontStylesheetMarkupFragments } from "./text-fonts";
+import { imageDefinitionsFragments } from "./image-markup";
 
 const CHUNK_CHARACTERS = 64 * 1024;
 
@@ -8,6 +9,7 @@ export async function matchesCanonicalFontOutput(
   output: string | Uint8Array | undefined,
   fonts: readonly FontResourceV2[],
   checkpoint: () => Promise<void> | undefined,
+  images: readonly ImageResourceV3[] = [],
 ): Promise<boolean> {
   if (output === undefined) return fonts.length === 0;
   const prefix =
@@ -18,7 +20,7 @@ export async function matchesCanonicalFontOutput(
   if (themeEnd < 0) return false;
   let offset = themeEnd + 8;
   let work = 0;
-  for (const token of expectedTokens(fonts)) {
+  for (const token of expectedTokens(fonts, images)) {
     for (let start = 0; start < token.length;) {
       const end = Math.min(token.length, start + CHUNK_CHARACTERS - work);
       if (!matchesChunk(output, offset - start, token, start, end)) return false;
@@ -37,9 +39,24 @@ export async function matchesCanonicalFontOutput(
   return true;
 }
 
-function* expectedTokens(fonts: readonly FontResourceV2[]): Iterable<string> {
+function* expectedTokens(
+  fonts: readonly FontResourceV2[],
+  images: readonly ImageResourceV3[],
+): Iterable<string> {
   yield* fontStylesheetMarkupFragments(fonts);
+  yield* imageDefinitionsFragments(images);
   yield "<metadata ";
+}
+
+/** Bind both registries to their sole payload before accepting a worker's export. */
+export async function matchesCanonicalImageOutput(
+  output: string | Uint8Array | undefined,
+  fonts: readonly FontResourceV2[],
+  images: readonly ImageResourceV3[],
+  checkpoint: () => Promise<void> | undefined,
+): Promise<boolean> {
+  if (output === undefined) return fonts.length === 0 && images.length === 0;
+  return matchesCanonicalFontOutput(output, fonts, checkpoint, images);
 }
 
 function matchesChunk(

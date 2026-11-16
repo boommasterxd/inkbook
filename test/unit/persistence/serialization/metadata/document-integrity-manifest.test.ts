@@ -8,7 +8,7 @@ import {
   sameDocumentIntegrityManifest,
 } from "../../../../../src/persistence/serialization/public";
 import { isDocumentIntegrityManifest } from "../../../../../src/persistence/serialization/metadata/document-integrity-manifest";
-import { rectangle, snapshot } from "../../worker/runtime/fixtures";
+import { rectangle, snapshot, STROKE } from "../../worker/runtime/fixtures";
 
 const SECOND_ID = "00000000-0000-4000-8000-000000000002";
 
@@ -110,20 +110,11 @@ function strokeSnapshot(): InkSnapshotV1 {
     ...snapshot(),
     elements: [
       {
+        ...structuredClone(STROKE),
         createdAt: 1,
         id: "00000000-0000-4000-8000-000000000003",
-        kind: "stroke",
         pivot: { x: 2, y: 3 },
         points: [1, 2, 0.5, 3, 4, 1],
-        rotation: 0,
-        style: {
-          color: { type: "theme-text" },
-          opacity: 1,
-          pressureEnabled: false,
-          smoothing: 0.5,
-          width: 2,
-        },
-        tool: "pen",
       },
     ],
   };

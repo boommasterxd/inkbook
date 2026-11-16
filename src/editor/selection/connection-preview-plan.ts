@@ -13,6 +13,7 @@ export interface ConnectedPreviewBinding {
 export interface ConnectedPreviewPlan {
   readonly bindings: ReadonlyMap<string, ConnectedPreviewBinding>;
   readonly ids: readonly string[];
+  readonly lockedBindings: readonly ConnectedPreviewBinding[];
 }
 
 interface ConnectedPreviewOrder {
@@ -71,13 +72,16 @@ function* bindConnectedPreviewSteps(
   { indegrees, downstream, ready }: ConnectedPreviewOrder,
 ): Generator<number, ConnectedPreviewPlan> {
   const bindings = new Map<string, ConnectedPreviewBinding>();
+  const lockedBindings: ConnectedPreviewBinding[] = [];
   let prepared = 0;
   for (let index = 0; index < ready.length; index += 1) {
     const id = ready[index]!;
     const element = elements.get(id)!;
     const start = rootConnection(element.startConnection, selectedIds, bindings);
     const end = rootConnection(element.endConnection, selectedIds, bindings);
-    bindings.set(id, { element, start, end });
+    const binding = { element, start, end };
+    bindings.set(id, binding);
+    if (element.locked === true) lockedBindings.push(binding);
     if (start !== null || end !== null) ids.push(id);
     if (++prepared === TOPOLOGY_RECORDS_PER_STEP) {
       prepared = 0;
@@ -97,7 +101,7 @@ function* bindConnectedPreviewSteps(
   if (bindings.size !== elements.size) {
     throw new RangeError("Connected preview dependencies must remain acyclic.");
   }
-  return { bindings, ids };
+  return { bindings, ids, lockedBindings };
 }
 
 function* dependentOrderSteps(

@@ -7,14 +7,14 @@ import { validateInkElementV1 } from "../../../../src/domain/schema/element-vali
 import { coordinateSystem, rectangle, table } from "./fixtures";
 
 const outlineStyle = {
-  outlineColor: { type: "theme-text" as const },
+  outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
   outlineWidth: 4 as const,
   outlineOpacity: 1,
   outlineStyle: "solid" as const,
 };
 
 const strokeStyle = {
-  color: { type: "theme-text" as const },
+  color: { type: "rgba" as const, value: "#000000FF" as const },
   width: 8 as const,
   opacity: 1,
   pressureEnabled: false,
@@ -31,7 +31,7 @@ describe("runtime geometry translation", () => {
       points: new Float64Array([0, 0, 0.5, 10, 10, 1]),
       rotation: 0,
       style: {
-        color: { type: "theme-text" },
+        color: { type: "rgba", value: "#000000FF" },
         opacity: 1,
         pressureEnabled: true,
         smoothing: 0.5,

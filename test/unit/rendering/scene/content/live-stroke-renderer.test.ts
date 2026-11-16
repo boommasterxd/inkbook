@@ -1,3 +1,4 @@
+import { FakeDocument, FakeNode } from "../fakes";
 import { describe, expect, it } from "vitest";
 
 import { MAX_STROKE_POINTS, type StrokeStyleV1 } from "../../../../../src/domain/schema/public";
@@ -8,10 +9,8 @@ import type {
   SceneLiveStrokePreview,
 } from "../../../../../src/rendering/scene/types";
 
-import { FakeDocument, FakeNode } from "../fakes";
-
 const penStyle: StrokeStyleV1 = {
-  color: { type: "theme-text" },
+  color: { type: "rgba" as const, value: "#000000FF" as const },
   opacity: 0.7,
   pressureEnabled: true,
   smoothing: 0.5,
@@ -127,8 +126,7 @@ describe("incremental live stroke renderer", () => {
     expect(firstTail?.attributes.get("d")).toBe("M 2 2 Z");
     expect(stableChunkNode?.ownerDocument).toBe(document);
     expect(Object.fromEntries(stableChunkNode?.attributes ?? [])).toMatchObject({
-      class: "inkbook-theme-fill",
-      fill: "#222222FF",
+      fill: "#000000FF",
       stroke: "none",
     });
     expect(stableChunkNode?.attributes.has("fill-opacity")).toBe(false);

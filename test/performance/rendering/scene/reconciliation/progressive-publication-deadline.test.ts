@@ -1,10 +1,9 @@
+import { createPublicationReconciliation } from "../../../../fixtures/rendering/scene-publication";
 import { expect, it, vi } from "vitest";
 import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../../src/rendering/scene/constants";
 import { CanonicalElementPathPreparation } from "../../../../../src/domain/geometry/canonical-element-path-preparation";
 import { DetachedSceneElementCache } from "../../../../../src/rendering/scene/content/detached-element-cache";
 import { SceneDom } from "../../../../../src/rendering/scene/scene-dom";
-import { ScenePathCache } from "../../../../../src/rendering/scene/content/path-cache";
-import { SceneVisibilityReconciler } from "../../../../../src/rendering/scene/reconciliation/scene-visibility-reconciler";
 import { SceneVisibilityState } from "../../../../../src/rendering/scene/visibility/visibility-state";
 import {
   publishStableEntrantRun,
@@ -284,7 +283,7 @@ it("bounds native physical-order checks when a full fallback refreshes stale epo
     const record = store.get(id)!;
     store.records.set(id, { ...record, rank: capacity - record.rank });
   }
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   const children = vi.spyOn(content, "childNodes", "get");
   const comparisons = vi.spyOn(FakeNode.prototype, "compareDocumentPosition");
   const parents = vi.spyOn(content, "contains");
@@ -478,13 +477,10 @@ function retainedReorderFixture(pressure: boolean) {
   }
   const visibility = new SceneVisibilityState(store, instrumentation);
   const target = visibility.query({ minX: 0, minY: 0, maxX: 100, maxY: 100 });
-  const paths = new ScenePathCache();
-  const reconciler = new SceneVisibilityReconciler({
+  const { paths, reconciler } = createPublicationReconciliation({
     dom,
     instrumentation,
     mounted,
-    orderDirty: { content: new Set(), highlight: new Set() },
-    pathCache: paths,
     store,
     visibility,
   });

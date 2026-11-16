@@ -20,6 +20,7 @@ import {
 import { EncodedByteBudget, encodedByteLength } from "./encoded-byte-budget";
 import { elementRenderBand, type ElementFragments } from "./element-fragments";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "../types";
+import { snapshotImageResources } from "./image-markup";
 import { snapshotTextResources } from "./text-fonts";
 
 interface PreparedRuntimeExport {
@@ -43,8 +44,8 @@ export async function serializeRuntimeSnapshotToUtf8(
   backgroundCache = new BackgroundFragmentCache(),
 ): Promise<DocumentCodecResult<SerializedInkbookDocument<Uint8Array<ArrayBuffer>>>> {
   // Keep current record identities for the fragment cache while pruning font resources.
-  const { fontResources: _resources, ...header } = snapshot;
-  snapshot = { ...header, ...snapshotTextResources(snapshot) };
+  const { fontResources: _resources, imageResources: _images, ...header } = snapshot;
+  snapshot = { ...header, ...snapshotTextResources(snapshot), ...snapshotImageResources(snapshot) };
   const prepared = await prepareRuntimeExport(snapshot, options, resolveFragment, backgroundCache);
   if (!prepared.ok) return prepared;
   const value = prepared.value;
@@ -167,6 +168,7 @@ function runtimeDocumentFragments(
     prepared.metadataHash,
     {
       snapshot,
+      image: fragmentMarkup(prepared.fragments, "image"),
       content: fragmentMarkup(prepared.fragments, "content"),
       highlight: fragmentMarkup(prepared.fragments, "highlight"),
       metadata: fragmentMetadata(prepared.fragments),
@@ -181,7 +183,7 @@ function* fragmentMetadata(fragments: readonly ElementFragments[]): Iterable<Uin
 
 function* fragmentMarkup(
   fragments: readonly ElementFragments[],
-  band: "content" | "highlight",
+  band: "image" | "content" | "highlight",
 ): Iterable<Uint8Array> {
   for (const fragment of fragments) {
     if (elementRenderBand(fragment.element) !== band) continue;

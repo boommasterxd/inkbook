@@ -64,12 +64,15 @@ it("shares one full Vault read, hash, and safe inspection across visible preview
     svg.length,
   );
   const hash = vi.spyOn(ChunkedSha256.prototype, "update");
+  const digest = vi.spyOn(crypto.subtle, "digest");
   const inspect = vi.spyOn(safeSvgValidator, "validateSafeSvgSteps");
   const expectedHashBytes = new TextEncoder().encode(svg).byteLength;
   const assertSingleInspection = (): void => {
-    expect(hash.mock.calls.reduce((bytes, [part]) => bytes + part.byteLength, 0)).toBe(
-      expectedHashBytes,
-    );
+    expect(digest).toHaveBeenCalledExactlyOnceWith("SHA-256", expect.any(Uint8Array));
+    const bytes = digest.mock.calls[0]![1] as Uint8Array;
+    expect(bytes.byteLength).toBe(expectedHashBytes);
+    expect(new TextDecoder().decode(bytes)).toBe(svg);
+    expect(hash).not.toHaveBeenCalled();
     expect(inspect).toHaveBeenCalledOnce();
   };
   const source = `app://shared.svg?inkbook-revision=${String(createSnapshot().revision)}-${outputHash}`;
@@ -79,6 +82,10 @@ it("shares one full Vault read, hash, and safe inspection across visible preview
   release(svg);
   const [firstValue, secondValue] = await Promise.all([first, second]);
   expect(firstValue).toBe(secondValue);
+  expect(firstValue).toMatchObject({
+    safeSvg: svg,
+    contentIdentity: { outputHash },
+  });
   assertSingleInspection();
   expect(await recognition.loadPreviewSource(file.path, source)).toBe(firstValue);
   expect(cachedRead).toHaveBeenCalledOnce();

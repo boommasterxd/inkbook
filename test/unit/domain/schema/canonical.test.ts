@@ -66,7 +66,7 @@ describe("schema canonical values", () => {
       guide: "#ABABAB40",
     });
     expect(PORTABLE_PALETTE_V1.dark.page).toBe("#212121FF");
-    expect(PORTABLE_PALETTE_V1.dark.guide).toBe("#66666640");
     expect(PORTABLE_PALETTE_V1.dark.text).toBe("#DADADAFF");
+    expect(PORTABLE_PALETTE_V1.dark.guide).toBe("#66666640");
   });
 });

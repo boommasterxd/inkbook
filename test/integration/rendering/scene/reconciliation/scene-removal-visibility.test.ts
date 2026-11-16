@@ -5,7 +5,7 @@ import type { StrokeElementV1 } from "../../../../../src/domain/schema/public";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { createTestStroke } from "../../../../fixtures/persistence/worker-snapshot";
-import { fakeNode } from "../../../../unit/rendering/scene/fakes";
+import { fakeNode, sceneBandNode } from "../../../../unit/rendering/scene/fakes";
 import { uuid } from "../../../../unit/domain/schema/fixtures";
 import {
   createSceneFixture,
@@ -38,7 +38,7 @@ it.each([
     const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, sceneStore);
     renderer.setReducedMotion(true);
     scheduler.runAll();
-    const group = fakeNode(renderer.svg).nodes[1]!.nodes[band === "highlight" ? 3 : 4]!;
+    const group = sceneBandNode(fakeNode(renderer.svg), band);
     const retainedRoots = [...group.nodes];
     const unsubscribe = store.subscribe((delta) =>
       renderer.applyDelta({

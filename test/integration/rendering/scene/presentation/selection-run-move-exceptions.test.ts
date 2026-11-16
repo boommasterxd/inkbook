@@ -1,3 +1,4 @@
+import { FakeNode } from "../../../../unit/rendering/scene/fakes";
 import { afterEach, expect, it, vi } from "vitest";
 import { moveSelection } from "../../../../../src/editor/selection/transform/transforms";
 import { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
@@ -13,7 +14,6 @@ import {
   scale,
   world,
 } from "../../../../fixtures/rendering/selection-run-world";
-import { FakeNode } from "../../../../unit/rendering/scene/fakes";
 
 afterEach(() => vi.restoreAllMocks());
 

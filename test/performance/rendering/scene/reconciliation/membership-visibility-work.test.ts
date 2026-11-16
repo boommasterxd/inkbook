@@ -158,7 +158,7 @@ it.each([1_000, 10_000])(
     const { document, renderer, scheduler } = scene;
     scheduler.runAll(200);
     expect(renderer.mountedCount).toBe(count);
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
     // Commit the offscreen reserve before the visible tail, independently of paint rank.
     const entries = [...records.records.values()].reverse();
     const observed = observeFadeWrites(document, content.nodes);

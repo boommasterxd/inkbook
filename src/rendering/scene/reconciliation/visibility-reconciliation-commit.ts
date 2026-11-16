@@ -1,4 +1,4 @@
-import type { RenderBand } from "../../../domain/commands/render-bands";
+import { RENDER_BANDS, type RenderBand } from "../../../domain/commands/render-bands";
 import type { MountedSceneElement } from "../content/mounted-element";
 import type { PendingReconciliation } from "./reconciliation-state";
 import type { ReconciliationResult } from "./reconciliation-state";
@@ -32,7 +32,7 @@ function prepareVisibilityExitOrder(
     const b = mounted.get(right);
     if (a === undefined) return b === undefined ? 0 : 1;
     if (b === undefined) return -1;
-    if (a.band !== b.band) return a.band === "highlight" ? -1 : 1;
+    if (a.band !== b.band) return RENDER_BANDS.indexOf(a.band) - RENDER_BANDS.indexOf(b.band);
     return a.committedRank - b.committedRank;
   });
   for (let index = 0; index < remaining.length; index += 1) {
@@ -190,6 +190,7 @@ export function commitVisibilityReconciliation(
   // Stable runs keep their existing proof. A changed physical order makes the next
   // run verify its retained anchors against the DOM once instead of visiting all IDs now.
   if (pending.delta === undefined && !pending.retainedOrderPreserved) epoch += 1;
+  options.orderDirty.image.clear();
   options.orderDirty.content.clear();
   options.orderDirty.highlight.clear();
   pending.order.release();

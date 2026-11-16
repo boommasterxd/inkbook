@@ -10,6 +10,8 @@ import {
 } from "../../../../src/persistence/serialization/public";
 import { createAllElementSnapshot, createDottedRectangleSnapshot } from "./fixtures";
 
+import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
+
 afterEach(() => vi.restoreAllMocks());
 
 describe("runtime export cache reuse", () => {
@@ -180,3 +182,24 @@ async function expectEquivalentExport(
   expect(actual.value.totalBytes).toBe(expected.value.totalBytes);
   expect(actual.value.metadataBytes).toBe(expected.value.metadataBytes);
 }
+
+describe("element fragment cache capacity", () => {
+  it("evicts at the existing entry and retained-byte caps", () => {
+    const cache = new ElementFragmentCache();
+    const fragment = buildElementFragments(createTestStroke());
+    for (let index = 0; index <= 20_000; index++) cache.replace(String(index), fragment);
+    expect(cache.size).toBe(20_000);
+    expect([...cache.ids()][0]).toBe("1");
+    const owned = new Uint8Array(64 * 1024 * 1024);
+    const oversized = {
+      ...fragment,
+      svgUtf8: owned,
+      retainedBytes: fragment.retainedBytes + owned.byteLength,
+    };
+    cache.retainIfSpace(fragment.element.id, oversized);
+    expect(cache.size).toBe(20_000);
+    cache.replace(fragment.element.id, oversized);
+    expect(cache.size).toBe(0);
+    expect(cache.retainedBytes).toBe(0);
+  });
+});

@@ -336,6 +336,7 @@ export class PreparedElementHistory {
   ): Promise<boolean> {
     const basisRevision = this.#model.revision;
     const cancellation = {
+      protectLocked: true,
       isCancelled: () =>
         this.#isCancelled(generation) ||
         this.#model.revision !== basisRevision ||
@@ -410,7 +411,10 @@ async function applyPreparedHistoryReplacement(
   isCancelled: () => boolean,
 ): Promise<boolean> {
   const basisRevision = model.revision;
-  const cancellation = { isCancelled: () => isCancelled() || model.revision !== basisRevision };
+  const cancellation = {
+    protectLocked: false,
+    isCancelled: () => isCancelled() || model.revision !== basisRevision,
+  };
   if (cancellation.isCancelled()) return false;
   const preparation = await model.prepareElementReplacement(elements, cancellation);
   if (preparation.status !== "prepared" || preparation.token === null || cancellation.isCancelled())

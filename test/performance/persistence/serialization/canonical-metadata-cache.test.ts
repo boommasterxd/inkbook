@@ -1,10 +1,18 @@
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
+import { validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { rectangle } from "../../../unit/persistence/worker/runtime/fixtures";
 import { expect, it, vi } from "vitest";
 import { CanonicalMetadataCache } from "../../../../src/persistence/serialization/metadata/canonical-metadata-cache";
 import * as canonical from "../../../../src/persistence/serialization/metadata/canonical-snapshot";
 import { serializeCanonicalElementMetadata } from "../../../../src/persistence/serialization/metadata/canonical-element-fragments";
-import { canonicalMetadataSha256 } from "../../../../src/persistence/serialization/metadata/canonical-metadata";
+import {
+  canonicalMetadataSha256,
+  metadataPrefix,
+} from "../../../../src/persistence/serialization/metadata/canonical-metadata";
+import * as imageUsage from "../../../../src/persistence/images/used-image-resources";
+import { snapshotImageResources } from "../../../../src/persistence/serialization/output/image-markup";
+import { imageElement } from "../../../fixtures/domain/images";
+import { createStandardPersistenceFixture } from "../fixtures";
 import {
   createTestStroke,
   createWorkerSnapshot,
@@ -16,6 +24,34 @@ import { loadBuiltinFont } from "../../../../src/persistence/fonts/builtin-fonts
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { matchesCanonicalFontOutput } from "../../../../src/persistence/serialization/output/font-output-binding";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/document-codec";
+
+it("does not revisit image bindings for validated version-five text without images at document scale", async () => {
+  const font = await loadBuiltinFont("inter", 400, "normal", new TestWorkScheduler());
+  const text = textElement(20_000);
+  text.style.fontFamily = "inter";
+  text.layout.lines[0]!.runs[0]!.inkBounds = { minX: 0, minY: -15, maxX: 40, maxY: 5 };
+  const fixture = createStandardPersistenceFixture();
+  const snapshot = {
+    ...fixture,
+    version: 5 as const,
+    elements: [...fixture.elements, text],
+    fontResources: [font],
+  };
+  expect(fixture.elements.filter((element) => element.kind === "stroke")).toHaveLength(10_000);
+  expect(validateInkSnapshotV1(snapshot).ok).toBe(true);
+  const bindings = vi.spyOn(imageUsage, "usedImageResourcesSteps");
+  try {
+    expect(metadataPrefix(snapshot.revision, snapshot.page, snapshot)).toContain('"version":5');
+    expect(bindings).not.toHaveBeenCalled();
+    // The ordinary helper remains strict for unvalidated callers with missing image bindings.
+    expect(() =>
+      snapshotImageResources({ ...snapshot, elements: [imageElement()], imageResources: [] }),
+    ).toThrow("Required image resource");
+    expect(bindings).toHaveBeenCalledOnce();
+  } finally {
+    bindings.mockRestore();
+  }
+});
 
 it("bounds actual font payload reads during independent output binding and honors cancellation", async () => {
   const font = await loadBuiltinFont("inter", 400, "normal", new TestWorkScheduler());

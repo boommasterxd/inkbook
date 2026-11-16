@@ -4,6 +4,8 @@ import { ElementStore } from "../../../../../src/domain/store/public";
 import {
   arrangeSelectionAvailability,
   canArrangeSelection,
+  editableSelectedElements,
+  editableSelection,
   selectedTargetAt,
   selectionTargetAt,
 } from "../../../../../src/obsidian/embeds/active-editor/controller-elements";
@@ -68,6 +70,37 @@ describe("active editor arrange availability", () => {
 });
 
 describe("active editor selection targets", () => {
+  it("keeps locked selections available for context actions while pointer edits pass through", () => {
+    const locked = { ...rectangle(), locked: true };
+    const unlocked = rectangle(IDS.other, 500, 100);
+    const fixture = scene([locked, unlocked]);
+    const selection = new Set([locked.id, unlocked.id]);
+    try {
+      expect(editableSelection(fixture.store, selection)).toEqual(new Set([unlocked.id]));
+      const editable = new Set([unlocked.id]);
+      expect(editableSelection(fixture.store, editable)).toBe(editable);
+      expect(editableSelectedElements(fixture.store, selection).map(({ id }) => id)).toEqual([
+        unlocked.id,
+      ]);
+      const fixed = new Set([locked.id]);
+      expect(selectionTargetAt(fixture.store, fixed, locked.pivot, "pen", 1)).toBeUndefined();
+      expect(
+        selectionTargetAt(fixture.store, fixed, locked.pivot, "mouse", 1, {
+          geometry: () => [],
+          includeLocked: true,
+        }),
+      ).toEqual({ elementId: locked.id, isSelected: true });
+      expect(arrangeSelectionAvailability(fixture.store, fixed)).toEqual({
+        "bring-forward": false,
+        "bring-to-front": false,
+        "send-backward": false,
+        "send-to-back": false,
+      });
+    } finally {
+      fixture.release();
+    }
+  });
+
   it("keeps filled selection interiors and group gaps directly draggable", () => {
     const elements = [rectangle(), rectangle(IDS.other, 500, 100)];
     const fixture = scene(elements);
@@ -157,7 +190,7 @@ describe("active editor text selection targets", () => {
     (pointerType) => {
       const text = { ...textElement(), createdAt: 2, rotation: 30 };
       const underneath = rectangle();
-      underneath.style.fillColor = { type: "theme-text" };
+      underneath.style.fillColor = { type: "rgba", value: "#000000FF" };
       underneath.style.fillOpacity = 1;
       const fixture = scene([underneath, text]);
       const selection = new Set([text.id]);

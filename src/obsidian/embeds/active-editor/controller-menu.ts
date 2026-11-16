@@ -21,6 +21,15 @@ import type { FontPreviewSource } from "../../fonts/font-preview-source";
 import { menuTranslator } from "../../menus/localized-menu-text";
 
 interface ActiveEditorMenuOptions {
+  readonly selectionLock: "none" | "lock" | "unlock";
+  readonly canSelectLocked: boolean;
+  readonly canCut: boolean;
+  readonly canDelete: boolean;
+  readonly onLockSelection: () => void;
+  readonly onUnlockSelection: () => void;
+  readonly onSelectLocked: () => void;
+  readonly onImportImages?: (() => void) | undefined;
+  readonly onCropImage?: (() => void) | undefined;
   readonly canCopyText?: boolean | undefined;
   readonly localization?: Localization | undefined;
   readonly event?: MouseEvent;
@@ -75,7 +84,13 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
     options.factory,
     invocation,
     {
+      selectionLock: options.selectionLock,
+      canSelectLocked: options.canSelectLocked,
+      canCut: options.canCut,
+      canDelete: options.canDelete,
       canCopyText: options.canCopyText,
+      canCropImage: options.onCropImage !== undefined,
+      canImportImages: options.onImportImages !== undefined,
       canBringForward: options.arrangeAvailability["bring-forward"],
       canBringToFront: options.arrangeAvailability["bring-to-front"],
       canCopyEmbed: true,
@@ -88,6 +103,9 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
       canEditText: options.onEditText !== undefined,
     },
     {
+      lockSelection: options.onLockSelection,
+      unlockSelection: options.onUnlockSelection,
+      selectLocked: options.onSelectLocked,
       bringForward: () => options.onArrange("bring-forward"),
       bringToFront: () => options.onArrange("bring-to-front"),
       copy: options.onCopy,
@@ -102,6 +120,8 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
       sendBackward: () => options.onArrange("send-backward"),
       sendToBack: () => options.onArrange("send-to-back"),
       editText: options.onEditText,
+      cropImage: options.onCropImage,
+      importImages: options.onImportImages,
     },
   );
 }
@@ -309,16 +329,30 @@ export class ActiveEditorMenuController {
     const actions = this.#options.actions;
     const textEditing = this.#textEditing;
     const textId = textEditing?.selectedId();
+    const imageId = actions.selectedImageId;
     const pasteInvocation = {
       invocationPoint: { x: position.x, y: position.y },
       kind: "context-menu" as const,
     };
     let session: ContextMenuSession;
     session = openActiveEditorMenu({
+      selectionLock: actions.lockState,
+      canSelectLocked: actions.isAvailable("select-locked"),
+      canCut: actions.isAvailable("cut"),
+      canDelete: actions.isAvailable("delete"),
+      onLockSelection: () => actions.execute("lock-selection"),
+      onUnlockSelection: () => actions.execute("unlock-selection"),
+      onSelectLocked: () => actions.execute("select-locked"),
       canCopyText: actions.canCopyText,
+      onImportImages: actions.canImportImages ? () => actions.importImages(position) : undefined,
+      onCropImage: actions.canCropImage
+        ? () => {
+            if (actions.selectedImageId === imageId) actions.cropImage();
+          }
+        : undefined,
       localization: this.#options.localization,
       arrangeAvailability: actions.arrangeAvailability(),
-      canEraseAll: this.#options.storeSize() > 0,
+      canEraseAll: actions.isAvailable("erase-all"),
       canPaste: actions.canRequestPaste,
       ...(event === undefined ? {} : { event }),
       factory: this.#options.factory,
@@ -338,7 +372,7 @@ export class ActiveEditorMenuController {
       onEraseAll: () => actions.execute("erase-all"),
       onPaste: () => actions.execute("paste", pasteInvocation),
       onEditText:
-        textId === undefined || textEditing === undefined
+        textId === undefined || textEditing === undefined || !actions.hasEditableSelection
           ? undefined
           : () => {
               if (textEditing.selectedId() === textId) textEditing.onEdit(textId);

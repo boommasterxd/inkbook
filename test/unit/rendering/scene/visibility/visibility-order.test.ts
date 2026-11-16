@@ -24,11 +24,12 @@ it("merges entrants and band changes while unchanged retained ranks skip order v
     const entered = state.query(BOUNDS);
     expect(entered.visibility.content.ids).toEqual(["first", "entrant", "last"]);
     expect(entered.delta).toEqual({ entered: ["entrant"], exited: [] });
-    store.records.set(entrant.id, { ...entrant, band: "highlight" });
+    store.records.set(entrant.id, { ...entrant, band: "image" });
     state.invalidateForChanges(entrant.bounds, entrant.bounds, entrant.id);
     const changed = state.query(BOUNDS);
     expect(changed.visibility.content.ids).toEqual(["first", "last"]);
-    expect(changed.visibility.highlight.ids).toEqual(["entrant"]);
+    expect(changed.visibility.image.ids).toEqual(["entrant"]);
+    expect(changed.visibility.highlight.ids).toEqual([]);
     expect(original.content.ids).toEqual(["first", "last"]);
     expect(stable).not.toHaveBeenCalled();
     expect(sort).not.toHaveBeenCalled();

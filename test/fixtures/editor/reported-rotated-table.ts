@@ -12,7 +12,7 @@ export function reportedRotatedTable(): TableElementV1 {
     pivot: { x: 713.255, y: 3144.957 },
     rotation: 89.51,
     style: {
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba", value: "#000000FF" },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 4,

@@ -7,6 +7,9 @@ import {
   type StyleChange,
 } from "../../../../src/editor/tools/style-change";
 
+import { imageElement } from "../../../fixtures/domain/images";
+import { summarizeSelectionStyle } from "../../../../src/editor/tools/style-summary";
+
 const defaults = createBuiltInSettings().toolDefaults;
 const identity = { id: "123e4567-e89b-42d3-a456-426614174000", createdAt: 0 };
 const pen = createFreehandElement({ identity, tool: "draw", samples: [10, 10, 0.5], defaults });
@@ -34,6 +37,16 @@ const selection = [pen, highlighter, straight, rectangle];
 
 const commonChanges = [
   {
+    change: { property: "color", value: { type: "theme-text" } },
+    stroke: { color: { type: "theme-text" } },
+    outline: { outlineColor: { type: "theme-text" } },
+  },
+  {
+    change: { property: "color", value: { type: "rgba", value: "#000000FF" } },
+    stroke: { color: { type: "rgba", value: "#000000FF" } },
+    outline: { outlineColor: { type: "rgba", value: "#000000FF" } },
+  },
+  {
     change: { property: "color", value: { type: "rgba", value: "#FF00AAFF" } },
     stroke: { color: { type: "rgba", value: "#FF00AAFF" } },
     outline: { outlineColor: { type: "rgba", value: "#FF00AAFF" } },
@@ -51,6 +64,20 @@ const commonChanges = [
 ] as const;
 
 describe("mixed selection paint", () => {
+  it("ignores images in mixed styling and retains a no-style image selection", () => {
+    const image = imageElement();
+    const change = { property: "color", value: { type: "rgba", value: "#FF00AAFF" } } as const;
+    const result = applySelectionStyleChange([image, pen], change);
+    expect(result.changed).toBe(true);
+    expect(result.elements[0]).toBe(image);
+    expect(result.elements[1]).toMatchObject({ style: { color: change.value } });
+    expect(summarizeSelectionStyle([image, pen])).toEqual(summarizeSelectionStyle([pen]));
+    expect(summarizeSelectionStyle([image])).toBeNull();
+    expect(applySelectionStyleChange([image], change)).toEqual({
+      elements: [image],
+      changed: false,
+    });
+  });
   it.each(commonChanges)(
     "applies $change.property to stroke paint and shape outlines",
     ({ change, stroke, outline }) => {
@@ -59,6 +86,7 @@ describe("mixed selection paint", () => {
       expect(result.changed).toBe(true);
       for (let index = 0; index < selection.length; index += 1) {
         const original = selection[index]!;
+        if (!("style" in original)) throw new Error("Expected a styled fixture.");
         expect(result.elements[index]).toEqual({
           ...original,
           style: { ...original.style, ...(original.kind === "rectangle" ? outline : stroke) },
@@ -83,7 +111,7 @@ describe("mixed selection paint", () => {
   it("rejects family-specific properties without partially mutating a mixed selection", () => {
     const before = structuredClone(selection);
     const changes: StyleChange[] = [
-      { property: "outline-color", value: { type: "theme-text" } },
+      { property: "outline-color", value: { type: "rgba", value: "#000000FF" } },
       { property: "outline-width", value: 8 },
       { property: "outline-opacity", value: 0.5 },
       { property: "outline-style", value: "dashed" },

@@ -101,9 +101,9 @@ function validateColorChange(change: StyleChange): void {
   if (
     change.value !== null &&
     change.value.type !== "theme-text" &&
-    !isRgbaColor(change.value.value)
+    (change.value.type !== "rgba" || !isRgbaColor(change.value.value))
   ) {
-    throw new RangeError("Style colors must be theme-text or canonical RGBA values.");
+    throw new RangeError("Style colors must be theme text or canonical RGBA values.");
   }
 }
 

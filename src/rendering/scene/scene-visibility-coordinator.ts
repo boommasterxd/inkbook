@@ -215,14 +215,14 @@ export class SceneVisibilityCoordinator {
       this.releasePreviews();
     }
     if (!commits.releaseCommitted()) return;
-    this.#elements.retainCommittedGeometry(this.#transforms.values);
+    this.#elements.retainCommittedGeometry(this.#transforms.requestedValues);
     this.#transforms.clear();
     this.#elements.clear();
     this.releasePreviews();
   }
   public captureCommittedPreview(commits: ScenePreviewCommitController): void {
     if (!commits.releaseCommitted()) return;
-    this.#elements.retainCommittedGeometry(this.#transforms.values);
+    this.#elements.retainCommittedGeometry(this.#transforms.requestedValues);
     this.#transforms.clear();
     this.#elements.release();
     this.#capturedPreviewRelease = true;
@@ -235,15 +235,15 @@ export class SceneVisibilityCoordinator {
     frameTime: number,
   ): void {
     this.#elements.applyMounted(this.#content.takeCommittedPreviewIds());
-    const settled = (id: string) =>
-      this.#content.hasMounted(id) || (!this.#queryPending && !this.#visibility.contains(id));
-    liveStroke.settleCommits(settled);
-    livePaths.settle(settled);
     const mountedIds = this.#content.takeNewlyMountedIds();
     this.#transforms.applyMounted(mountedIds);
     motion.bindMountedEntrances(mountedIds, frameTime);
     motion.finishEntranceBatch();
     this.#elements.applyMounted(mountedIds);
+    const settled = (id: string) =>
+      this.#content.hasMounted(id) || (!this.#queryPending && !this.#visibility.contains(id));
+    liveStroke.settleCommits(settled);
+    livePaths.settle(settled);
     this.prepareNavigation();
   }
 
@@ -272,7 +272,7 @@ export class SceneVisibilityCoordinator {
     );
     const envelope =
       viewport === undefined ? undefined : visibilityPageBounds(viewport, camera).envelope;
-    this.#transforms.setContext(camera, viewport, envelope);
+    this.#transforms.setContext(camera, envelope);
     this.#elements.refreshProgressiveContext(viewport, camera, envelope);
     this.invalidate(true);
   }
@@ -324,7 +324,7 @@ export class SceneVisibilityCoordinator {
       return;
     }
     this.#preloadMarginDirty = false;
-    this.#transforms.setContext(camera, viewport, envelope);
+    this.#transforms.setContext(camera, envelope);
     this.#elements.refreshProgressiveContext(viewport, camera, envelope, result.changed);
     this.#content.settleMembershipVisibility((id) => this.#visibility.contains(id));
     if (!result.changed && !orderDirty && !this.#content.needsVisibilityRestart) {

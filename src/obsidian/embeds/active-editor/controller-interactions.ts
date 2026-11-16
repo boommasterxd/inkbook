@@ -25,8 +25,10 @@ import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { ActiveEditorBackgroundSession } from "./background-session";
 import { ActiveEditorHistoryTraversal } from "./history-traversal";
 import { ActiveEditorStyleSession, type ActiveEditorStyleSessionOptions } from "./style-session";
+import { createCanvasImageCropOpening } from "./controller-image-crop";
 
 export interface ActiveEditorInteractionsOptions {
+  readonly finishText?: () => Promise<boolean>;
   readonly onHandleSettled?: () => void;
   readonly registerApplied?: import("./prepared-element-history").PreparedElementHistoryOptions["registerApplied"];
   readonly reflowText?: import("./previews/handle-interaction-contracts").ActiveEditorHandleInteractionOptions["reflowText"];
@@ -112,6 +114,10 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     ...(options.registerApplied === undefined ? {} : { registerApplied: options.registerApplied }),
   });
   const actions = new ActiveEditorActions({
+    onImportImages: controller.onImportImages,
+    onCropImage:
+      controller.onCropImage ?? createCanvasImageCropOpening(controller, options.onPendingChanged),
+    ...(options.finishText === undefined ? {} : { finishText: options.finishText }),
     copyTextFieldsAsText: controller.copyTextFieldsAsText ?? false,
     confirmEraseAll: controller.confirmEraseAll,
     currentSelection: options.selection,

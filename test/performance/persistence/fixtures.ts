@@ -33,7 +33,7 @@ const CLIPBOARD_STROKES = 4_000;
 export const CLIPBOARD_POINTS = 500_000;
 
 const strokeStyle = Object.freeze({
-  color: { type: "theme-text" },
+  color: { type: "rgba" as const, value: "#000000FF" as const },
   opacity: 1,
   pressureEnabled: false,
   smoothing: 0.5,
@@ -41,7 +41,7 @@ const strokeStyle = Object.freeze({
 } satisfies StrokeStyleV1);
 
 const outlineStyle = Object.freeze({
-  outlineColor: { type: "theme-text" },
+  outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
   outlineOpacity: 1,
   outlineStyle: "solid",
   outlineWidth: 4,
@@ -198,7 +198,7 @@ export function createRetainedCapacityRectangle(index: number): BoxShapeElementV
     style: {
       fillColor: null,
       fillOpacity: 0,
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 4,

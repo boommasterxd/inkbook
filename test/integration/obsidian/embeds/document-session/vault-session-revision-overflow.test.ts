@@ -54,6 +54,7 @@ describe("vault-backed revision capacity", () => {
     );
     expect(() =>
       model.commitBandOrder({
+        image: [],
         content: model.store.materializeBandOrder("content"),
         highlight: model.store.materializeBandOrder("highlight"),
       }),
@@ -63,7 +64,7 @@ describe("vault-backed revision capacity", () => {
     ).toThrow(DocumentRevisionExhaustedError);
 
     const preparedMutation = await model.prepareElementMutation(
-      { bands: { content: [], highlight: [] }, removeIds: [source.id] },
+      { bands: { image: [], content: [], highlight: [] }, removeIds: [source.id] },
       { isCancelled: () => false },
     );
     const mutationToken = preparedMutation.token;
@@ -161,7 +162,10 @@ describe("active editor revision capacity", () => {
     background.previewSpacing("xl");
     background.changeType("dots");
     expect(
-      history.reorder({ content: [rectangle().id], highlight: [] }, { content: [], highlight: [] }),
+      history.reorder(
+        { image: [], content: [rectangle().id], highlight: [] },
+        { image: [], content: [], highlight: [] },
+      ),
     ).toBe(false);
     expect(
       history.replace(

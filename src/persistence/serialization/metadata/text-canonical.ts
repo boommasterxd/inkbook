@@ -29,17 +29,26 @@ export function canonicalTextElement(element: TextElementV2): TextElementV2 {
   return step.value;
 }
 
+function canonicalTextIdentity(
+  element: TextElementV2,
+): Pick<TextElementV2, "kind" | "id" | "createdAt" | "rotation" | "pivot" | "locked"> {
+  return {
+    kind: "text",
+    id: element.id,
+    createdAt: element.createdAt,
+    rotation: element.rotation,
+    pivot: { x: element.pivot.x, y: element.pivot.y },
+    ...(element.locked === true ? { locked: true } : {}),
+  };
+}
+
 export function* canonicalTextElementSteps(
   element: TextElementV2,
   signal?: AbortSignal,
 ): Generator<void, TextElementV2> {
   signal?.throwIfAborted();
   const canonical: TextElementV2 = {
-    kind: "text",
-    id: element.id,
-    createdAt: element.createdAt,
-    rotation: element.rotation,
-    pivot: { x: element.pivot.x, y: element.pivot.y },
+    ...canonicalTextIdentity(element),
     x: element.x,
     y: element.y,
     width: element.width,
@@ -160,6 +169,7 @@ function canonicalTextRun(run: TextLayoutRunV2): TextLayoutRunV2 {
     end: run.end,
     x: run.x,
     width: run.width,
+    ...(run.inkBounds === undefined ? {} : { inkBounds: { ...run.inkBounds } }),
     ...(run.fontResourceId === undefined ? {} : { fontResourceId: run.fontResourceId }),
     ...(run.style === undefined ? {} : { style: canonicalPartialStyle(run.style) }),
   };

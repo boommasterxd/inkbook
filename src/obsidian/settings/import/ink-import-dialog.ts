@@ -223,9 +223,16 @@ export class InkImportDialog extends InkbookModal {
               },
               true,
             ).disabled = (this.#viewState.selection?.size ?? preview.sources.length) === 0;
-          else this.#button(this.#options.localization.t("import.close"), () => this.close(), true);
+          else
+            this.#button(
+              this.#options.localization.t("import.scanAgain"),
+              () => this.#scan(),
+              true,
+            );
         });
-        this.#announce("import.scanComplete");
+        this.#announce(
+          preview.sources.length === 0 ? "import.scanEmptyStatus" : "import.scanComplete",
+        );
       },
     );
   }

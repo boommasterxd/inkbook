@@ -17,6 +17,15 @@ import { textToolbarIcon } from "../../../../../src/obsidian/embeds/active-edito
 
 const mount = useActiveTextSessions();
 
+it("keeps locked text readable without opening an editable source", async () => {
+  const state = mount(activeTextLayout({ ...textElement(), locked: true }));
+  await expect(state.session.edit(state.element.id)).resolves.toBe(false);
+  expect(state.session.active).toBe(false);
+  expect(state.model.store.get(state.element.id)?.element).toMatchObject({ locked: true });
+  expect(state.history.commandCount).toBe(0);
+  expect(state.error).not.toHaveBeenCalled();
+});
+
 it("canonicalizes fractional slider styles before source ranges enter prepared save and history", async () => {
   const state = mount();
   await state.session.edit(state.element.id);

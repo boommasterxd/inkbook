@@ -18,7 +18,14 @@ export function createHarness(
   options: Partial<
     Pick<
       ActiveEditorControllerOptions,
-      "deviceSettings" | "model" | "onboardingPreference" | "onFeedback" | "confirmEraseAll"
+      | "deviceSettings"
+      | "model"
+      | "onboardingPreference"
+      | "onFeedback"
+      | "confirmEraseAll"
+      | "onImportImages"
+      | "onCropImage"
+      | "menuFactory"
     >
   > = {},
   rendererOverrides: Partial<SvgSceneRenderer> = {},

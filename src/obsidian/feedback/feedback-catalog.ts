@@ -26,6 +26,8 @@ export type InkbookFeedbackCode =
   | "handwriting-inserted"
   | "history-change-failed"
   | "history-lock-required"
+  | "image-capacity-exceeded"
+  | "image-change-failed"
   | "insertion-cleanup-failed"
   | "insertion-failed"
   | "insertion-note-changed-cleaned"
@@ -189,6 +191,16 @@ const FEEDBACK: Readonly<
     detail: "host.feedback.history-change-failed.detail",
     severity: "error",
     title: "host.feedback.history-change-failed.title",
+  },
+  "image-capacity-exceeded": {
+    detail: "host.feedback.image-capacity-exceeded.detail",
+    severity: "warning",
+    title: "host.feedback.image-capacity-exceeded.title",
+  },
+  "image-change-failed": {
+    detail: "host.feedback.image-change-failed.detail",
+    severity: "error",
+    title: "host.feedback.image-change-failed.title",
   },
   "text-preparation-failed": {
     detail: "host.feedback.text-preparation-failed.detail",

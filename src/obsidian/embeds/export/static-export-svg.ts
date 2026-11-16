@@ -1,3 +1,4 @@
+import { createImageReferenceScope } from "../preview/preview-image-references";
 import { PORTABLE_PALETTE_V1 } from "../../../domain/schema/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { appendParsedPreviewElement, createPreviewSvgAsync } from "../preview/safe-preview-builder";
@@ -28,6 +29,7 @@ export async function createPreparedStaticExportSvg(
 ): Promise<PreparedStaticExportSvg | undefined> {
   if (options.signal.aborted) return undefined;
   const parents: Element[] = [];
+  const scopeImages = createImageReferenceScope();
   let svg: SVGSVGElement | undefined;
   try {
     const fragments = await prepareStaticExportFragments(descriptor.safeSvg, {
@@ -35,9 +37,10 @@ export async function createPreparedStaticExportSvg(
       signal: options.signal,
       visitor: {
         open: (tag) => {
-          const element = appendParsedPreviewElement(ownerDocument, tag, parents, (created) =>
-            configureExportElement(created, options.colorScheme ?? "light"),
-          );
+          const element = appendParsedPreviewElement(ownerDocument, tag, parents, (created) => {
+            scopeImages(created);
+            configureExportElement(created, options.colorScheme ?? "light");
+          });
           svg ??= element as SVGSVGElement;
         },
         close: () => {
@@ -109,10 +112,10 @@ function configureExportElement(element: Element, scheme: InkbookColorScheme): v
       element.setAttribute("fill", palette.text);
       break;
     case "inkbook-theme-stroke-fill":
-      element.setAttribute("fill", palette.text);
       element.setAttribute("stroke", palette.text);
+      element.setAttribute("fill", palette.text);
       break;
   }
   element.removeAttribute("class");
-  element.removeAttribute("id");
+  if (element.localName !== "image") element.removeAttribute("id");
 }

@@ -1,4 +1,4 @@
-import type { RenderBand } from "../../commands/render-bands";
+import { RENDER_BANDS, type RenderBand } from "../../commands/render-bands";
 
 export interface StoreOrderStep {
   readonly id?: string;
@@ -22,9 +22,10 @@ export class StoreOrderCursor {
 
   public advance(): StoreOrderStep {
     if (this.#cancelled || this.version() !== this.#version) return { done: true, stale: true };
-    while (this.#band < 2) {
-      const band = this.#band === 0 ? "highlight" : "content";
-      const id = this.bands()[band][this.#index++];
+    const bands = this.bands();
+    while (this.#band < RENDER_BANDS.length) {
+      const band = RENDER_BANDS[this.#band]!;
+      const id = bands[band][this.#index++];
       if (id !== undefined) return { id, done: false, stale: false };
       this.#band += 1;
       this.#index = 0;

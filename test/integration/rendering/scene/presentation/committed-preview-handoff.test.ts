@@ -1,3 +1,9 @@
+import {
+  FakeSceneStore,
+  fakeNode,
+  sceneBandNode,
+  sceneNodeWithClass,
+} from "../../../../unit/rendering/scene/fakes";
 import type { PressureWindow } from "../../../../../src/domain/geometry/pressure/prepared-pressure-geometry";
 import * as pressureUnion from "../../../../../src/domain/geometry/pressure/pressure-union";
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
@@ -14,7 +20,6 @@ import {
 } from "../../../../fixtures/rendering/scene";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { createWorkerSnapshot } from "../../../../fixtures/persistence/worker-snapshot";
-import { FakeSceneStore, fakeNode } from "../../../../unit/rendering/scene/fakes";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -81,7 +86,7 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
     renderer.setSelectedElements(new Set(ids));
     scheduler.runAll();
   }
-  const root = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
+  const root = sceneBandNode(fakeNode(renderer.svg), "content").nodes[0]!;
   const original = root.attributes.get("d");
   renderer.setPreviewTransform(ids, "scale(1.1 1)", 1);
   renderer.flushPointerFeedbackFrame();
@@ -183,7 +188,7 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
   }
   expect(fullBuild).not.toHaveBeenCalled();
   expect(root.attributes.get("d")).toBe(scaledPath);
-  expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toEqual([root]);
+  expect(sceneBandNode(fakeNode(renderer.svg), "content").nodes).toEqual([root]);
   expect(root.attributes.get("transform")).toBe("translate(5 0)");
   const union = vi.spyOn(pressureUnion, "iteratePressureUnion");
   const prepared = new ScenePathCache();
@@ -252,7 +257,10 @@ it("retains mixed constant-width ink and shapes while the preceding pressure job
     rectangle(indexedStroke(4).id),
   ]);
   const camera = fakeNode(renderer.svg).nodes[1]!;
-  const nodes = [...camera.nodes[3]!.nodes, ...camera.nodes[4]!.nodes];
+  const nodes = [
+    ...sceneBandNode(camera, "highlight").nodes,
+    ...sceneBandNode(camera, "content").nodes,
+  ];
   expect(nodes).toHaveLength(4);
   for (const node of nodes) expect(node.attributes.get("transform")).toBe("scale(1.1 1)");
   while (scheduler.pendingCount > 0) scheduler.runFrame();
@@ -318,7 +326,7 @@ it("finishes selection dismissal on schedule while canonical commit geometry rem
 
 it("removes deselected stroke halos before pending committed geometry finishes", () => {
   const { renderer, scheduler, root, original } = pendingCommit([], true);
-  const traces = fakeNode(renderer.svg).nodes[1]!.nodes[8]!;
+  const traces = sceneNodeWithClass(fakeNode(renderer.svg), "inkbook-selection-traces");
   expect(traces.nodes.length).toBeGreaterThan(0);
   renderer.setSelectedElements(new Set());
   scheduler.runFrame();

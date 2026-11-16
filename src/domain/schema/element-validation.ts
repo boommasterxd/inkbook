@@ -1,5 +1,6 @@
 import { canonicalizeGeometryNumber } from "./canonical";
 import { assertTextElementSteps } from "./text-validation";
+import { assertImageElement } from "./image-validation";
 import { assertStrokeSamplesSteps } from "./stroke-sample-validation";
 import { FILE_SCHEMA_LIMITS, type SchemaLimits } from "./constants";
 import { assertOutlineStyle, assertShapeStyle, assertStrokeStyle } from "./style-validation";
@@ -174,6 +175,10 @@ export function* assertInkElementSteps(
       assertBase(value, path, context);
       yield* assertTextElementSteps(value, path, context);
       return;
+    case "image":
+      assertBase(value, path, context);
+      assertImageElement(value, path, context);
+      return;
     default:
       fail("invalid-literal", `${path}.kind`, "Unsupported element kind.");
   }
@@ -184,6 +189,12 @@ function assertBase(value: UnknownRecord, path: string, context: ValidationConte
   assertSafeInteger(value.createdAt, 0, `${path}.createdAt`);
   assertRotation(value.rotation, `${path}.rotation`);
   assertPoint(value.pivot, `${path}.pivot`, context);
+  if (value.locked !== undefined && typeof value.locked !== "boolean")
+    fail("invalid-type", `${path}.locked`, "Element lock state must be boolean.");
+}
+
+function baseKeys(value: UnknownRecord): readonly string[] {
+  return value.locked === undefined ? BASE_KEYS : [...BASE_KEYS, "locked"];
 }
 
 function assertPoint(
@@ -205,7 +216,13 @@ function* assertStrokeSteps(
 ): Generator<boolean, void> {
   assertExactKeys(
     value,
-    [...BASE_KEYS, "tool", "points", "style", ...(value.offset === undefined ? [] : ["offset"])],
+    [
+      ...baseKeys(value),
+      "tool",
+      "points",
+      "style",
+      ...(value.offset === undefined ? [] : ["offset"]),
+    ],
     path,
   );
   if (value.offset !== undefined) assertPoint(value.offset, `${path}.offset`, context);
@@ -234,7 +251,11 @@ function* assertStrokeSteps(
 }
 
 function assertLine(value: UnknownRecord, path: string, context: ValidationContext): void {
-  assertExactKeys(value, [...BASE_KEYS, ...LINEAR_KEYS, "startConnection", "endConnection"], path);
+  assertExactKeys(
+    value,
+    [...baseKeys(value), ...LINEAR_KEYS, "startConnection", "endConnection"],
+    path,
+  );
   assertLiteral(value.kind, "line", `${path}.kind`);
   assertBase(value, path, context);
   assertLinearGeometry(value, path, context);
@@ -246,7 +267,11 @@ function assertLine(value: UnknownRecord, path: string, context: ValidationConte
 }
 
 function assertArrow(value: UnknownRecord, path: string, context: ValidationContext): void {
-  assertExactKeys(value, [...BASE_KEYS, ...LINEAR_KEYS, "startConnection", "endConnection"], path);
+  assertExactKeys(
+    value,
+    [...baseKeys(value), ...LINEAR_KEYS, "startConnection", "endConnection"],
+    path,
+  );
   assertLiteral(value.kind, "arrow", `${path}.kind`);
   assertBase(value, path, context);
   assertLinearGeometry(value, path, context);
@@ -262,7 +287,7 @@ function assertStraightHighlighter(
   path: string,
   context: ValidationContext,
 ): void {
-  assertExactKeys(value, [...BASE_KEYS, ...LINEAR_KEYS], path);
+  assertExactKeys(value, [...baseKeys(value), ...LINEAR_KEYS], path);
   assertLiteral(value.kind, "straight-highlighter", `${path}.kind`);
   assertBase(value, path, context);
   assertLinearGeometry(value, path, context);
@@ -334,7 +359,7 @@ function assertShapeAnchor(value: unknown, path: string): asserts value is Shape
 }
 
 function assertBoxShape(value: UnknownRecord, path: string, context: ValidationContext): void {
-  assertExactKeys(value, [...BASE_KEYS, "x", "y", "width", "height", "style"], path);
+  assertExactKeys(value, [...baseKeys(value), "x", "y", "width", "height", "style"], path);
   assertOneOf(value.kind, SHAPE_KINDS, `${path}.kind`);
   assertBase(value, path, context);
   assertGeometryNumber(value.x, `${path}.x`, context.limits.absoluteCoordinate);
@@ -353,7 +378,7 @@ function assertCoordinateSystem(
   path: string,
   context: ValidationContext,
 ): void {
-  assertExactKeys(value, [...BASE_KEYS, "origin", "dimension", "axes", "style"], path);
+  assertExactKeys(value, [...baseKeys(value), "origin", "dimension", "axes", "style"], path);
   assertLiteral(value.kind, "coordinate-system", `${path}.kind`);
   assertBase(value, path, context);
   assertPoint(value.origin, `${path}.origin`, context);
@@ -376,7 +401,7 @@ function assertTable(value: UnknownRecord, path: string, context: ValidationCont
   assertExactKeys(
     value,
     [
-      ...BASE_KEYS,
+      ...baseKeys(value),
       "x",
       "y",
       "columnWidth",

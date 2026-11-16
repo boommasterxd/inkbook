@@ -46,7 +46,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz camera reconciliation pr
     let finalViewport: SceneViewport = DEFAULT_VIEWPORT;
     let entrants = 0;
     let exits = 0;
-    const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
+    const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[5]!;
     const initialRemovals = scheduler.totalRemovedRoots;
     for (let frame = 0; frame < TRANSITIONS; frame += 1) {
       const phase = frame % 4;
@@ -154,7 +154,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
     const { renderer, scheduler } = createProfileRenderer(fixture.store);
     try {
       drainPendingFrames(scheduler);
-      const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
+      const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[5]!;
       for (let transition = 0; transition < 16; transition += 1) {
         const viewport = { ...DEFAULT_VIEWPORT, top: transition % 2 === 0 ? 800 : 0 };
         const camera = { x: transition % 3 === 0 ? -50 : 0, zoom: transition % 4 ? 1 : 1.05 };
@@ -201,7 +201,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz erased SVG cleanup`, () 
     let budget = INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs;
     const { renderer, scheduler } = createFullyVisibleRenderer(fixture.store, () => budget);
     let starts = 0;
-    const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
+    const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[5]!;
     const observedNodes = content.nodes.flatMap((root) => [root, ...root.nodes]);
     for (const node of observedNodes) {
       const animate = node.animate.bind(node);
@@ -285,7 +285,7 @@ describe("restored stroke motion work", () => {
     const unsubscribe = fixture.store.subscribe((delta) => applyStoreDelta(renderer, delta));
     try {
       const prepared = await fixture.store.prepareElementMutation(
-        { bands: { content: fixture.ids, highlight: [] }, elements: restored },
+        { bands: { image: [], content: fixture.ids, highlight: [] }, elements: restored },
         { shouldYield: () => false, yieldControl: async () => undefined },
       );
       if (prepared.token === null) throw new Error("Expected a prepared restoration.");
@@ -326,7 +326,7 @@ function createProfileRenderer(store: ElementStore) {
     frameBudgetMs: () => INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
     scheduler,
   });
-  const content = (fixture.renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
+  const content = (fixture.renderer.svg as unknown as FakeNode).nodes[1]!.nodes[5]!;
   const originalInsert = content.insertBefore.bind(content);
   vi.spyOn(content, "insertBefore").mockImplementation((node, successor) => {
     const roots = node.fragment ? node.nodes.length : 1;

@@ -25,7 +25,7 @@ export function inlineFormulaLayout(): NonNullable<TextLayoutV2["math"]> {
 }
 
 const strokeStyle: StrokeStyleV1 = {
-  color: { type: "theme-text" },
+  color: { type: "rgba" as const, value: "#000000FF" as const },
   width: 4,
   opacity: 0.75,
   pressureEnabled: false,
@@ -33,7 +33,7 @@ const strokeStyle: StrokeStyleV1 = {
 };
 
 const outlineStyle: OutlineStyleV1 = {
-  outlineColor: { type: "theme-text" },
+  outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
   outlineWidth: 4,
   outlineOpacity: 0.8,
   outlineStyle: "solid",
@@ -74,7 +74,7 @@ export function createDottedRectangleSnapshot(y: number): InkSnapshotV1 {
       width: 100,
       height: 100,
       style: {
-        outlineColor: { type: "theme-text" },
+        outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
         outlineWidth: 4,
         outlineOpacity: 1,
         outlineStyle: "solid",
@@ -133,7 +133,7 @@ const ALL_ELEMENTS: readonly InkElementV1[] = [
     y: 200,
     width: 100,
     height: 100,
-    style: { ...shapeStyle, fillColor: { type: "theme-text" } },
+    style: { ...shapeStyle, fillColor: { type: "rgba" as const, value: "#000000FF" as const } },
   },
   polygon("triangle", 5, 800),
   polygon("diamond", 6, 1000),

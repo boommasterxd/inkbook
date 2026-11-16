@@ -1,3 +1,4 @@
+import { RENDER_BANDS } from "../../commands/render-bands";
 import { DEFAULT_HISTORY_BYTE_LIMIT } from "../../commands/history";
 import { retainBandSnapshot } from "./band-snapshots";
 import type { RenderBand } from "../../commands/render-bands";
@@ -71,6 +72,7 @@ function retainedMutationHistory(state: HistoryPreparation): AppliedRetainedElem
   const direction = (bands: ElementMutation["bands"]): RetainedElementMutation => {
     const mutation = Object.freeze({
       bands: Object.freeze({
+        image: retainBandSnapshot(bands.image),
         content: retainBandSnapshot(bands.content),
         highlight: retainBandSnapshot(bands.highlight),
       }),
@@ -81,7 +83,9 @@ function retainedMutationHistory(state: HistoryPreparation): AppliedRetainedElem
   const forward = direction(state.requested.bands);
   const reverse = direction(state.source.bands);
   const payloadBytes =
-    (forward.bands.content.length +
+    (forward.bands.image.length +
+      reverse.bands.image.length +
+      forward.bands.content.length +
       forward.bands.highlight.length +
       reverse.bands.content.length +
       reverse.bands.highlight.length) *
@@ -101,7 +105,8 @@ async function estimateReverseBytes(
   { source, desired, removeIds }: HistoryPreparation,
   scheduler: MutationPreparationScheduler,
 ): Promise<number | "cancelled"> {
-  let bytes = (source.bands.content.length + source.bands.highlight.length) * 80;
+  let bytes =
+    (source.bands.image.length + source.bands.content.length + source.bands.highlight.length) * 80;
   for (const id of removeIds) {
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     bytes += elementMutationPayloadBytes(requireElementRecord(source.records, id).element);
@@ -132,7 +137,7 @@ async function reverseMutation(
     else elements.push(current.element as InkElementV1);
   }
   const reusableBands: Partial<Record<RenderBand, readonly string[]>> = {};
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of RENDER_BANDS) {
     if (dirtyBands?.[band] === false || requested.bands[band] === source.bands[band]) {
       reusableBands[band] = forward.bands[band];
     } else {
@@ -151,6 +156,8 @@ async function freezeMutation(
   scheduler: MutationPreparationScheduler,
   reusableBands: Readonly<Partial<Record<RenderBand, readonly string[]>>> = {},
 ): Promise<ElementMutation | "cancelled"> {
+  const image = reusableBands.image ?? (await copyFrozen(mutation.bands.image, scheduler));
+  if (image === "cancelled") return image;
   const content = reusableBands.content ?? (await copyFrozen(mutation.bands.content, scheduler));
   if (content === "cancelled") return content;
   const highlight =
@@ -161,7 +168,7 @@ async function freezeMutation(
   const removeIds = await copyFrozen(mutation.removeIds ?? [], scheduler);
   if (removeIds === "cancelled") return removeIds;
   return Object.freeze({
-    bands: Object.freeze({ content, highlight }),
+    bands: Object.freeze({ image, content, highlight }),
     elements,
     removeIds,
   });
@@ -197,7 +204,11 @@ async function estimateMutationBytes(
   mutation: ElementMutation,
   scheduler: MutationPreparationScheduler,
 ): Promise<number | "cancelled"> {
-  let bytes = (mutation.bands.content.length + mutation.bands.highlight.length) * 80;
+  let bytes =
+    (mutation.bands.image.length +
+      mutation.bands.content.length +
+      mutation.bands.highlight.length) *
+    80;
   for (const id of mutation.removeIds ?? []) {
     if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     bytes += id.length * 2;

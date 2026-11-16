@@ -31,6 +31,7 @@ async function stagingFixture(mode: MutationMode) {
   if (mode === "replacement") candidate.points[0] = 110;
   const mutation: ElementMutation = removal?.transition.reverse ?? {
     bands: {
+      image: [],
       content: [],
       highlight: mode === "insertion" ? [source.id, candidate.id] : [source.id],
     },
@@ -157,9 +158,9 @@ describe("element mutation captured input integrity", () => {
       const result = store.commitPreparedElementMutation(requireToken(prepared));
       const adopted = store.get(candidate.id)!.element;
       const history = result.transition?.forward.elements?.[0];
-      expect(adopted.style).toMatchObject({ width: 8 });
       if (adopted.kind !== "stroke" || history?.kind !== "stroke")
         throw new Error("Expected strokes.");
+      expect(adopted.style).toMatchObject({ width: 8 });
       expect(adopted.points).toBeInstanceOf(Float64Array);
       expect(adopted.points[0]).toBe(expectedX);
       expect(history.points[0]).toBe(expectedX);

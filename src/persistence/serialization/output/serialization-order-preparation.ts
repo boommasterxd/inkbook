@@ -18,7 +18,7 @@ export function* prepareSerializationOrdersSteps(
 ): Generator<void, DocumentCodecResult<Record<RenderBand, string[]>>> {
   const membership = yield* prepareBandMembership(source, nodesPerStep);
   const orders = { ...source.currentOrders };
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of ["image", "highlight", "content"] as const) {
     const replacement = source.orderChanges?.[band];
     if (!membership.affected[band] && replacement === undefined) continue;
     const prepared = yield* prepareBandOrder(
@@ -31,6 +31,7 @@ export function* prepareSerializationOrdersSteps(
   return {
     ok: true,
     value:
+      orders.image === source.currentOrders.image &&
       orders.highlight === source.currentOrders.highlight &&
       orders.content === source.currentOrders.content
         ? source.currentOrders
@@ -43,10 +44,11 @@ function* prepareBandMembership(
   nodesPerStep: number,
 ): Generator<void, { sizes: Record<RenderBand, number>; affected: Record<RenderBand, boolean> }> {
   const sizes = {
+    image: source.currentOrders.image.length,
     highlight: source.currentOrders.highlight.length,
     content: source.currentOrders.content.length,
   };
-  const affected = { highlight: false, content: false };
+  const affected = { image: false, highlight: false, content: false };
   let visited = 0;
   for (const id of source.removed) {
     const current = source.currentElements.get(id);

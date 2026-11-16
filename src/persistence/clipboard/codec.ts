@@ -1,9 +1,11 @@
+import { elementSnapshotVersion } from "../../domain/schema/snapshot-version";
 import type {
   ClipboardElementBodyV1,
   ClipboardElementV1,
   InkClipboardV1,
   InkElementV1,
   FontResourceV2,
+  ImageResourceV3,
 } from "../../domain/schema/public";
 import { MAX_JSON_DEPTH } from "../../domain/schema/public";
 import { CLIPBOARD_LIMITS, INKBOOK_CLIPBOARD_TEXT_PREFIX } from "./constants";
@@ -15,6 +17,7 @@ import type {
   EncodedClipboard,
 } from "./types";
 import { validateClipboardPayload, validateRuntimeClipboardPayload } from "./validation";
+import { usedImageResourcesSteps } from "../images/used-image-resources";
 import { usedFontResourcesSteps } from "../fonts/used-font-resources";
 import { bindTextElementFontResourcesSteps } from "../fonts/bound-font-resources";
 import { completeSerializationSteps } from "../serialization/output/serialization-model-preparation";
@@ -39,13 +42,14 @@ const createBody = (
   documentIdToClipId: ReadonlyMap<string, string>,
 ): ClipboardElementBodyV1 => {
   if (element.kind !== "line" && element.kind !== "arrow") {
-    const { id: _id, createdAt: _createdAt, ...identityFree } = element;
-    return identityFree;
+    const { id: _id, createdAt: _createdAt, locked, ...identityFree } = element;
+    return { ...identityFree, ...(locked === true ? { locked: true } : {}) };
   }
 
   const {
     id: _id,
     createdAt: _createdAt,
+    locked,
     startConnection: _start,
     endConnection: _end,
     ...linearBody
@@ -57,6 +61,7 @@ const createBody = (
   };
   return {
     ...linearBody,
+    ...(locked === true ? { locked: true } : {}),
     startConnection: remapConnection(element.startConnection),
     endConnection: remapConnection(element.endConnection),
   };
@@ -94,6 +99,7 @@ const encodeSelectionInternal = (
   selectedIds: ReadonlySet<string>,
   allowRuntimeStrokeBuffers: boolean,
   fontResources: readonly FontResourceV2[],
+  imageResources: readonly ImageResourceV3[],
 ): ClipboardResult<EncodedClipboard> => {
   if (selectedIds.size === 0) {
     return { ok: false, error: { code: "empty-selection", message: "No elements are selected." } };
@@ -106,17 +112,21 @@ const encodeSelectionInternal = (
     };
   }
   let selectedFonts: FontResourceV2[];
+  let selectedImages: ImageResourceV3[];
   try {
     selectedElements = selectedElements.map((element) =>
       element.kind === "text"
         ? completeSerializationSteps(bindTextElementFontResourcesSteps(element, fontResources))
         : element,
     );
+    selectedImages = completeSerializationSteps(
+      usedImageResourcesSteps(selectedElements, imageResources),
+    );
     selectedFonts = completeSerializationSteps(
       usedFontResourcesSteps(selectedElements, fontResources),
     );
   } catch {
-    return schemaFailure("The selection references an unavailable font face.");
+    return schemaFailure("The selection references an unavailable resource.");
   }
   const documentIdToClipId = new Map(
     selectedElements.map(({ id }, index) => [id, compactClipId(index)] as const),
@@ -125,12 +135,14 @@ const encodeSelectionInternal = (
     clipId: compactClipId(index),
     element: createBody(element, documentIdToClipId),
   }));
+  const hasImages = selectedElements.some((element) => element.kind === "image");
   const hasText = selectedElements.some((element) => element.kind === "text");
   const payload: InkClipboardV1 = {
     format: "inkbook-elements",
-    version: hasText ? 2 : 1,
+    version: elementSnapshotVersion(selectedElements),
     elements: clipboardElements,
     ...(hasText ? { fontResources: selectedFonts } : {}),
+    ...(hasImages ? { imageResources: selectedImages } : {}),
   };
   const validation = allowRuntimeStrokeBuffers
     ? validateRuntimeClipboardPayload(payload)
@@ -142,8 +154,9 @@ export const encodeRuntimeSelection = (
   elementsInRenderOrder: readonly InkElementV1[],
   selectedIds: ReadonlySet<string>,
   fontResources: readonly FontResourceV2[] = [],
+  imageResources: readonly ImageResourceV3[] = [],
 ): ClipboardResult<EncodedClipboard> =>
-  encodeSelectionInternal(elementsInRenderOrder, selectedIds, true, fontResources);
+  encodeSelectionInternal(elementsInRenderOrder, selectedIds, true, fontResources, imageResources);
 
 function serializeClipboardPayload(payload: InkClipboardV1): string {
   return serializeCanonicalJson(payload);

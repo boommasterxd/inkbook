@@ -196,7 +196,7 @@ export class ActiveEditorKeyboardController {
       canvasAction !== "cut" &&
       !this.#options.actions.isAvailable(canvasAction)
     )
-      return false;
+      return canvasAction === "delete" && this.#options.selectionSize() > 0;
     this.#options.actions.execute(canvasAction);
     return true;
   }

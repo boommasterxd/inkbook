@@ -1,3 +1,4 @@
+import { FakeDocument } from "../fakes";
 import { describe, expect, it } from "vitest";
 import {
   boundsIntersect,
@@ -16,7 +17,6 @@ import {
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { createSceneRecord } from "../../../../fixtures/rendering/scene";
 import { rectangle } from "../../../domain/store/fixtures";
-import { FakeDocument } from "../fakes";
 
 describe("mounted preview selection", () => {
   it.each([255, 256, 257, 300])(

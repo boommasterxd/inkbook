@@ -68,6 +68,7 @@ export function unpackClipboardPayload(payload: PackedClipboardPayload): InkClip
     format: payload.format,
     version: payload.version,
     elements,
+    ...(payload.imageResources === undefined ? {} : { imageResources: payload.imageResources }),
     ...(payload.fontResources === undefined ? {} : { fontResources: payload.fontResources }),
   };
 }

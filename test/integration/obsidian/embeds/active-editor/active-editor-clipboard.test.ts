@@ -409,9 +409,9 @@ function appliedMutation(
   id: string,
 ): import("../../../../../src/domain/store/public").AppliedElementMutation {
   return {
-    forward: { bands: { content: [id], highlight: [] } },
+    forward: { bands: { image: [], content: [id], highlight: [] } },
     payloadBytes: 1,
-    reverse: { bands: { content: [], highlight: [id] } },
+    reverse: { bands: { image: [], content: [], highlight: [id] } },
   };
 }
 

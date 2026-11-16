@@ -1,10 +1,10 @@
+import { FakeSceneStore, fakeNode } from "../../../unit/rendering/scene/fakes";
 import { describe, expect, it, vi } from "vitest";
 import { PORTABLE_PALETTE_V1 } from "../../../../src/domain/schema/public";
 import { SVG_NAMESPACE } from "../../../../src/rendering/scene/constants";
 import type { SceneToolCursor } from "../../../../src/rendering/scene/tool-cursor";
 import { createAllElementSnapshot } from "../../../unit/persistence/serialization/fixtures";
 import { createSceneFixture } from "../../../fixtures/rendering/scene";
-import { FakeSceneStore, fakeNode } from "../../../unit/rendering/scene/fakes";
 
 function setup() {
   const h = createSceneFixture(createAllElementSnapshot().page, new FakeSceneStore());
@@ -43,7 +43,6 @@ describe("viewport tool cursor surface", () => {
       h.renderer.setScheme(scheme);
       h.scheduler.runAll();
       const palette = PORTABLE_PALETTE_V1[scheme];
-      expect(h.surface.style["--inkbook-text"]).toBe(palette.text);
       expect(h.surface.style["--inkbook-page"]).toBe(palette.page);
       expect(h.surface.style["--inkbook-guide"]).toBe(palette.guide);
       h.renderer.destroy();
@@ -57,7 +56,7 @@ describe("viewport tool cursor surface", () => {
     const read = vi.fn(() => ({
       cursor: {
         kind: "tool",
-        color: { type: "theme-text" },
+        color: { type: "rgba" as const, value: "#000000FF" as const },
         opacity: 1,
         x: 120,
         y: 80,
@@ -69,7 +68,8 @@ describe("viewport tool cursor surface", () => {
     h.renderer.requestToolCursorFrame(read);
     h.scheduler.runAll();
     const ring = h.cursor.nodes[0];
-    const iconGroup = h.cursor.nodes[1]!;
+    const lightRing = h.cursor.nodes[1];
+    const iconGroup = h.cursor.nodes[2]!;
     expect(h.surface.attributes.get("clip-path")).toBe(
       "polygon(20px 30px, 520px 30px, 520px 430px, 20px 430px)",
     );
@@ -86,7 +86,7 @@ describe("viewport tool cursor surface", () => {
     h.renderer.setCamera({ x: 15, zoom: 2 });
     h.scheduler.runAll();
     expect(h.surface.nodes[0]).toBe(h.cursor);
-    expect(h.cursor.nodes).toEqual([ring, iconGroup]);
+    expect(h.cursor.nodes).toEqual([ring, lightRing, iconGroup]);
     expect(iconGroup.nodes).toEqual([icon]);
     expect(h.cursor.attributes.get("transform")).toBe("translate(120 80)");
     expect(h.surface.attributes.get("clip-path")).toBe(

@@ -1,3 +1,4 @@
+import { FakeSceneStore, fakeRectangleRecord } from "./fakes";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SceneContentRenderer } from "../../../../src/rendering/scene/content-renderer";
@@ -5,8 +6,6 @@ import { SceneElementPreviewController } from "../../../../src/rendering/scene/p
 import { SceneElementPreviews } from "../../../../src/rendering/scene/presentation/scene-element-previews";
 import { SceneTransformPreviewController } from "../../../../src/rendering/scene/presentation/transform-preview-controller";
 import { PreviewElementMap } from "../../../../src/rendering/scene/presentation/preview-element-map";
-
-import { FakeSceneStore, fakeRectangleRecord } from "./fakes";
 
 it("reads live preview owners without copying and preserves duplicate priority and iteration order", () => {
   const selected = fakeRectangleRecord("selected", 0, 10).element;
@@ -221,10 +220,9 @@ describe("transformed preview candidate retention", () => {
       },
       { x: 0, zoom: 1 },
     );
-    const viewport = { height: 100, left: 0, top: 0, width: 100 };
-    controller.setContext({ x: 0, zoom: 1 }, viewport);
+    controller.setContext({ x: 0, zoom: 1 });
     controller.set(ids, "translate(1000 0)", 1, "scale");
-    controller.setContext({ x: -1000, zoom: 1 }, viewport);
+    controller.setContext({ x: -1000, zoom: 1 });
     controller.refreshContext();
     controller.write();
     expect(controller.activeIds).toContain("0");

@@ -1,3 +1,4 @@
+import { readElementStyle } from "../../../../fixtures/domain/element-style";
 import { describe, expect, it } from "vitest";
 
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
@@ -105,7 +106,7 @@ describe("maximum shared selection Style controls", () => {
     });
     const changed = createSelectionStyleReplacement(selection, "outline-style", "dashed")!;
     for (const element of changed.replacements) {
-      expect(element.style).toMatchObject({ outlineStyle: "dashed" });
+      expect(readElementStyle(element)).toMatchObject({ outlineStyle: "dashed" });
     }
     expect(
       createActiveEditorStyleControls({

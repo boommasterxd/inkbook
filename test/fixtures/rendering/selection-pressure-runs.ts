@@ -16,7 +16,12 @@ import {
   rectangle,
   tableFromRectangle,
 } from "../../unit/domain/store/fixtures";
-import { fakeNode, type FakeNode } from "../../unit/rendering/scene/fakes";
+import {
+  fakeNode,
+  sceneBandNode,
+  sceneNodeWithClass,
+  type FakeNode,
+} from "../../unit/rendering/scene/fakes";
 import { indexedStroke } from "../editor/stroke";
 import { createSceneFixture } from "./scene";
 
@@ -114,9 +119,8 @@ export function fixture(count = 600, extra: InkElementV1[] = [], dense = false) 
   f.renderer.setSelectedElements(selection);
   f.scheduler.runAll();
   const svg = fakeNode(f.renderer.svg),
-    camera = svg.nodes[1]!,
-    ink = camera.nodes[4]!,
-    traces = camera.nodes[8]!;
+    ink = sceneBandNode(svg, "content"),
+    traces = sceneNodeWithClass(svg, "inkbook-selection-traces");
   return {
     ...f,
     entries,

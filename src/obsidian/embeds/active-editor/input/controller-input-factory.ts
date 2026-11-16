@@ -61,10 +61,7 @@ export function createActiveEditorInputControllers(
   };
   const selectAll = () =>
     options.setSelection(
-      new Set([
-        ...options.model.store.materializeBandOrder("highlight"),
-        ...options.model.store.materializeBandOrder("content"),
-      ]),
+      new Set(RENDER_BANDS.flatMap((band) => options.model.store.materializeBandOrder(band))),
     );
   const ownerDocument = options.controller.renderer.inputSurface.ownerDocument;
   const canvasSelection = createCanvasSelection(options);
@@ -150,3 +147,4 @@ function createCanvasSelection(options: ActiveEditorInputFactoryOptions): Canvas
     geometryInteraction: geometry,
   });
 }
+import { RENDER_BANDS } from "../../../../domain/commands/render-bands";

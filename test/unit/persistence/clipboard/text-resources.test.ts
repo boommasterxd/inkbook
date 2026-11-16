@@ -25,9 +25,18 @@ it("binds copied synthesized bold to the source face across destination font add
   const text = textElement("Bold");
   text.style.fontFamily = family;
   text.layout.lines[0]!.runs[0]!.style = { bold: true };
+  const inkBounds = {
+    minX: -2,
+    minY: -24,
+    maxX: text.layout.lines[0]!.runs[0]!.width + 7,
+    maxY: 4,
+  };
+  text.layout.lines[0]!.runs[0]!.inkBounds = inkBounds;
   const selectedIds = new Set([text.id]);
   const encoded = encodeRuntimeSelection([text], selectedIds, [sourceRegular]);
   if (!encoded.ok) throw new Error(encoded.error.message);
+  expect(encoded.value.payload.version).toBe(5);
+  expect(validateClipboardPayload({ ...encoded.value.payload, version: 2 }).ok).toBe(false);
   const context = { checkpoint: () => undefined, signal: new AbortController().signal };
   const sliced = await encodeRuntimeSelectionChunked([text], [...selectedIds], context, [
     sourceRegular,
@@ -50,6 +59,7 @@ it("binds copied synthesized bold to the source face across destination font add
   if (copy.kind !== "text") throw new Error("Expected a pasted text field.");
   expect(copy.id).not.toBe(text.id);
   expect(copy.layout.lines[0]!.runs[0]!.fontResourceId).toBe(sourceRegular.id);
+  expect(copy.layout.lines[0]!.runs[0]!.inkBounds).toEqual(inkBounds);
   const destinationResources = [sourceRegular, destinationBold];
   const recopied = encodeRuntimeSelection([copy], new Set([copy.id]), destinationResources);
   if (!recopied.ok) throw new Error(recopied.error.message);

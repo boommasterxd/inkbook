@@ -1,3 +1,4 @@
+import { CURRENT_DOCUMENT_VERSION } from "../../../documents/svg-envelope-root";
 import type { ClipboardResult, PastePlan } from "../../../clipboard/types";
 import type { ExportFailure, ExportSuccess } from "../../protocol";
 import {
@@ -437,7 +438,7 @@ export function isDocumentRuntimeWireResult(value: unknown): value is DocumentRu
       typeof value.sourceVersion === "number" &&
       Number.isSafeInteger(value.sourceVersion) &&
       value.sourceVersion >= 0 &&
-      value.sourceVersion <= 2
+      value.sourceVersion <= CURRENT_DOCUMENT_VERSION
     );
   }
   if (value.type !== "export-success-wire") return true;

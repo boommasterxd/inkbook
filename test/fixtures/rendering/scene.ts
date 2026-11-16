@@ -62,6 +62,7 @@ export function createSceneFixture(
     | "waitForBackground"
     | "onResourceUsageChanged"
     | "scrollPreloadMarginPx"
+    | "imageResource"
   > & {
     readonly frameBudgetMs?: number | (() => number);
   } = {},
@@ -85,6 +86,7 @@ export function createSceneFixture(
     ...(options.onResourceUsageChanged === undefined
       ? {}
       : { onResourceUsageChanged: options.onResourceUsageChanged }),
+    ...(options.imageResource === undefined ? {} : { imageResource: options.imageResource }),
     container: asElement(new FakeNode(parentDocument, "div")),
     layout: { readViewport: () => viewport },
     page,

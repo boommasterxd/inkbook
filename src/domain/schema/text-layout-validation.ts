@@ -179,6 +179,7 @@ function assertRun(
       "width",
       ...(value.style === undefined ? [] : ["style"]),
       ...(value.fontResourceId === undefined ? [] : ["fontResourceId"]),
+      ...(value.inkBounds === undefined ? [] : ["inkBounds"]),
     ],
     path,
   );
@@ -189,14 +190,28 @@ function assertRun(
   assertGeometryNumber(value.width, `${path}.width`, context.limits.absoluteCoordinate);
   if (value.width < 0) fail("invalid-range", path, "Run width must be nonnegative.");
   if (value.style !== undefined) assertTextStyle(value.style, `${path}.style`, true);
+  if (value.inkBounds !== undefined) assertInkBounds(value.inkBounds, `${path}.inkBounds`, context);
   return {
     textLength: value.text.length,
     bytes:
       128 +
+      (value.inkBounds === undefined ? 0 : 64) +
       value.text.length * 2 +
       ((value.style as { fontFamily?: string } | undefined)?.fontFamily?.length ?? 0) * 2 +
       textBackgroundPayloadBytes(value.style as Parameters<typeof textBackgroundPayloadBytes>[0]),
   };
+}
+
+function assertInkBounds(value: unknown, path: string, context: ValidationContext): void {
+  assertRecord(value, path);
+  assertExactKeys(value, ["minX", "minY", "maxX", "maxY"], path);
+  for (const key of ["minX", "minY", "maxX", "maxY"] as const)
+    assertGeometryNumber(value[key], `${path}.${key}`, context.limits.absoluteCoordinate);
+  if (
+    (value.minX as number) > (value.maxX as number) ||
+    (value.minY as number) > (value.maxY as number)
+  )
+    fail("invalid-range", path, "Text ink bounds must be ordered.");
 }
 
 function assertFontResourceReference(value: unknown, path: string): void {

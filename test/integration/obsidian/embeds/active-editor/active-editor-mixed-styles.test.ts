@@ -1,3 +1,4 @@
+import { readElementStyle } from "../../../../fixtures/domain/element-style";
 import { describe, expect, it } from "vitest";
 
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
@@ -8,6 +9,9 @@ import {
   createSelectionStyleReplacement,
 } from "../../../../../src/obsidian/embeds/active-editor/controller-styles";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
+import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
+import { ActiveEditorStyleSession } from "../../../../../src/obsidian/embeds/active-editor/style-session";
+import { validImageFixture } from "../../../../fixtures/persistence/images";
 import { parseInkbookDocumentForTest } from "../../../../fixtures/persistence/parse-document";
 import {
   emptySnapshot,
@@ -24,6 +28,61 @@ const highlighter = createFreehandElement({
   tool: "highlighter",
 });
 const selection = [highlighter, rectangle()];
+
+it("styles handwriting over an explicitly selected locked image without changing its underlay", async () => {
+  const { asset, element } = await validImageFixture();
+  const image = { ...element, x: 0, y: 0, pivot: { x: 100, y: 50 }, locked: true };
+  const harness = persistenceHarness({
+    ...emptySnapshot(),
+    version: 4,
+    elements: [image, highlighter],
+    imageResources: [asset],
+  });
+  await harness.session.unlock(operation());
+  const model = harness.session.documentModel!;
+  const history = new ActiveEditorHistory(model);
+  const sceneStore = new ElementSceneStore(model.store);
+  const styles = new ActiveEditorStyleSession({
+    defaults,
+    history,
+    sceneStore,
+    store: model.store,
+    selection: () => new Set([image.id, highlighter.id]),
+    onSelectionGeometryChanged: () => undefined,
+    onStateChanged: () => undefined,
+  });
+  try {
+    expect(styles.presentation("select").controls.map(({ id }) => id)).toEqual([
+      "color",
+      "stroke-width",
+      "opacity",
+    ]);
+    styles.apply("select", "color", "#3B82F6FF");
+    expect(readElementStyle(model.store.get(highlighter.id)?.element)).toMatchObject({
+      color: { type: "rgba", value: "#3B82F6FF" },
+    });
+    expect(model.store.get(image.id)?.element).toEqual(image);
+    expect(history.commandCount).toBe(1);
+    expect(history.undo()).toBe(true);
+    expect(model.store.get(image.id)?.element).toEqual(image);
+    expect(history.redo()).toBe(true);
+    await harness.session.lockLatest(operation());
+    const saved = await parseInkbookDocumentForTest(harness.content());
+    if (!saved.ok) throw new Error(saved.error.message);
+    expect(saved.value.snapshot.elements).toEqual([
+      image,
+      {
+        ...highlighter,
+        style: { ...highlighter.style, color: { type: "rgba", value: "#3B82F6FF" } },
+      },
+    ]);
+  } finally {
+    styles.dispose();
+    sceneStore.release();
+    history.dispose();
+    harness.session.dispose();
+  }
+});
 
 describe("mixed selection Style controls", () => {
   it("offers only common paint controls with mixed values and resolves them after a change", () => {
@@ -63,10 +122,10 @@ describe("mixed selection Style controls", () => {
 
     expect(history.replace(replacement.previous, replacement.replacements)).toBe(true);
     expect(model.revision).toBe(8);
-    expect(model.store.get(highlighter.id)?.element.style).toMatchObject({
+    expect(readElementStyle(model.store.get(highlighter.id)?.element)).toMatchObject({
       color: { type: "rgba", value: "#3B82F6FF" },
     });
-    expect(model.store.get(selection[1]!.id)?.element.style).toMatchObject({
+    expect(readElementStyle(model.store.get(selection[1]!.id)?.element)).toMatchObject({
       outlineColor: { type: "rgba", value: "#3B82F6FF" },
       fillColor: null,
     });

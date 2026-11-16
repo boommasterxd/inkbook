@@ -100,16 +100,59 @@ export function renderImportFindings(
   context: ImportViewContext,
 ): void {
   const { label, count, icon, entry } = options;
-  const stateKey = `${context.path ?? ""}/${options.id ?? icon}`;
+  if (count === 0) return;
+  renderImportDisclosure(
+    container,
+    {
+      id: options.id ?? icon,
+      title: context.localization.t("import.findingsCount", {
+        label,
+        count: context.localization.number(count),
+      }),
+      description: context.localization.t("import.findingsReview", { label }),
+      icon,
+      populate: (content, scope) => {
+        options.before?.(content);
+        renderPagedItems(content, {
+          label,
+          localization: context.localization,
+          state: scope.state,
+          count,
+          entry: (row, index) => entry(row, index, scope.context),
+          releasePage: scope.release,
+          mutate: context.mutate,
+        });
+      },
+    },
+    context,
+  );
+}
+
+/** Shared lazy disclosure and lifetime for review findings and optional import help. */
+export function renderImportDisclosure(
+  container: HTMLElement,
+  options: {
+    readonly id: string;
+    readonly title: string;
+    readonly description: string;
+    readonly icon: string;
+    readonly populate: (
+      content: HTMLElement,
+      scope: {
+        readonly context: ImportViewContext;
+        readonly state: { expanded: boolean; page?: number };
+        readonly release: () => void;
+      },
+    ) => void;
+  },
+  context: ImportViewContext,
+): void {
+  const stateKey = `${context.path ?? ""}/${options.id}`;
   const state = context.state?.findings.get(stateKey) ?? { expanded: false };
   context.state?.findings.set(stateKey, state);
-  if (count === 0) return;
   const disclosure = createSettingsDisclosure(container, {
-    title: context.localization.t("import.findingsCount", {
-      label,
-      count: context.localization.number(count),
-    }),
-    description: context.localization.t("import.findingsReview", { label }),
+    title: options.title,
+    description: options.description,
     expanded: state.expanded,
     panelId: `inkbook-import-${container.ownerDocument.defaultView!.crypto.randomUUID()}`,
     sectionClass: "inkbook-import-disclosure",
@@ -118,8 +161,12 @@ export function renderImportFindings(
     readMotion: context.readMotion,
     ...(context.observeMotion === undefined ? {} : { observeMotion: context.observeMotion }),
   });
-  const leading = renderImportIcon(disclosure.trigger, icon, "inkbook-import-disclosure-icon");
-  disclosure.trigger.dataset.tone = icon === "triangle-alert" ? "caution" : "neutral";
+  const leading = renderImportIcon(
+    disclosure.trigger,
+    options.icon,
+    "inkbook-import-disclosure-icon",
+  );
+  disclosure.trigger.dataset.tone = options.icon === "triangle-alert" ? "caution" : "neutral";
   disclosure.trigger.prepend(leading);
   disclosure.content.replaceChildren();
   const panelMotion = new SettingsPanelMotion(
@@ -141,16 +188,7 @@ export function renderImportFindings(
     const expanded = disclosure.trigger.getAttribute("aria-expanded") !== "true";
     context.mutate(() => {
       if (expanded && !populated) {
-        options.before?.(disclosure.content);
-        renderPagedItems(disclosure.content, {
-          label,
-          localization: context.localization,
-          state,
-          count,
-          entry: (row, index) => entry(row, index, pageContext),
-          releasePage,
-          mutate: context.mutate,
-        });
+        options.populate(disclosure.content, { state, context: pageContext, release: releasePage });
         populated = true;
       }
       state.expanded = expanded;
@@ -168,8 +206,8 @@ export function renderImportFindings(
   };
   disclosure.trigger.addEventListener("click", toggle);
   if (state.expanded) {
-    disclosure.trigger.setAttribute("aria-expanded", "false");
-    toggle();
+    options.populate(disclosure.content, { state, context: pageContext, release: releasePage });
+    populated = true;
   }
   context.own(() => {
     releasePage();

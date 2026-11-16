@@ -357,9 +357,7 @@ it.each(["light", "dark"] as const)(
     expect(
       fixture.root.querySelector(`defs path[fill="${PORTABLE_PALETTE_V1[scheme].page}"]`),
     ).not.toBeNull();
-    expect(
-      fixture.root.querySelector(`defs path[stroke="${PORTABLE_PALETTE_V1[scheme].text}"]`),
-    ).not.toBeNull();
+    expect(fixture.root.querySelector('defs path[stroke="#000000FF"]')).not.toBeNull();
     fixture.unload();
   },
 );

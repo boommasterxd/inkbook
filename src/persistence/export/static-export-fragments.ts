@@ -1,3 +1,9 @@
+import type { ImageResourceV3 } from "../../domain/schema/public";
+import {
+  hasSafeImageBand,
+  parseSafeImageDefinitionsSteps,
+  parseSafeImageInstance,
+} from "../documents/safe-svg-images";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import {
   isBandGroup,
@@ -12,7 +18,6 @@ import { StaticPathBounds } from "./static-path-bounds";
 import { findStaticSvgTokenSteps } from "./static-svg-scanner";
 import { validateTextElementSteps } from "../documents/safe-svg-text";
 import { validateFontStylesheetSteps } from "../documents/safe-svg-fonts";
-
 export interface StaticExportFragment {
   readonly minY: number;
   readonly maxY: number;
@@ -34,6 +39,7 @@ export interface StaticExportTagVisitor {
 
 type SvgTag = StaticExportTag;
 interface FragmentParseContext {
+  readonly imageResources: ReadonlyMap<string, ImageResourceV3>;
   readonly band: string;
   readonly totals: SvgTotals;
   readonly exhausted: () => boolean;
@@ -76,13 +82,19 @@ function* prepareFragmentSteps(
   if (prefix === undefined) return undefined;
   let cursor = prefix.cursor;
   const totals = { commands: 0, groups: 0, pathBytes: 0, paths: 0 };
-  for (const band of BANDS) {
+  const bands = [
+    BANDS[0]!,
+    ...(hasSafeImageBand(svg, prefix.version) ? ["inkbook-images-band"] : []),
+    ...BANDS.slice(1),
+  ];
+  for (const band of bands) {
     const opening = parseOpeningTag(svg, cursor);
     if (!isBandGroup(opening, band)) return undefined;
     visitor?.open(opening!);
     cursor = skipWhitespace(svg, opening!.next);
     const context = {
       band,
+      imageResources: prefix.imageResources,
       totals,
       exhausted,
       version: prefix.version,
@@ -109,6 +121,7 @@ function* parseFragmentSteps(
   cursor: number,
   context: FragmentParseContext,
 ): Generator<void, ParsedFragment | undefined> {
+  if (context.band === "inkbook-images-band") return parseImageFragment(svg, cursor, context);
   if (context.version >= 2 && svg.startsWith("<text", cursor)) {
     const next = yield* validateTextElementSteps(svg, cursor, context.visitor);
     // Font tables may contain glyph overhang beyond nominal em bounds. Without trusted
@@ -122,58 +135,125 @@ function* parseFragmentSteps(
   if (start !== cursor) return undefined;
   const end = yield* findStaticSvgTokenSteps(svg, ">", start, exhausted);
   if (end < 0) return undefined;
-  let tag = parseOpeningTag(svg.slice(start, end + 1), 0);
+  const tag = parseOpeningTag(svg.slice(start, end + 1), 0);
   if (tag === null) return undefined;
   cursor = skipWhitespace(svg, end + 1);
-  const grouped = tag.name === "g";
-  let translationY = 0;
-  if (grouped) {
-    if (!validPressureGroup(tag, context.band, null, context.totals)) return undefined;
-    context.visitor?.open(tag);
-    translationY = parseTranslationY(tag);
-    const pathEnd = yield* findStaticSvgTokenSteps(svg, ">", cursor, exhausted);
-    if (pathEnd < 0) return undefined;
-    tag = parseOpeningTag(svg.slice(cursor, pathEnd + 1), 0);
-    cursor = skipWhitespace(svg, pathEnd + 1);
-  }
-  if (tag === null || tag.name !== "path" || !tag.selfClosing) return undefined;
-  const bounds = yield* preparePathBoundsSteps(tag, translationY, exhausted, context.version);
+  if (tag.name === "g") return yield* parseGroupedFragmentSteps(svg, cursor, tag, context);
+  if (tag.name !== "path" || !tag.selfClosing) return undefined;
+  const bounds = yield* preparePathBoundsSteps(tag, 0, exhausted, context.version);
   if (bounds === undefined) return undefined;
   context.visitor?.open(tag);
-  if (grouped) {
-    if (!svg.startsWith("</g>", cursor)) return undefined;
-    context.visitor?.close();
-    cursor = skipWhitespace(svg, cursor + 4);
-  }
   return { bounds, next: cursor };
+}
+
+function* parseGroupedFragmentSteps(
+  svg: string,
+  start: number,
+  group: SvgTag,
+  context: FragmentParseContext,
+): Generator<void, ParsedFragment | undefined> {
+  if (!validPressureGroup(group, context.band, null, context.totals)) return undefined;
+  context.visitor?.open(group);
+  const pathEnd = yield* findStaticSvgTokenSteps(svg, ">", start, context.exhausted);
+  if (pathEnd < 0) return undefined;
+  const tag = parseOpeningTag(svg.slice(start, pathEnd + 1), 0);
+  if (tag?.name !== "path" || !tag.selfClosing) return undefined;
+  const bounds = yield* preparePathBoundsSteps(
+    tag,
+    parseTranslationY(group),
+    context.exhausted,
+    context.version,
+  );
+  if (bounds === undefined) return undefined;
+  context.visitor?.open(tag);
+  const cursor = skipWhitespace(svg, pathEnd + 1);
+  if (!svg.startsWith("</g>", cursor)) return undefined;
+  context.visitor?.close();
+  return { bounds, next: skipWhitespace(svg, cursor + 4) };
+}
+
+interface StaticPrefix {
+  readonly cursor: number;
+  readonly version: number;
+  readonly imageResources: ReadonlyMap<string, ImageResourceV3>;
 }
 
 function* skipPrefixSteps(
   svg: string,
   exhausted: () => boolean,
   visitor?: StaticExportTagVisitor,
-): Generator<void, { readonly cursor: number; readonly version: number } | undefined> {
-  let cursor = skipWhitespace(svg, 0);
-  const root = parseOpeningTag(svg, cursor);
-  const parsedRoot = root === null ? null : parseSafeSvgRoot(root, "editable");
-  if (root === null || parsedRoot === null) return undefined;
+): Generator<void, StaticPrefix | undefined> {
+  const root = parseOpeningTag(svg, skipWhitespace(svg, 0));
+  const parsed = root === null ? null : parseSafeSvgRoot(root, "editable");
+  if (root === null || parsed === null) return undefined;
   visitor?.open(root);
-  cursor = skipWhitespace(svg, root.next);
-  for (const name of ["style", "metadata"]) {
-    let tag = parseOpeningTag(svg, cursor);
-    if (name === "metadata" && tag?.name === "style") {
-      const next = yield* visitFontStylesheetSteps(svg, tag, exhausted, visitor);
-      if (parsedRoot.version < 2 || next === undefined) return undefined;
-      cursor = skipWhitespace(svg, next);
-      tag = parseOpeningTag(svg, cursor);
-    }
-    if (tag?.name !== name || tag.selfClosing) return undefined;
-    const close = `</${name}>`;
-    const end = yield* findStaticSvgTokenSteps(svg, close, tag.next, exhausted);
-    if (end < 0) return undefined;
-    cursor = skipWhitespace(svg, end + close.length);
+  const theme = yield* skipTextContainerSteps(
+    svg,
+    skipWhitespace(svg, root.next),
+    "style",
+    exhausted,
+  );
+  if (theme === undefined) return undefined;
+  const resources = yield* visitResourcePrefixSteps(svg, theme, {
+    root: parsed,
+    exhausted,
+    visitor,
+  });
+  if (resources === undefined) return undefined;
+  const cursor = yield* skipTextContainerSteps(
+    svg,
+    resources.cursor,
+    "metadata",
+    exhausted,
+    resources.nextTag,
+  );
+  return cursor === undefined ? undefined : { ...resources, cursor, version: parsed.version };
+}
+
+function* skipTextContainerSteps(
+  svg: string,
+  cursor: number,
+  name: string,
+  exhausted: () => boolean,
+  parsedTag?: SvgTag | null,
+): Generator<void, number | undefined> {
+  const tag = parsedTag === undefined ? parseOpeningTag(svg, cursor) : parsedTag;
+  if (tag?.name !== name || tag.selfClosing) return undefined;
+  const close = `</${name}>`;
+  const end = yield* findStaticSvgTokenSteps(svg, close, tag.next, exhausted);
+  return end < 0 ? undefined : skipWhitespace(svg, end + close.length);
+}
+
+function* visitResourcePrefixSteps(
+  svg: string,
+  start: number,
+  options: {
+    readonly root: NonNullable<ReturnType<typeof parseSafeSvgRoot>>;
+    readonly exhausted: () => boolean;
+    readonly visitor?: StaticExportTagVisitor | undefined;
+  },
+): Generator<
+  void,
+  (Omit<StaticPrefix, "version"> & { readonly nextTag: SvgTag | null }) | undefined
+> {
+  const { root, exhausted, visitor } = options;
+  let cursor = start;
+  let tag = parseOpeningTag(svg, cursor);
+  if (tag?.name === "style") {
+    const next = yield* visitFontStylesheetSteps(svg, tag, exhausted, visitor);
+    if (root.version < 2 || next === undefined) return undefined;
+    cursor = skipWhitespace(svg, next);
+    tag = parseOpeningTag(svg, cursor);
   }
-  return { cursor, version: parsedRoot.version };
+  let imageResources: ReadonlyMap<string, ImageResourceV3> = new Map();
+  if (tag?.attributes.get("id") === "inkbook-images" && root.version >= 3) {
+    const definitions = yield* visitImageDefinitionsSteps(svg, cursor, visitor);
+    if (definitions === undefined) return undefined;
+    imageResources = definitions.resources;
+    cursor = definitions.next;
+    tag = parseOpeningTag(svg, cursor);
+  }
+  return { cursor, imageResources, nextTag: tag };
 }
 
 function* visitFontStylesheetSteps(
@@ -225,4 +305,47 @@ function* preparePathBoundsSteps(
       ? 0
       : Number(tag.attributes.get("stroke-width") ?? "1");
   return bounds.painted(translationY + parseTranslationY(tag), width);
+}
+
+function parseImageFragment(
+  svg: string,
+  cursor: number,
+  context: FragmentParseContext,
+): ParsedFragment | undefined {
+  const image = parseSafeImageInstance(svg, cursor, context.imageResources);
+  if (image === null) return undefined;
+  for (const tag of image.tags) context.visitor?.open(tag);
+  context.visitor?.close();
+  context.visitor?.close();
+  return { bounds: { minY: image.minY, maxY: image.maxY }, next: skipWhitespace(svg, image.next) };
+}
+
+function* visitImageDefinitionsSteps(
+  svg: string,
+  cursor: number,
+  visitor?: StaticExportTagVisitor,
+): Generator<void, { resources: ReadonlyMap<string, ImageResourceV3>; next: number } | undefined> {
+  const definitions = yield* parseSafeImageDefinitionsSteps(svg, cursor, false);
+  if (definitions === null) return undefined;
+  visitor?.open(parseOpeningTag(svg, cursor)!);
+  for (const resource of definitions.resources) {
+    visitor?.open({
+      name: "image",
+      selfClosing: true,
+      next: 0,
+      attributes: new Map(
+        Object.entries({
+          id: `inkbook-image-${resource.id}`,
+          width: String(resource.width),
+          height: String(resource.height),
+          href: `data:${resource.mimeType};base64,${resource.data}`,
+        }),
+      ),
+    });
+  }
+  visitor?.close();
+  return {
+    resources: new Map(definitions.resources.map((resource) => [resource.id, resource])),
+    next: skipWhitespace(svg, definitions.next),
+  };
 }

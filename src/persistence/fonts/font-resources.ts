@@ -1,8 +1,9 @@
+import { encodeBinaryResource } from "../serialization/binary-resource";
 import { fontCssFamily } from "../../domain/text/font-family";
 import { matchFontFace } from "../../domain/text/font-face-matching";
 import type { FontResourceV2 } from "../../domain/schema/types";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
-import { SampleBase64Reader, SampleBase64Writer } from "../serialization/metadata/sample-base64";
+import { SampleBase64Reader } from "../serialization/metadata/sample-base64";
 import { ChunkedSha256 } from "../serialization/chunked-output-sha256";
 import { FONT_LIMITS } from "./font-container";
 import { inspectFont } from "./font-validation";
@@ -29,16 +30,7 @@ export async function createFontResource(
   validateDescriptor(descriptor);
   signal?.throwIfAborted();
   const { mimeType } = inspectFont(bytes);
-  const writer = new SampleBase64Writer();
-  const hash = new ChunkedSha256();
-  for (let offset = 0; offset < bytes.length; offset += 4096) {
-    const part = bytes.subarray(offset, offset + 4096);
-    hash.update(part);
-    for (const byte of part) writer.append(byte);
-    const pending = scheduler.checkpoint(signal, "background");
-    if (pending !== undefined) await pending;
-    signal?.throwIfAborted();
-  }
+  const encoded = await encodeBinaryResource(bytes, scheduler, signal);
   return {
     family: descriptor.family,
     weight: descriptor.weight,
@@ -49,9 +41,9 @@ export async function createFontResource(
       : {
           weightRange: [descriptor.weightRange[0], descriptor.weightRange[1]] as [number, number],
         }),
-    id: hash.digestHex(),
+    id: encoded.id,
     mimeType,
-    data: writer.finish(),
+    data: encoded.data,
   };
 }
 

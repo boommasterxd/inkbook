@@ -1,3 +1,4 @@
+import { readElementStyle } from "../../../../../fixtures/domain/element-style";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -43,8 +44,8 @@ describe("active editor large mixed resize routing", () => {
     expect(fixture.renderer.setPreviewTransform.mock.lastCall?.[0]).toEqual([]);
     const [ids, materialize] = fixture.renderer.setProgressiveElementPreviews.mock.lastCall!;
     expect(ids).toEqual(elements.map(({ id }) => id));
-    expect(materialize(elements[0]!.id)?.style).toEqual(elements[0]!.style);
-    expect(materialize(elements[1]!.id)?.style).toEqual(elements[1]!.style);
+    expect(readElementStyle(materialize(elements[0]!.id))).toEqual(elements[0]!.style);
+    expect(readElementStyle(materialize(elements[1]!.id))).toEqual(elements[1]!.style);
     fixture.interaction.cancel(start.pointerId);
   });
 });
@@ -174,7 +175,7 @@ describe("active editor handle frames", () => {
     expect(feedback?.matrix?.[0]).toBeGreaterThan(1);
     const captured = materialize(stroke.id);
     expect(captured).not.toEqual(stroke);
-    expect(captured?.style).toEqual(stroke.style);
+    expect(readElementStyle(captured)).toEqual(stroke.style);
 
     // Pointer feedback must keep advancing while the first canonical path is pending.
     for (let frame = 1; frame <= 12; frame += 1) {

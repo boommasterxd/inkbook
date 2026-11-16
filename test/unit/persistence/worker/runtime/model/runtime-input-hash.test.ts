@@ -83,7 +83,7 @@ describe("confirmed worker native hash evidence", () => {
     );
   });
 
-  it("keeps sliced unlock hashing and byte-input handling independent of native preflight", async () => {
+  it("keeps sliced hashing independent while native byte preflight owns its input", async () => {
     const input = "ä😀";
     const bytes = new TextEncoder().encode(input);
     const expected = sha256Hex(bytes);
@@ -92,7 +92,10 @@ describe("confirmed worker native hash evidence", () => {
     await expect(hashConfirmedRuntimeInput(bytes, sliceContext(), bytes.byteLength)).resolves.toBe(
       expected,
     );
-    expect(digest).not.toHaveBeenCalled();
+    expect(digest).toHaveBeenCalledTimes(1);
+    const owned = digest.mock.calls[0]![1] as Uint8Array;
+    expect(owned).toEqual(bytes);
+    expect(owned.buffer).not.toBe(bytes.buffer);
   });
 });
 

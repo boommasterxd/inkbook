@@ -26,6 +26,12 @@ import {
   type LivePressureWindowPreparation,
 } from "../../domain/geometry/pressure/pressure-window";
 import type { StrokeStyleV1 } from "../../domain/schema/public";
+import {
+  boundsFromPoints,
+  expandBounds,
+  unionBounds,
+  type Bounds,
+} from "../../domain/geometry/primitives";
 
 export const LIVE_STROKE_WINDOW = STROKE_SIMPLIFICATION_WINDOW;
 export const MAX_LIVE_TAIL_SAMPLES = 2 * LIVE_STROKE_WINDOW + 3;
@@ -45,8 +51,15 @@ export class LiveStrokeGeometry {
   private completedWindows: readonly PressureWindow[] | undefined;
   private deferredGeometryPreparation = false;
   private commitWindows: LivePressureWindowPreparation[] | undefined;
+  private pendingPieceBounds: Bounds | undefined;
+  private lastPiecesBounds: Bounds | undefined;
+  public finalizedBounds: Readonly<Bounds> | undefined;
+  public previewBounds: Readonly<Bounds> | undefined;
 
-  constructor(private readonly style: StrokeStyleV1) {}
+  constructor(
+    private readonly style: StrokeStyleV1,
+    private readonly paintWidth: number = style.width,
+  ) {}
 
   finalize(points: readonly number[], first: number): StrokePathGeometry | undefined {
     const current =
@@ -65,6 +78,7 @@ export class LiveStrokeGeometry {
     if (this.style.pressureEnabled) {
       for (const piece of this.pressurePieces(current, successors, false)) {
         this.pendingPieces.push(piece);
+        this.extendPendingBounds();
         this.maximumPendingPieces = Math.max(this.maximumPendingPieces, this.pendingPieces.length);
         if (this.pendingPieces.length === 64) {
           const prepared = tryPrepareLivePressureWindow(this.pendingPieces);
@@ -82,13 +96,16 @@ export class LiveStrokeGeometry {
               paint: "fill",
             },
           ];
+          this.finalizedBounds = this.pendingPieceBounds;
           this.pendingPieces.length = 0;
+          this.pendingPieceBounds = undefined;
         }
       }
     } else {
       const d = buildCenterline(current);
       this.centerlinePaths.push(d);
       geometry = [{ d, paint: "stroke" }];
+      this.finalizedBounds = this.centerBounds(current);
     }
     this.pendingPiecesPath = this.style.pressureEnabled
       ? serializePressureCapsules(this.pendingPieces)
@@ -137,6 +154,9 @@ export class LiveStrokeGeometry {
     }
     const ending = this.window(points, start, last);
     centers.push(...(centers.length === 0 ? ending : ending.slice(1)));
+    const bounds = this.centerBounds(centers);
+    this.previewBounds =
+      this.pendingPieceBounds === undefined ? bounds : unionBounds(bounds, this.pendingPieceBounds);
     if (this.style.pressureEnabled) {
       this.tailCenters = centers;
       paths.push(this.capsulePreview(ending));
@@ -214,7 +234,21 @@ export class LiveStrokeGeometry {
         window.pieces.reduce((total, piece) => total + pressureOutlinePieceMemoryUsage(piece), 0),
       0,
     );
-    return windows + pieces + commit + centers * 24 + paths + (this.tail?.[0]?.d.length ?? 0) * 2;
+    const bounds = [
+      this.pendingPieceBounds,
+      this.lastPiecesBounds,
+      this.finalizedBounds,
+      this.previewBounds,
+    ].reduce((bytes, value) => bytes + (value === undefined ? 0 : 32), 0);
+    return (
+      windows +
+      pieces +
+      commit +
+      centers * 24 +
+      paths +
+      bounds +
+      (this.tail?.[0]?.d.length ?? 0) * 2
+    );
   }
 
   private capsulePreview(centers: readonly StrokeCenter[]): string {
@@ -243,6 +277,7 @@ export class LiveStrokeGeometry {
     final: boolean,
   ): PressureOutlinePiece[] {
     const context = [...this.previousCenters, ...centers, ...successors];
+    this.lastPiecesBounds = this.centerBounds(context);
     const firstBoundary = this.previousCenters.length === 0 ? null : this.previousCenters.length;
     const lastBoundary = final ? null : context.length - successors.length - 1;
     const pieces: PressureOutlinePiece[] = [];
@@ -256,5 +291,16 @@ export class LiveStrokeGeometry {
       { firstBoundary, lastBoundary },
     );
     return pieces;
+  }
+
+  private centerBounds(centers: readonly StrokeCenter[]): Bounds {
+    return expandBounds(boundsFromPoints(centers), this.paintWidth / 2);
+  }
+
+  private extendPendingBounds(): void {
+    this.pendingPieceBounds =
+      this.pendingPieceBounds === undefined
+        ? this.lastPiecesBounds
+        : unionBounds(this.pendingPieceBounds, this.lastPiecesBounds!);
   }
 }

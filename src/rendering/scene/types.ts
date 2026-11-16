@@ -3,11 +3,12 @@ import type { TextPaintGeometry } from "../../domain/geometry/text-paint-geometr
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
 import type { StrokePathGeometry } from "../../domain/geometry/stroke-path";
-import type { InkElementV1, PageV1 } from "../../domain/schema/public";
+import type { ImageResourceV3, InkElementV1, PageV1 } from "../../domain/schema/public";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { PathPresentation } from "./content/element-presentation";
 
-type SceneDirtyDomain = "connection" | "geometry" | "order" | "paint" | "visibility";
+type SceneDirtyDomain =
+  "connection" | "geometry" | "interaction" | "order" | "paint" | "visibility";
 export type SceneBand = RenderBand;
 
 export interface SceneElementRecord {
@@ -58,6 +59,8 @@ export interface SceneStorePort {
     import("../../domain/geometry/prepared-scene-paths").ScenePathPreparation | undefined;
   pressureGeometry?(id: string, geometryVersion: number): PreparedPressureGeometryPort;
   get(id: string): SceneElementRecord | undefined;
+  /** Document-wide presence stays independent of the currently culled presentation. */
+  bandSize?(band: SceneBand): number;
   beginOrder?(): import("../../domain/store/mutations/order-cursor").StoreOrderCursor;
   beginQuery?(bounds: Bounds): SceneSpatialQueryCursor;
   query(bounds: Bounds, sink: SpatialQuerySink): void;
@@ -99,6 +102,7 @@ export interface SceneInputHandlers {
 }
 
 export interface SceneRendererOptions {
+  readonly imageResource?: (assetId: string) => ImageResourceV3 | undefined;
   readonly accessibleName?: string;
   readonly container: HTMLElement;
   readonly inputHandlers?: SceneInputHandlers;
@@ -132,10 +136,12 @@ export interface LivePathState {
 
 export interface SceneLiveStrokeChunk {
   readonly geometry: Readonly<StrokePathGeometry>;
+  readonly bounds?: Bounds | undefined;
 }
 
 interface SceneLiveStrokeTail {
   readonly geometry: Readonly<StrokePathGeometry>;
+  readonly bounds?: Bounds | undefined;
 }
 
 /**

@@ -1,5 +1,5 @@
 import type { ArrangeAction } from "../../../domain/commands/arrange";
-import type { InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
+import type { ImageResourceV3, InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
 import type {
   AppliedElementMutation,
   ElementStore,
@@ -10,6 +10,7 @@ import type {
 } from "../../../domain/store/public";
 import type { AutosaveCoordinator } from "../../../persistence/saving/autosave/public";
 import { DocumentRevisionExhaustedError } from "./document-model-port";
+import type { PreparedImageResources } from "./session-image-resources";
 import {
   commitVaultElementReplacement,
   commitVaultPage,
@@ -17,6 +18,9 @@ import {
 } from "./vault-document-model";
 
 interface VaultDocumentSessionMutationOptions {
+  readonly imageResources?: () => readonly ImageResourceV3[] | undefined;
+  readonly acknowledgeImageResources?: () => void;
+  readonly prepareImageCommit?: (token: PreparedImageResources) => () => void;
   readonly autosave: () => AutosaveCoordinator | undefined;
   readonly commitState: (state: {
     readonly page: InkSnapshotV1["page"];
@@ -75,10 +79,15 @@ export class VaultDocumentSessionMutations {
 
   public commitPreparedElementMutation(
     token: PreparedElementMutation,
+    resources?: PreparedImageResources,
   ): AppliedElementMutation | null {
     const context = this.#requireContext();
     if (context === undefined) return null;
-    const result = context.store.commitPreparedElementMutation(token);
+    if (resources !== undefined && this.#options.prepareImageCommit === undefined)
+      throw new Error("Image resource commits are unavailable.");
+    const publish =
+      resources === undefined ? undefined : this.#options.prepareImageCommit!(resources);
+    const result = context.store.commitPreparedElementMutation(token, publish);
     if (result.delta === null || result.transition === null) return null;
     this.#recordDelta(context, result.delta);
     return result.transition;
@@ -126,11 +135,14 @@ export class VaultDocumentSessionMutations {
 
   #recordDelta(context: VaultMutationContext, delta: StoreDelta): void {
     this.#options.setRevision(context.nextRevision);
+    const imageResources = this.#options.imageResources?.();
     recordVaultStoreDelta({
       autosave: context.autosave,
       delta,
       revision: context.nextRevision,
+      ...(imageResources === undefined ? {} : { imageResources }),
     });
+    this.#options.acknowledgeImageResources?.();
   }
 
   #requireContext(): VaultMutationContext | undefined {

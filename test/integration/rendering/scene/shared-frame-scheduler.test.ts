@@ -1,9 +1,3 @@
-import { expect, it, vi } from "vitest";
-
-import type { BoxShapeElementV1, PageV1 } from "../../../../src/domain/schema/public";
-import { SvgSceneRenderer } from "../../../../src/rendering/scene";
-import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
-import { createSceneFixture, QueryCostStore } from "../../../fixtures/rendering/scene";
 import {
   FakeSceneStore,
   FakeScheduler,
@@ -12,7 +6,55 @@ import {
   asElement,
   fakeNode,
   fakeRectangleRecord,
+  sceneBandNode,
 } from "../../../unit/rendering/scene/fakes";
+import { expect, it, vi } from "vitest";
+
+import type { BoxShapeElementV1, PageV1 } from "../../../../src/domain/schema/public";
+import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
+import { createSceneFixture, QueryCostStore } from "../../../fixtures/rendering/scene";
+import {
+  fixture as selectionFixture,
+  moveFeedback,
+} from "../../../fixtures/rendering/selection-runs";
+
+it("retains one publication cap across repeated input and scene flushes of the same deadline", () => {
+  const f = selectionFixture(2 * SCENE_PUBLICATION_ROOTS_PER_FRAME + 5, false, false);
+  try {
+    f.renderer.setSelectedElements(f.selection);
+    f.renderer.resetInstrumentation();
+    const roots = () =>
+      f.renderer.instrumentation().selectionTraceNodesCreated +
+      f.renderer.instrumentation().domRootsPublished;
+    for (let epoch = 0; epoch < 2; epoch += 1) {
+      const previous = roots();
+      f.scheduler.time += 1000 / 120;
+      f.scheduler.workScheduler.requestFrame(() => {
+        const feedback = moveFeedback(f.selection, epoch + 1, 5);
+        f.renderer.setPreviewTransform(
+          f.ids,
+          feedback.transform,
+          epoch + 1,
+          "scale",
+          undefined,
+          feedback,
+        );
+        f.renderer.flushPointerFeedbackFrame();
+        const afterFirst = roots();
+        f.renderer.flushPointerFeedbackFrame();
+        expect(roots()).toBe(afterFirst);
+        expect(afterFirst - previous).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+      }, "input");
+      f.scheduler.runFrame();
+      expect(f.renderer.instrumentation().frames).toBeGreaterThan(0);
+      expect(roots() - previous).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+    }
+  } finally {
+    f.renderer.destroy();
+    f.port.release();
+  }
+});
 
 const PAGE: PageV1 = {
   activeBufferLines: 3,
@@ -30,7 +72,7 @@ it("reuses detached SVG roots when the viewport returns", () => {
   store.records.set("second", fakeRectangleRecord("second", 1, 10));
   const { renderer, scheduler } = createSceneFixture(PAGE, store, VIEWPORT);
   scheduler.runAll();
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(renderer.svg), "content");
   const roots = [...content.nodes];
   expect(renderer.instrumentation()).toMatchObject({ domRootsPublished: 2, domFragmentRuns: 1 });
   renderer.setViewport({ ...VIEWPORT, top: 500 });
@@ -84,7 +126,7 @@ function createThemeScene() {
 it("coalesces host mutations and same-scheme theme refreshes through the central scene frame", () => {
   const h = createThemeScene();
   const drawing = fakeNode(h.renderer.svg).ownerDocument;
-  const foreground = fakeNode(h.renderer.svg).nodes[1]!.nodes[4]!;
+  const foreground = sceneBandNode(fakeNode(h.renderer.svg), "content");
   try {
     h.scheduler.runAll();
     expect(drawing.body.style.getPropertyValue("--interactive-accent")).toBe("#123456");
@@ -203,7 +245,7 @@ it("shares bounded SVG publication while both scenes advance under late host fra
   let publications = 0;
   let roots = 0;
   for (const scene of scenes) {
-    const content = fakeNode(scene.renderer.svg).nodes[1]!.nodes[4]!;
+    const content = sceneBandNode(fakeNode(scene.renderer.svg), "content");
     const insert = content.insertBefore.bind(content);
     vi.spyOn(content, "insertBefore").mockImplementation((node, successor) => {
       publications += 1;

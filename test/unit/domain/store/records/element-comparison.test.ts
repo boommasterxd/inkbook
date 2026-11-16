@@ -8,7 +8,7 @@ import {
   elementsEqualSteps,
 } from "../../../../../src/domain/store/records/element-comparison";
 
-import { connectedLine, coordinateSystem, highlighter, rectangle } from "../fixtures";
+import { connectedLine, coordinateSystem, highlighter, image, rectangle } from "../fixtures";
 
 function drain<T>(steps: Generator<void, T>): T {
   let result = steps.next();
@@ -26,6 +26,7 @@ describe("element comparison steps", () => {
     const line = connectedLine();
     const shape = rectangle();
     const coordinate = coordinateSystem();
+    const picture = image();
     const cases: { before: InkElementV1; after: InkElementV1; expected: string[] }[] = [
       { before: stroke, after: structuredClone(stroke), expected: [] },
       {
@@ -56,6 +57,13 @@ describe("element comparison steps", () => {
         expected: ["geometry"],
       },
       { before: shape, after: { ...shape, createdAt: 2 }, expected: [] },
+      { before: picture, after: { ...picture, width: 500 }, expected: ["geometry"] },
+      {
+        before: picture,
+        after: { ...picture, crop: { ...picture.crop, width: 150 } },
+        expected: ["paint"],
+      },
+      { before: picture, after: { ...picture, assetId: "b".repeat(64) }, expected: ["paint"] },
     ];
     for (const [index, { before, after, expected }] of cases.entries()) {
       expect(drain(classifyReplacementSteps(before, after, 1))).toEqual(expected);

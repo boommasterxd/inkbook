@@ -3,6 +3,7 @@ import {
   validateInkPageV1,
   MAX_DERIVED_HEIGHT,
   type FontResourceV2,
+  type ImageResourceV3,
   type InkElementV1,
   type InkSnapshotV1,
 } from "../../../domain/schema/public";
@@ -27,7 +28,7 @@ import type {
 } from "../../../domain/store/public";
 import { prepareVaultStoreDelta } from "./vault-document-model-delta";
 
-import type { EditableDocumentModel } from "./document-model-port";
+import type { DocumentRuntimeFactories, EditableDocumentModel } from "./document-model-port";
 import { attachEditableDocumentState } from "./editable-document-state";
 import { SessionClipboardCoordinator } from "./session-clipboard";
 import { SessionScenePaths } from "./session-scene-paths";
@@ -60,9 +61,19 @@ export function createVaultAutosaveSession(
     readonly page: () => InkSnapshotV1["page"];
     readonly store: ElementStore;
     readonly fontResources?: () => readonly FontResourceV2[];
-    readonly formatVersion?: () => 1 | 2;
+    readonly imageResources?: () => readonly ImageResourceV3[];
+    readonly formatVersion?: () => InkSnapshotV1["version"];
   },
 ): AutosaveCoordinator {
+  const snapshotHeader = () => ({
+    page: options.page(),
+    revision: options.currentRevision(),
+    version: options.formatVersion?.() ?? 1,
+    ...(options.imageResources === undefined
+      ? {}
+      : { imageResources: [...options.imageResources()] }),
+    ...(options.fontResources === undefined ? {} : { fontResources: [...options.fontResources()] }),
+  });
   return createAutosaveSession({
     workScheduler: options.workScheduler,
     ...(options.beforeExistingWrite === undefined
@@ -98,27 +109,14 @@ export function createVaultAutosaveSession(
     },
     integritySnapshot: () => ({
       format: "inkbook",
-      version: options.formatVersion?.() ?? 1,
-      ...(options.fontResources === undefined
-        ? {}
-        : { fontResources: [...options.fontResources()] }),
-      page: options.page(),
-      revision: options.currentRevision(),
-      elements: ["highlight", "content"].flatMap((band) =>
+      ...snapshotHeader(),
+      elements: ["image", "highlight", "content"].flatMap((band) =>
         options.store
-          .materializeBandOrder(band as "highlight" | "content")
+          .materializeBandOrder(band as "image" | "highlight" | "content")
           .map((id) => options.store.get(id)!.element as InkElementV1),
       ),
     }),
-    snapshot: () =>
-      options.store.materializeSnapshot({
-        page: options.page(),
-        revision: options.currentRevision(),
-        version: options.formatVersion?.() ?? 1,
-        ...(options.fontResources === undefined
-          ? {}
-          : { fontResources: [...options.fontResources()] }),
-      }),
+    snapshot: () => options.store.materializeSnapshot(snapshotHeader()),
     vault: options.files,
     workerEpoch: options.workerEpoch,
   });
@@ -211,13 +209,16 @@ export function prepareVaultElementMutation(options: {
   ) {
     return options.store.prepareHistoryReplay(
       options.mutation,
-      options.scheduler(() => options.cancellation.isCancelled()),
+      { ...options.scheduler(() => options.cancellation.isCancelled()), protectLocked: false },
       options.cancellation.replay,
     );
   }
   return options.store.prepareElementMutation(
     options.mutation,
-    options.scheduler(() => options.cancellation.isCancelled()),
+    {
+      ...options.scheduler(() => options.cancellation.isCancelled()),
+      protectLocked: options.cancellation.protectLocked ?? true,
+    },
     options.cancellation.replay,
   );
 }
@@ -231,7 +232,10 @@ export async function prepareVaultElementRemoval(options: {
 }): ReturnType<EditableDocumentModel["prepareElementRemoval"]> {
   if (!options.active) return { status: "cancelled", token: null };
   const scheduler = options.scheduler(() => options.cancellation.isCancelled());
-  return options.store.prepareElementRemoval(options.ids, scheduler);
+  return options.store.prepareElementRemoval(options.ids, {
+    ...scheduler,
+    protectLocked: options.cancellation.protectLocked ?? true,
+  });
 }
 
 export function createVaultElementPreparationActions(options: {
@@ -254,20 +258,19 @@ export function createVaultElementPreparationActions(options: {
       options.run(() =>
         !options.active()
           ? Promise.resolve({ status: "cancelled", token: null })
-          : options.store.prepareElementArrangement(
-              action,
-              selection,
-              options.scheduler(() => cancellation.isCancelled(), "frame"),
-            ),
+          : options.store.prepareElementArrangement(action, selection, {
+              ...options.scheduler(() => cancellation.isCancelled(), "frame"),
+              protectLocked: cancellation.protectLocked ?? true,
+            }),
       ),
     prepareElementAppend: (elements, cancellation) =>
       options.run(() =>
         !options.active()
           ? Promise.resolve({ status: "cancelled", token: null })
-          : options.store.prepareElementAppend(
-              elements,
-              options.scheduler(() => cancellation.isCancelled(), "frame"),
-            ),
+          : options.store.prepareElementAppend(elements, {
+              ...options.scheduler(() => cancellation.isCancelled(), "frame"),
+              protectLocked: cancellation.protectLocked ?? true,
+            }),
       ),
     prepareElementMutation: (mutation, cancellation) =>
       options.run(() =>
@@ -304,7 +307,7 @@ export function createVaultElementPreparationActions(options: {
 
 export function prepareVaultElementReplacement(options: {
   readonly active: boolean;
-  readonly cancellation: { isCancelled(): boolean };
+  readonly cancellation: Parameters<EditableDocumentModel["prepareElementReplacement"]>[1];
   readonly replacements: readonly InkElementV1[];
   readonly scheduler: (isCancelled: () => boolean) => StoreSliceScheduler;
   readonly store: ElementStore | undefined;
@@ -312,10 +315,10 @@ export function prepareVaultElementReplacement(options: {
   if (options.store === undefined || !options.active) {
     return Promise.resolve({ status: "cancelled", token: null });
   }
-  return options.store.prepareElementReplacement(
-    options.replacements,
-    options.scheduler(() => options.cancellation.isCancelled()),
-  );
+  return options.store.prepareElementReplacement(options.replacements, {
+    ...options.scheduler(() => options.cancellation.isCancelled()),
+    protectLocked: options.cancellation.protectLocked ?? true,
+  });
 }
 
 export function commitVaultElementReplacement(options: {
@@ -335,6 +338,7 @@ export function commitVaultElementReplacement(options: {
 }
 
 export function recordVaultStoreDelta(options: {
+  readonly imageResources?: readonly ImageResourceV3[];
   readonly autosave: AutosaveCoordinator | undefined;
   readonly delta: StoreDelta;
   readonly revision: number;
@@ -342,9 +346,10 @@ export function recordVaultStoreDelta(options: {
   if (options.autosave === undefined) return;
   options.autosave.recordCommit({
     ...prepareVaultStoreDelta(options.delta),
-    dirtyBands: (Object.keys(options.delta.dirtyBands) as Array<"content" | "highlight">).filter(
-      (band) => options.delta.dirtyBands[band],
-    ),
+    ...(options.imageResources === undefined ? {} : { imageResources: options.imageResources }),
+    dirtyBands: (
+      Object.keys(options.delta.dirtyBands) as Array<"image" | "content" | "highlight">
+    ).filter((band) => options.delta.dirtyBands[band]),
     modelRevision: options.revision,
   });
 }
@@ -381,7 +386,7 @@ export function requireVaultPage(page: InkSnapshotV1["page"] | undefined): InkSn
 
 function validatePageExtent(store: ElementStore, page: InkSnapshotV1["page"]): void {
   let bottom: number | null = null;
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of ["image", "highlight", "content"] as const) {
     for (const id of store.materializeBandOrder(band)) {
       const maxY = store.get(id)!.bounds.maxY;
       bottom = bottom === null ? maxY : Math.max(bottom, maxY);
@@ -391,4 +396,13 @@ function validatePageExtent(store: ElementStore, page: InkSnapshotV1["page"]): v
   if (extent.activeHeight > MAX_DERIVED_HEIGHT || extent.lockedHeight > MAX_DERIVED_HEIGHT) {
     throw new RangeError("Page update exceeds the maximum derived height.");
   }
+}
+
+export function createVaultStoreScheduler(
+  runtimes: DocumentRuntimeFactories,
+  documentId: string,
+  unavailable: () => boolean,
+): (cancelled: () => boolean, priority?: "frame") => StoreSliceScheduler {
+  return (cancelled, priority) =>
+    runtimes.createStoreScheduler(documentId, () => unavailable() || cancelled(), priority);
 }

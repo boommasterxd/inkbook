@@ -143,6 +143,7 @@ export class ActiveTextSession {
     point?: number | { readonly x: number; readonly y: number },
     options: TextGeometry.TextSessionEditOptions = {},
   ): Promise<boolean> {
+    if (this.#options.model.store.get(id)?.element.locked === true) return false;
     if (this.activeId === id && this.#input) {
       this.#input.focusAt(point);
       return true;
@@ -321,7 +322,7 @@ export class ActiveTextSession {
     point?: number | { readonly x: number; readonly y: number },
   ): Promise<boolean> {
     await this.#options.renderer.waitForTextElement(element.id, this.#lifetime.signal);
-    if (this.#disposed) return false;
+    if (this.#disposed || this.#options.model.store.get(element.id)?.element.locked) return false;
     const surface = this.#options.renderer.beginTextEditing(element.id, {
       onContentHeightChanged: this.#options.onHeightChanged,
       onDocumentInvalidated: () => {
@@ -392,7 +393,6 @@ export class ActiveTextSession {
     if (!preview && !this.#geometry.settled()) this.requestCaretReveal();
     if (!preview) this.#options.onStateChanged();
   }
-
   #sourceChanged(state: TextSourceState, changes?: ChangeDesc): void {
     const element = this.#draft;
     if (!element || this.#disposed) return;

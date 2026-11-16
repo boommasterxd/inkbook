@@ -1,13 +1,55 @@
+import { FakeDocument, fakeRectangleRecord } from "../fakes";
 import { expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
-import { createMountedElement } from "../../../../../src/rendering/scene/content/mounted-element";
+import {
+  createMountedElement,
+  updatePreviewTransform,
+} from "../../../../../src/rendering/scene/content/mounted-element";
+import {
+  SelectionRunTranslation,
+  SelectionRunTranslationBasis,
+} from "../../../../../src/rendering/scene/presentation/selection-run-translation";
+import { moveFeedback } from "../../../../fixtures/rendering/selection-runs";
 import { createInstrumentation } from "../../../../../src/rendering/scene/instrumentation";
 import {
   SelectionRunPlanning,
   canonicalRunMember,
 } from "../../../../../src/rendering/scene/presentation/selection-run-plan";
 import type { SceneStorePort } from "../../../../../src/rendering/scene/types";
-import { FakeDocument, fakeRectangleRecord } from "../fakes";
+
+it("admits only the exact published translation decoration and rejects nonfinite basis products", () => {
+  const record = fakeRectangleRecord("a", 0, 10),
+    stats = createInstrumentation();
+  const entry = createMountedElement(
+    new FakeDocument() as never,
+    record,
+    buildElementPathParts(record.element),
+    stats,
+  );
+  const selection = new Set([record.id]);
+  const published = { feedback: moveFeedback(selection, 15, 10), version: 1 };
+  const proof = new SelectionRunTranslation();
+  updatePreviewTransform(
+    entry,
+    published.feedback.transform,
+    1,
+    null,
+    stats,
+    published.feedback.matrix,
+  );
+  expect(proof.stage(new Set(selection), published, () => published)).toBe(false);
+  expect(proof.accepts(entry)).toBe(false);
+  expect(proof.stage(selection, published, () => published)).toBe(true);
+  expect(proof.accepts(entry)).toBe(true);
+  entry.previewTransformVersion = 2;
+  expect(proof.accepts(entry)).toBe(false);
+  entry.previewTransformVersion = 1;
+  entry.displayedPathParts = [...entry.pathParts];
+  expect(proof.accepts(entry)).toBe(false);
+  const basis = new SelectionRunTranslationBasis();
+  basis.adopt({ feedback: moveFeedback(selection, -Number.MAX_VALUE, 0), version: 1 });
+  expect(basis.resolve(moveFeedback(selection, Number.MAX_VALUE, 0))).toBeUndefined();
+});
 
 it("does not acquire or walk the complete store order for selections covered by the existing snapshot budget", () => {
   const beginOrder = vi.fn();

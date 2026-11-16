@@ -15,7 +15,10 @@ import type { ExistingFilePort, NewFilePort } from "../../../persistence/saving/
 import type { RecoveryFilePort } from "./vault-document-recovery";
 import type { MigrationBackupPort } from "../../../persistence/documents/migration-backup";
 import { serializeSvgNumber } from "../../../persistence/documents/svg-number";
-import { verifyVaultUnlockIntegrity } from "./vault-unlock-integrity";
+import {
+  verifyVaultUnlockIntegrity,
+  type VaultTextUnlockCandidate,
+} from "./vault-unlock-integrity";
 import { readVaultPreviewProofCandidate } from "./vault-preview-proof";
 import type { SafeStaticProof } from "../../../persistence/serialization/input/safe-static-proof";
 import { nextSafeCounter } from "../../../persistence/worker/identity";
@@ -150,6 +153,7 @@ export function createVaultFallbackFactory(options: {
 }
 
 export interface LoadedVaultDocument {
+  readonly textCandidates?: readonly VaultTextUnlockCandidate[];
   readonly outputHash: string;
   readonly requiresCanonicalRewrite: boolean;
   readonly snapshot: InkSnapshotV1;
@@ -276,16 +280,22 @@ export async function loadVaultDocument(
       page: result.snapshot.page,
       revision: result.snapshot.revision,
       version: result.snapshot.version,
+      ...(result.snapshot.imageResources === undefined
+        ? {}
+        : { imageResources: [...result.snapshot.imageResources] }),
       ...(result.snapshot.fontResources === undefined
         ? {}
         : { fontResources: [...result.snapshot.fontResources] }),
     };
+    const textCandidates: VaultTextUnlockCandidate[] = [];
     await verifyVaultUnlockIntegrity({
       snapshot,
       store,
       scheduler: options.scheduler(options.cancelled),
+      textCandidates,
     });
     return {
+      ...(textCandidates.length === 0 ? {} : { textCandidates }),
       outputHash: result.outputHash,
       requiresCanonicalRewrite:
         result.requiresCanonicalRewrite ||

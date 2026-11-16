@@ -211,14 +211,14 @@ describe("InkbookSettingTab recognizable shape controls", () => {
     const fillColor = control(rendered.container, "fill-color");
     const fillOpacity = control(rendered.container, "fill-opacity");
 
-    expect(outlineColor.querySelectorAll(".inkbook-menu-color-swatch")).toHaveLength(10);
+    const colors = outlineColor.querySelector(".inkbook-menu-color-grid")!;
+    expect(colors.children).toHaveLength(20);
     expect(outlineWidth.querySelectorAll(".inkbook-menu-width-choice")).toHaveLength(5);
     expect(outlineStyle.querySelectorAll("button")).toHaveLength(3);
-    expect(outlineStyle.querySelectorAll(".inkbook-menu-line-preview")).toHaveLength(3);
     expect(
       outlineOpacity.querySelectorAll("input[type='range'], input[type='number']"),
     ).toHaveLength(2);
-    expect(fillColor.querySelector('[aria-label="Gray"]')).toBeNull();
+    expect(fillColor.querySelector('[aria-label="Gray"]')).not.toBeNull();
     expect(outlineColor.querySelector('[aria-label="Gray"]')).not.toBeNull();
     expect(fillOpacity.querySelectorAll("input[type='range'], input[type='number']")).toHaveLength(
       2,

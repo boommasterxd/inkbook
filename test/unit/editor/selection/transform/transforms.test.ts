@@ -21,7 +21,7 @@ import { hydrateRuntimeStroke } from "../../../../fixtures/domain/runtime-stroke
 import { scaleSelectionUniformForTest as scaleSelectionUniform } from "../../../../fixtures/editor/selection-transform-reference";
 
 const style = {
-  outlineColor: { type: "theme-text" as const },
+  outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
   outlineWidth: 4 as const,
   outlineOpacity: 1,
   outlineStyle: "solid" as const,
@@ -101,7 +101,7 @@ function runtimeStroke(): StrokeElementV1 {
     points: [10, 10, 0.5, 20, 20, 0.75],
     rotation: 0,
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba", value: "#000000FF" },
       opacity: 1,
       pressureEnabled: true,
       smoothing: 0.5,
@@ -204,7 +204,7 @@ describe("selection transform validation", () => {
       points: [1_000_000, 0, 0.5],
       rotation: 0,
       style: {
-        color: { type: "theme-text" },
+        color: { type: "rgba", value: "#000000FF" },
         opacity: 1,
         pressureEnabled: true,
         smoothing: 0.5,

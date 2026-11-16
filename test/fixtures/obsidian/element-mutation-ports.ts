@@ -19,6 +19,7 @@ export function elementReplacementPorts(
     },
     prepareElementReplacement: (elements, cancellation) =>
       store.prepareElementReplacement(elements, {
+        protectLocked: cancellation.protectLocked ?? true,
         isCancelled: () => cancellation.isCancelled(),
         shouldYield: () => work.shouldYield(),
         yieldControl: () => work.yieldControl(),
@@ -50,6 +51,7 @@ export function elementMutationPorts(
   return {
     prepareElementArrangement: (action, selection, cancellation) =>
       store.prepareElementArrangement(action, selection, {
+        protectLocked: cancellation.protectLocked ?? true,
         isCancelled: () => cancellation.isCancelled(),
         shouldYield: () => work.shouldYield(),
         yieldControl: () => work.yieldControl(),
@@ -67,6 +69,8 @@ export function elementMutationPorts(
     },
     prepareElementMutation: (mutation, cancellation) => {
       const scheduler = {
+        protectLocked:
+          cancellation.replaySource === "retained" ? false : (cancellation.protectLocked ?? true),
         isCancelled: () => cancellation.isCancelled(),
         shouldYield: () => work.shouldYield(),
         yieldControl: () => work.yieldControl(),
@@ -77,6 +81,7 @@ export function elementMutationPorts(
     },
     prepareElementRemoval: (ids, cancellation) => {
       const scheduler = {
+        protectLocked: cancellation.protectLocked ?? true,
         isCancelled: () => cancellation.isCancelled(),
         shouldYield: () => work.shouldYield(),
         yieldControl: () => work.yieldControl(),

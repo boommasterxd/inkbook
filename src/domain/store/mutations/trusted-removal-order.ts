@@ -1,3 +1,4 @@
+import { RENDER_BANDS } from "../../commands/render-bands";
 import type { RenderBand } from "../../commands/render-bands";
 
 import type { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
@@ -20,12 +21,14 @@ export async function validateTrustedRemovalOrder(
   | "cancelled"
 > {
   const bands: StoreBands = {
+    image: source.bands.image,
     content: source.bands.content,
     highlight: source.bands.highlight,
   };
   const ranks = new Map<string, ElementRank>();
-  const dirtyBands = { content: false, highlight: false };
+  const dirtyBands = { image: false, content: false, highlight: false };
   const firstChanged = {
+    image: source.bands.image.length,
     content: source.bands.content.length,
     highlight: source.bands.highlight.length,
   };
@@ -34,7 +37,7 @@ export async function validateTrustedRemovalOrder(
     const rank = sourceRanks.get(id);
     if (rank !== undefined) firstChanged[rank.band] = Math.min(firstChanged[rank.band], rank.rank);
   }
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of RENDER_BANDS) {
     const next = requested.bands[band];
     dirtyBands[band] = firstChanged[band] < source.bands[band].length;
     if (!dirtyBands[band]) continue;
@@ -47,5 +50,10 @@ export async function validateTrustedRemovalOrder(
       if (index >= firstChanged[band]) ranks.set(id, { band, rank: index });
     }
   }
-  return { bands, ranks, dirtyBands, relativeOrderPreserved: { content: true, highlight: true } };
+  return {
+    bands,
+    ranks,
+    dirtyBands,
+    relativeOrderPreserved: { image: true, content: true, highlight: true },
+  };
 }

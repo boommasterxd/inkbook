@@ -10,7 +10,8 @@ import { CanonicalMetadataCache } from "../../serialization/metadata/canonical-m
 import { createMainThreadCheckpoint } from "../../scheduling/main-thread-checkpoint";
 import { adoptOwnedSvgOutput } from "../../scheduling/owned-svg-output";
 import { snapshotTextResources } from "../../serialization/output/text-fonts";
-import { matchesCanonicalFontOutput } from "../../serialization/output/font-output-binding";
+import { snapshotImageResources } from "../../serialization/output/image-markup";
+import { matchesCanonicalImageOutput } from "../../serialization/output/font-output-binding";
 
 import type { AutosaveCoordinatorOptions } from "./types";
 
@@ -62,9 +63,10 @@ export class AutosaveExportIntegrity {
         deriveDocumentIntegrityManifestFromContentDigest(value, digest),
       );
       if (matches)
-        matches = await matchesCanonicalFontOutput(
+        matches = await matchesCanonicalImageOutput(
           output,
           snapshotTextResources(value).fontResources ?? [],
+          snapshotImageResources(value, true).imageResources ?? [],
           currentCheckpoint,
         );
     } catch {

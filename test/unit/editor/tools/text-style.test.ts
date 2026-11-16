@@ -1,3 +1,4 @@
+import { readElementStyle } from "../../../fixtures/domain/element-style";
 import { layoutTextElement } from "../../../fixtures/editor/text-style";
 import { expect, it } from "vitest";
 import type { TextElementV2 } from "../../../../src/domain/schema/public";
@@ -133,9 +134,12 @@ it("limits text and stroke intersections to foreground paint", () => {
     applySelectionStyleChange(selection, { property: "text-font-size", value: 32 }),
   ).toThrow(/not shared/);
   const changed = applySelectionStyleChange(selection, { property: "opacity", value: 0.25 });
-  expect(changed.elements.map(({ style }) => ("opacity" in style ? style.opacity : null))).toEqual([
-    0.25, 0.25,
-  ]);
+  expect(
+    changed.elements.map((element) => {
+      const style = readElementStyle(element);
+      return "opacity" in style ? style.opacity : null;
+    }),
+  ).toEqual([0.25, 0.25]);
 });
 
 it("maps shared shape fill to the text background and retains mixed states", () => {
@@ -159,7 +163,7 @@ it("maps shared shape fill to the text background and retains mixed states", () 
     type: "rgba",
     value: "#EF4444FF",
   });
-  expect(result.elements[1]?.style).toMatchObject({
+  expect(readElementStyle(result.elements[1])).toMatchObject({
     fillColor: { type: "rgba", value: "#EF4444FF" },
   });
 });

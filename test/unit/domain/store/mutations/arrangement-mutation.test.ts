@@ -11,7 +11,7 @@ function arrangementSource() {
   const ranks = new Map<string, ElementRank>(
     content.map((id, rank) => [id, { band: "content", rank }]),
   );
-  return { bands: { content, highlight: [] as string[] }, ranks };
+  return { bands: { image: [], content, highlight: [] as string[] }, ranks };
 }
 
 describe("private arrangement preparation", () => {
@@ -51,7 +51,7 @@ describe("private arrangement preparation", () => {
         },
       });
       const prepared = await prepareArrangementMutation(
-        { bands: { content, highlight: [] }, ranks },
+        { bands: { image: [], content, highlight: [] }, ranks },
         "bring-forward",
         new Set(["item-1"]),
         {

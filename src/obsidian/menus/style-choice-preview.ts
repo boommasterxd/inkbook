@@ -30,10 +30,8 @@ export function createChoicePreview(
   if (controlId.endsWith("color")) {
     preview.classList.add("inkbook-menu-color-swatch");
     preview.dataset.empty = value === "none" ? "true" : undefined;
-    preview.style.setProperty(
-      "--inkbook-menu-color",
-      value === "theme-text" ? "var(--text-normal)" : value,
-    );
+    preview.dataset.theme = value === "theme-text" ? "true" : undefined;
+    preview.style.setProperty("--inkbook-menu-color", value);
     return preview;
   }
   if (controlId.endsWith("width")) {

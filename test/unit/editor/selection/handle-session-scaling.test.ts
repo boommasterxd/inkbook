@@ -32,7 +32,7 @@ function table(): TableElementV1 {
     pivot: { x: 200, y: 150 },
     rotation: 0,
     style: {
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba", value: "#000000FF" },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 4,
@@ -93,7 +93,7 @@ function fractionalBoxShape(): BoxShapeElementV1 {
     style: {
       fillColor: null,
       fillOpacity: 0,
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba", value: "#000000FF" },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 4,
@@ -327,7 +327,7 @@ describe("single-element rotated handle scaling", () => {
       points: [0, 0, 0.5, 100, 0, 0.5],
       rotation: 90,
       style: {
-        color: { type: "theme-text" },
+        color: { type: "rgba", value: "#000000FF" },
         opacity: 1,
         pressureEnabled: true,
         smoothing: 0.5,

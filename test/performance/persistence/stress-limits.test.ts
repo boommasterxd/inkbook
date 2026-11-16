@@ -7,7 +7,8 @@ import { ElementStore } from "../../../src/domain/store/public";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { createStressLimitFixture, STRESS_POINTS, STRESS_STROKES } from "./fixtures";
 
-const EXPECTED_METADATA_BYTES = 19_911_562;
+// Exact metadata reference: every stroke carries its 35-byte fixed RGBA descriptor.
+const EXPECTED_METADATA_BYTES = 20_121_562;
 // This fixture has collinear smoothed samples: at most 200 markup bytes per
 // compact centerline plus 8 KiB for the fixed envelope and background.
 const MAXIMUM_STATIC_MARKUP_BYTES = STRESS_STROKES * 200 + 8192;

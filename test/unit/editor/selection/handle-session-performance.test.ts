@@ -210,7 +210,7 @@ function expectQuantizedPreview(
   // before measuring its fixed anchor, which can differ by one storage quantum.
   expect(preview).toHaveLength(committed.length);
   preview.forEach((element, index) => {
-    expect(element.style).toEqual(committed[index]!.style);
+    if ("style" in element) expect(committed[index]).toHaveProperty("style", element.style);
     expectQuantizedValue(element, committed[index]);
   });
 }

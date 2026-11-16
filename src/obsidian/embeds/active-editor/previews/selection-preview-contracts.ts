@@ -81,6 +81,7 @@ export interface SelectionPreviewOptions {
   readonly selectionEdgeDrag?: SelectionEdgeDragPort;
   readonly selection: () => ReadonlySet<string>;
   readonly selectionGeometry?: () => readonly SelectedElementGeometry[];
+  readonly editableSelection?: (() => ReadonlySet<string>) | undefined;
   readonly selectionSignal?: AbortSignal;
   readonly workScheduler?: WorkScheduler;
   readonly selectionFrames?: SelectionFrameSession;

@@ -313,6 +313,11 @@ export function assertGeometryNumber(
   }
 }
 
+export function assertBoxGeometry(value: UnknownRecord, path: string, absoluteLimit: number): void {
+  for (const key of ["x", "y", "width", "height"] as const)
+    assertGeometryNumber(value[key], `${path}.${key}`, absoluteLimit);
+}
+
 export function assertUnitInterval(value: unknown, path: string): asserts value is number {
   if (!isCanonicalUnitIntervalNumber(value)) {
     fail("invalid-range", path, "Expected a canonical number from 0 through 1.");

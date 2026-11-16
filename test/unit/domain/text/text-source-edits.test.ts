@@ -119,7 +119,7 @@ describe("text source formatting capacity", () => {
       style: {
         fontFamily: "sans",
         fontSize: 20,
-        color: { type: "theme-text" },
+        color: { type: "rgba", value: "#000000FF" },
         opacity: 1,
         bold: false,
         italic: false,

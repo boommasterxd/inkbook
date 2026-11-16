@@ -186,7 +186,14 @@ it("accepts the source length boundary and keeps failed text creation available 
 
 it("accepts its own font revision and rejects a real document edit during that admission", async () => {
   const fontResources = [await validFontResource()];
-  const plan = { ...createPastePlan(textElement()), fontResources };
+  const measuredText = textElement();
+  measuredText.layout.lines[0]!.runs[0]!.inkBounds = {
+    minX: 0,
+    minY: -20,
+    maxX: 100,
+    maxY: 4,
+  };
+  const plan = { ...createPastePlan(measuredText), fontResources };
   const current = harness({ [INKBOOK_CLIPBOARD_WEB_MIME]: "recognized" }, { plan });
   current.plan.mockImplementationOnce(async () => {
     current.addFonts(fontResources);

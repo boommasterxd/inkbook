@@ -1,3 +1,4 @@
+import { FakeDocument, FakeNode, fakeNode, fakeRectangleRecord } from "../fakes";
 import { expect, it, vi } from "vitest";
 import { createInstrumentation } from "../../../../../src/rendering/scene/instrumentation";
 import { createMountedElement } from "../../../../../src/rendering/scene/content/mounted-element";
@@ -8,7 +9,6 @@ import type { SceneDom } from "../../../../../src/rendering/scene/scene-dom";
 import type { SceneStorePort } from "../../../../../src/rendering/scene/types";
 import { createTestStroke } from "../../../../fixtures/persistence/worker-snapshot";
 import { activeFade, activeFades, fadeFrames } from "../../../../fixtures/rendering/scene-fades";
-import { FakeDocument, FakeNode, fakeNode, fakeRectangleRecord } from "../fakes";
 
 it("retains an interrupted generation until all multipart roots are physically detached", () => {
   const { entry, mounted, document, svg, fades } = setupMembership(130);

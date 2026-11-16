@@ -13,6 +13,27 @@ const CATEGORIES = [
   { category: "skipped", label: "import.skipped", icon: "circle-slash" },
 ] as const;
 
+/** Replaces only selection-dependent findings while retaining the file list and its focus. */
+export function createPreviewFindingsView(container: HTMLElement, context: ImportViewContext) {
+  const region = container.createDiv();
+  const disposers: Array<() => void> = [];
+  let current: readonly ImportPreviewFinding[] | undefined;
+  const release = (): void => {
+    for (const dispose of disposers.splice(0)) dispose();
+  };
+  context.own(release);
+  return (findings: readonly ImportPreviewFinding[]): void => {
+    if (findings === current) return;
+    current = findings;
+    release();
+    region.replaceChildren();
+    renderPreviewFindings(region, findings, {
+      ...context,
+      own: (dispose) => disposers.push(dispose),
+    });
+  };
+}
+
 export function renderPreviewFindings(
   container: HTMLElement,
   findings: readonly ImportPreviewFinding[],
@@ -40,7 +61,10 @@ export function renderPreviewFindings(
               tone: finding.category === "warning" ? "caution" : "neutral",
             },
           );
-          const findingContext = { ...pageContext, path: `${pageContext.path ?? ""}/${index}` };
+          const findingContext = {
+            ...pageContext,
+            path: `${pageContext.path ?? ""}/${encodeURIComponent(finding.warningCode ?? finding.message)}`,
+          };
           renderAffectedPaths(copy, "import.affectedFiles", finding.sources, findingContext);
           renderAffectedPaths(copy, "import.affectedNotes", finding.notes, findingContext);
         },

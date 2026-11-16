@@ -28,6 +28,8 @@ import { createBuiltInSettings } from "../../../../../../src/domain/settings";
 import { updateEmbedDescription } from "../../../../../../src/obsidian/embeds/presentation/embed-description";
 import { CanvasKeyboardStatus } from "../../../../../../src/obsidian/embeds/active-editor/input/canvas-keyboard-status";
 import { createNavigationHarness } from "../../../../../fixtures/obsidian/navigation";
+import { imageElement } from "../../../../../fixtures/domain/images";
+import { highlighter } from "../../../../../unit/domain/store/fixtures";
 
 beforeEach(installObsidianDomHelpers);
 afterEach(() => {
@@ -142,6 +144,42 @@ function keyboardRenderer(inputSurface: HTMLDivElement) {
     setSnapMarkerPath: vi.fn(),
   };
 }
+
+it.each([false, true])("navigates canonical image and annotation order, mixed=%s", (mixed) => {
+  const first = imageElement();
+  const second = { ...first, id: "00000000-0000-4000-8000-000000000012" };
+  const highlight = { ...highlighter(), id: "00000000-0000-4000-8000-000000000011" };
+  const content = rectangle();
+  const ordered = mixed ? [first, second, highlight, content] : [first, second];
+  const test = fixture(mixed ? [content, first, highlight, second] : [first, second]);
+  try {
+    for (const [key, index] of [
+      ["Home", 0],
+      ["PageDown", 1],
+      ["End", ordered.length - 1],
+      ["PageUp", ordered.length - 2],
+      ["Home", 0],
+      ["PageUp", 0],
+      ["End", ordered.length - 1],
+      ["PageDown", ordered.length - 1],
+    ] as const) {
+      expect(test.send(key)).toBe(true);
+      expect([...test.selection()]).toEqual([ordered[index]!.id]);
+      expect(test.input.querySelector('[role="status"]')?.textContent).toContain(
+        `object ${index + 1} of ${ordered.length}`,
+      );
+    }
+    test.send("Home");
+    test.send("PageDown", { shiftKey: true });
+    expect([...test.selection()]).toEqual([first.id, second.id]);
+    if (mixed) {
+      test.send("PageDown", { shiftKey: true });
+      expect([...test.selection()]).toEqual([first.id, second.id, highlight.id]);
+    }
+  } finally {
+    test.dispose();
+  }
+});
 
 describe("canvas keyboard presentation", () => {
   it("announces object geometry in the instance language and refreshes keyboard instructions", () => {

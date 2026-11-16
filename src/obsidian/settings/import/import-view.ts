@@ -6,14 +6,15 @@ import type { InkImportJournal, InkImportPreview } from "../../import/types";
 import {
   renderImportFinding,
   renderImportFindings,
+  renderImportDisclosure,
   renderImportIcon,
   type ImportViewContext,
 } from "./import-findings";
 import { renderPagedItems } from "./paged-findings";
 import { renderImportIntroduction, renderImportStep } from "./import-journey";
-import { createImportSelection } from "./import-selection";
-import { buildImportPreviewFindings } from "./preview-findings";
-import { renderPreviewFindings } from "./import-review-findings";
+import { createImportSelection, type ImportSelectionChange } from "./import-selection";
+import { buildImportPreviewFindings, prepareImportPreviewFindings } from "./preview-findings";
+import { createPreviewFindingsView, renderPreviewFindings } from "./import-review-findings";
 import { renderImportExamples } from "./import-examples";
 
 export type { ImportViewContext } from "./import-findings";
@@ -25,13 +26,25 @@ export function renderImportEntry(container: HTMLElement, context: ImportViewCon
     heading: context.localization.t("import.entryHeading"),
     summary: context.localization.t("import.entrySummary"),
   });
-  renderImportExamples(container, context);
-  renderImportIntroduction(container, context.localization);
-  renderNotice(container, {
-    title: context.localization.t("import.controlTitle"),
-    text: context.localization.t("import.controlDescription"),
-    tone: "neutral",
-  });
+  renderImportDisclosure(
+    container,
+    {
+      id: "entry-help",
+      title: context.localization.t("import.entryHelp"),
+      description: context.localization.t("import.entryHelpDescription"),
+      icon: "info",
+      populate: (content, scope) => {
+        renderImportExamples(content, scope.context);
+        renderImportIntroduction(content, context.localization);
+        renderNotice(content, {
+          title: context.localization.t("import.controlTitle"),
+          text: context.localization.t("import.controlDescription"),
+          tone: "neutral",
+        });
+      },
+    },
+    context,
+  );
 }
 
 export function renderImportPreview(
@@ -41,18 +54,29 @@ export function renderImportPreview(
   selectionChanged: (count: number) => void = () => undefined,
 ): () => InkImportPreview {
   renderImportStep(container, 2, context.localization);
+  if (preview.sources.length === 0) {
+    renderSummary(container, {
+      heading: context.localization.t("import.emptyHeading"),
+      summary: context.localization.t("import.emptyDescription"),
+    });
+    renderScanLimit(container, preview, context);
+    renderPreviewFindings(container, buildImportPreviewFindings(preview), context);
+    return () => preview;
+  }
   const summary = renderSummary(container, {
     heading: context.localization.t("import.found", {
       files: quantity(preview.sources.length, "handwriting", context.localization),
     }),
     summary: "",
   });
-  const updateSummary = (count: number, notes: number): void => {
+  let updateFindings: ((change: ImportSelectionChange) => void) | undefined;
+  const updateSummary = (count: number, notes: number, change: ImportSelectionChange): void => {
     summary.textContent = context.localization.t("import.selected", {
       count: context.localization.number(count),
       total: context.localization.number(preview.sources.length),
       notes: quantity(notes, "affectedNote", context.localization),
     });
+    updateFindings?.(change);
     selectionChanged(count);
   };
   const selection = createImportSelection(preview, context, updateSummary);
@@ -66,13 +90,7 @@ export function renderImportPreview(
     cls: "inkbook-import-guidance",
     text: context.localization.t("import.previewGuidance"),
   });
-  if (preview.truncated) {
-    renderNotice(container, {
-      title: context.localization.t("import.scanLimit"),
-      text: context.localization.t("import.scanLimitDescription"),
-      tone: "caution",
-    });
-  }
+  renderScanLimit(container, preview, context);
   const storage = container.createEl("p", { cls: "inkbook-import-storage-note" });
   renderImportIcon(storage, "hard-drive", "inkbook-import-storage-icon");
   storage.createSpan({
@@ -90,8 +108,32 @@ export function renderImportPreview(
     },
     context,
   );
-  renderPreviewFindings(container, buildImportPreviewFindings(preview), context);
+  const findings = prepareImportPreviewFindings(
+    preview,
+    selection.selectedPaths,
+    selection.sourceNotes,
+  );
+  const publishFindings = createPreviewFindingsView(container, context);
+  updateFindings = (change) => {
+    if (change.kind === "all") findings.setAllSelected(change.selected);
+    else findings.setSelected(change.path, change.selected);
+    publishFindings(findings.findings);
+  };
+  publishFindings(findings.findings);
   return selection.snapshot;
+}
+
+function renderScanLimit(
+  container: HTMLElement,
+  preview: InkImportPreview,
+  context: ImportViewContext,
+): void {
+  if (!preview.truncated) return;
+  renderNotice(container, {
+    title: context.localization.t("import.scanLimit"),
+    text: context.localization.t("import.scanLimitDescription"),
+    tone: "caution",
+  });
 }
 
 export function renderImportHistory(

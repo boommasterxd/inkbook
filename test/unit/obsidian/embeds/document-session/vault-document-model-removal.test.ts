@@ -69,3 +69,20 @@ it("passes cancellation into retained preparation without publishing a removal",
   });
   expect(store.size).toBe(1);
 });
+
+it("protects locked elements by default while permitting explicit history removal", async () => {
+  const element = { ...rectangle(), locked: true };
+  const store = new ElementStore([element]);
+  const options = removalOptions(store);
+
+  await expect(prepareVaultElementRemoval(options)).rejects.toThrow();
+  expect(store.get(element.id)?.element.locked).toBe(true);
+
+  const replay = await prepareVaultElementRemoval({
+    ...options,
+    cancellation: { ...options.cancellation, protectLocked: false },
+  });
+  if (replay.token === null) throw new Error("Expected an explicitly allowed history removal.");
+  expect(store.commitPreparedElementMutation(replay.token).status).toBe("committed");
+  expect(store.size).toBe(0);
+});

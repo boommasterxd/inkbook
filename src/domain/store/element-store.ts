@@ -1,5 +1,5 @@
 import type { ArrangeAction } from "../commands/arrange";
-import { renderBandOf, type RenderBand } from "../commands/render-bands";
+import { RENDER_BANDS, renderBandOf, type RenderBand } from "../commands/render-bands";
 import type { ResolvedShapeAnchor } from "../geometry/anchors";
 import type { InkElementV1 } from "../schema/public";
 import { SpatialQueryScratch, UniformSpatialIndex, type SpatialBounds } from "../spatial/index";
@@ -16,6 +16,7 @@ import { mutableElement } from "./records/immutability";
 import { mutableBand, type StoreBands } from "./mutations/band-snapshots";
 import { EMPTY_STORE_INSTRUMENTATION, type MutableStoreInstrumentation } from "./instrumentation";
 import { normalizeElementInput } from "./records/input-normalization";
+import { requireElementRecord } from "./records/record-access";
 import { applyMutationRecordPatches } from "./mutations/mutation-record-patch";
 import { assertCompleteBandOrder, ElementStoreOrdering } from "./mutations/order-operations";
 import {
@@ -46,7 +47,7 @@ import type { TimeSlicedStoreState } from "./time-sliced-store-creation";
 import type * as Store from "./types";
 
 export class ElementStore {
-  #bands: StoreBands = { content: [], highlight: [] };
+  #bands: StoreBands = { image: [], content: [], highlight: [] };
   #capacity = new DocumentCapacity();
   #ranks = new Map<string, Store.ElementRank>();
   #records = new Map<string, Store.ElementRecord>();
@@ -99,7 +100,7 @@ export class ElementStore {
       reverseConnections: this.#reverseConnections,
     }),
     () => this.#mutationVersion,
-    (plan) => this.#adoptElementMutation(plan),
+    (plan, beforeNotify) => this.#adoptElementMutation(plan, beforeNotify),
   );
 
   public constructor(elements: readonly InkElementV1[] = []) {
@@ -144,8 +145,7 @@ export class ElementStore {
     store.#spatialIndex = state.index;
     store.#capacity = state.capacity;
     store.#overflowCount = state.overflowCount;
-    for (const band of ["highlight", "content"] as const)
-      mutableBand(store.#bands, band).push(...state.bands[band]);
+    for (const band of RENDER_BANDS) mutableBand(store.#bands, band).push(...state.bands[band]);
     for (const [id, rank] of state.ranks) store.#ranks.set(id, { ...rank });
     for (const [id, references] of state.reverseConnections)
       store.#reverseConnections.set(id, references);
@@ -156,6 +156,9 @@ export class ElementStore {
   }
   public get size(): number {
     return this.#records.size;
+  }
+  public get lockedCount(): number {
+    return this.#runtime.lockedCount;
   }
   public get mutationVersion(): number {
     return this.#mutationVersion;
@@ -254,6 +257,7 @@ export class ElementStore {
       replacements,
       this.#replacementPorts(),
       {
+        ...scheduler,
         isCancelled: () =>
           this.#mutationVersion !== mutationVersion || (scheduler.isCancelled?.() ?? false),
         shouldYield: scheduler.shouldYield,
@@ -305,7 +309,10 @@ export class ElementStore {
   public readonly commitPreparedElementMutation = this.#preparedElementMutations.commit.bind(
     this.#preparedElementMutations,
   );
-  #adoptElementMutation(plan: ElementMutationPlan): Store.ElementMutationCommitResult {
+  #adoptElementMutation(
+    plan: ElementMutationPlan,
+    beforeNotify?: () => void,
+  ): Store.ElementMutationCommitResult {
     commitMutationDerivedState(this.#capacity, this.#reverseConnections, plan);
     this.#ranks = applyMutationRecordPatches(this.#records, this.#ranks, plan);
     this.#overflowCount = this.#spatialIndex.overflowCount;
@@ -313,18 +320,18 @@ export class ElementStore {
     this.#paintVersion = plan.delta.paintVersion;
     this.#bands = plan.bands;
     return {
-      delta: this.#publish(plan.delta, plan),
+      delta: this.#publish(plan.delta, plan, beforeNotify),
       status: "committed",
       transition: plan.applied,
     };
   }
   public updateStyle(id: string, style: Store.ElementStyle): Store.StoreDelta | null {
-    const current = this.#requireRecord(id);
+    const current = requireElementRecord(this.#records, id);
     const replacement = mutableElement(current.element);
+    if (replacement.kind === "image") return null;
     replacement.style = style;
     return this.replace(id, replacement);
   }
-
   public remove(ids: ReadonlySet<string> | readonly string[]): Store.StoreDelta | null {
     return this.#remove(ids);
   }
@@ -352,7 +359,6 @@ export class ElementStore {
     this.#overflowCount += result.overflowDelta;
     return this.#publish(result.delta, undefined, beforeNotify);
   }
-
   public removeWithHistory(
     ids: ReadonlySet<string> | readonly string[],
   ): Store.AppliedRemovalResult | null {
@@ -360,10 +366,9 @@ export class ElementStore {
       this.#remove(ids, beforeNotify),
     );
   }
-
   public arrange(selectedIds: ReadonlySet<string>, action: ArrangeAction): Store.StoreDelta | null {
     const delta = new DeltaBuilder();
-    for (const band of ["highlight", "content"] as const) {
+    for (const band of RENDER_BANDS) {
       if (!this.#ordering.arrange(band, selectedIds, action, delta)) continue;
       this.#instrumentation.bandScans += 1;
     }
@@ -373,7 +378,7 @@ export class ElementStore {
   public reorderBands(
     orderedIds: Readonly<Record<RenderBand, readonly string[]>>,
   ): Store.StoreDelta | null {
-    for (const band of ["highlight", "content"] as const) {
+    for (const band of RENDER_BANDS) {
       assertCompleteBandOrder(
         this.#bands[band],
         band,
@@ -382,7 +387,7 @@ export class ElementStore {
       );
     }
     const delta = new DeltaBuilder();
-    for (const band of ["highlight", "content"] as const) {
+    for (const band of RENDER_BANDS) {
       const ids = mutableBand(this.#bands, band);
       for (let index = 0; index < ids.length; index += 1) ids[index] = orderedIds[band][index]!;
       this.#instrumentation.bandScans += 1;
@@ -473,18 +478,13 @@ export class ElementStore {
   }
   #replacementPorts(): ReplacementPlannerPorts {
     return {
-      getRecord: (id) => this.#requireRecord(id),
+      getRecord: (id) => requireElementRecord(this.#records, id),
       getRetainedRecord: (element) => this.#replacementHistory.retainedRecord(element),
       getReferences: (targetId) => this.#reverseConnections.get(targetId),
       onReverseVisit: () => {
         this.#instrumentation.reverseDependencyVisits += 1;
       },
     };
-  }
-  #requireRecord(id: string): Store.ElementRecord {
-    const record = this.#records.get(id);
-    if (record === undefined) throw new RangeError(`Unknown element ID: ${id}`);
-    return record;
   }
   #publish(
     delta: Store.StoreDelta | null,

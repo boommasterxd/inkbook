@@ -1,3 +1,4 @@
+import { fakeRectangleRecord } from "../fakes";
 import { afterEach, expect, it, vi } from "vitest";
 import type { MountedSceneElement } from "../../../../../src/rendering/scene/content/mounted-element";
 import { SelectionRunTargets } from "../../../../../src/rendering/scene/presentation/selection-run-targets";
@@ -7,7 +8,6 @@ import type {
   SceneStorePort,
 } from "../../../../../src/rendering/scene/types";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
-import { fakeRectangleRecord } from "../fakes";
 
 function record(id: string, version: number): SceneElementRecord {
   return Object.freeze({

@@ -159,7 +159,6 @@ export class SceneElementPreviews {
       this.#connected.pending
     );
   }
-
   public get textPublicationPending(): boolean {
     return (
       this.content.hasPendingTextPreviews || (this.#snapshotHasText && this.progressive.pending)

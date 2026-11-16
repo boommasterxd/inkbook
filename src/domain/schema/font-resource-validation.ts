@@ -3,23 +3,15 @@ import {
   assertTextString,
   assertTextFontFamily,
 } from "./text-validation-primitives";
-import {
-  assertExactKeys,
-  assertIntegerRange,
-  assertOneOf,
-  assertRecord,
-  fail,
-} from "./validation-internals";
+import { assertResourceDataSteps, resourceEntries } from "./resource-validation";
+import { assertExactKeys, assertIntegerRange, assertOneOf, fail } from "./validation-internals";
 
 /** Container shape only; font decoders separately validate binary tables before loading. */
 export function* assertFontResourcesSteps(value: unknown, path: string): Generator<void, void> {
   assertTextArray(value, 64, path);
   const ids = new Set<string>();
   let bytes = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    const resource: unknown = value[index];
-    const location = `${path}[${index}]`;
-    assertRecord(resource, location);
+  for (const { resource, location } of resourceEntries(value, path)) {
     assertExactKeys(
       resource,
       [
@@ -60,28 +52,15 @@ export function* assertFontResourcesSteps(value: unknown, path: string): Generat
       ["font/woff2", "font/woff", "font/ttf", "font/otf"] as const,
       `${location}.mimeType`,
     );
-    yield* assertFontDataSteps(resource.data, `${location}.data`);
+    yield* assertResourceDataSteps(resource.data, `${location}.data`, {
+      maximumCharacters: 8 * 1024 * 1024,
+      malformedMessage: "Font resources must use bounded Base64 data.",
+      capacityMessage: "Font resources must use bounded Base64 data.",
+    });
     bytes += (resource.data as string).length;
     if (bytes > 32 * 1024 * 1024)
       fail("invalid-range", path, "Font resources exceed the aggregate size limit.");
     if (resource.license !== undefined)
       assertTextString(resource.license, 16_384, `${location}.license`);
-  }
-}
-
-function* assertFontDataSteps(value: unknown, path: string): Generator<void, void> {
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value.length > 8 * 1024 * 1024 ||
-    value.length % 4 !== 0
-  )
-    fail("invalid-range", path, "Font resources must use bounded Base64 data.");
-  for (let offset = 0; offset < value.length; offset += 65_536) {
-    const chunk = value.slice(offset, offset + 65_536);
-    const final = offset + chunk.length === value.length;
-    if (!(final ? /^[A-Za-z0-9+/]+={0,2}$/ : /^[A-Za-z0-9+/]+$/).test(chunk))
-      fail("invalid-range", path, "Font resources must use bounded Base64 data.");
-    yield;
   }
 }

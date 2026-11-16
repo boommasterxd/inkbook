@@ -6,6 +6,7 @@ import type {
   InkElementV1,
   StrokeElementV1,
   TableElementV1,
+  ImageElementV3,
 } from "../../../../src/domain/schema/public";
 import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
 
@@ -165,5 +166,21 @@ export function axisConnectedLine(): LineElementV1 {
     },
     startNode: "none",
     style: OUTLINE_STYLE,
+  };
+}
+
+export function image(id = "00000000-0000-4000-8000-000000000050"): ImageElementV3 {
+  return {
+    id,
+    kind: "image",
+    createdAt: 1,
+    x: 100,
+    y: 100,
+    width: 200,
+    height: 100,
+    rotation: 0,
+    pivot: { x: 200, y: 150 },
+    assetId: "a".repeat(64),
+    crop: { x: 0, y: 0, width: 200, height: 100 },
   };
 }

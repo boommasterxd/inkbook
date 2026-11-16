@@ -6,7 +6,7 @@ function draw(samples: readonly RawStrokeSample[], zoom: number, batchSize = sam
   const builder = new LiveStrokeBuilder({
     input: { pressureSource: "simulated", zoom },
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba", value: "#000000FF" },
       width: 22,
       opacity: 1,
       pressureEnabled: true,

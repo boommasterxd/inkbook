@@ -1,4 +1,9 @@
-import type { TextElementV2, TextLayoutV2, TextRangeStyleV2 } from "../schema/types";
+import type {
+  TextElementV2,
+  TextLayoutV2,
+  TextRangeStyleV2,
+  TextLayoutRunV2,
+} from "../schema/types";
 import { canonicalizeGeometryNumber } from "../schema/canonical";
 import { scaleMathPathDataSteps } from "./text-math-path";
 
@@ -46,6 +51,7 @@ export function* scaledTextContentSteps(
         ...run,
         x: number(run.x),
         width: number(run.width),
+        ...scaledRunInkBounds(run, factor),
         ...(run.style === undefined ? {} : { style: style(run.style) }),
       });
       yield;
@@ -107,5 +113,23 @@ export function* scaledTextContentSteps(
     style: { ...element.style, fontSize: number(element.style.fontSize) },
     ranges,
     layout,
+  };
+}
+
+function scaledRunInkBounds(
+  run: TextLayoutRunV2,
+  factor: number,
+): Pick<TextLayoutRunV2, "inkBounds"> {
+  const bounds = run.inkBounds;
+  if (bounds === undefined) return {};
+  const outward = (value: number, round: (value: number) => number) =>
+    canonicalizeGeometryNumber(round(value * factor * 1000) / 1000);
+  return {
+    inkBounds: {
+      minX: outward(bounds.minX, Math.floor),
+      minY: outward(bounds.minY, Math.floor),
+      maxX: outward(bounds.maxX, Math.ceil),
+      maxY: outward(bounds.maxY, Math.ceil),
+    },
   };
 }

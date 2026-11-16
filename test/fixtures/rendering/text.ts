@@ -15,7 +15,7 @@ export function textElement(overrides: Partial<TextElementV2> = {}): TextElement
     style: {
       fontFamily: "inter",
       fontSize: 24,
-      color: { type: "theme-text" },
+      color: { type: "rgba" as const, value: "#000000FF" as const },
       opacity: 0.75,
       bold: false,
       italic: false,

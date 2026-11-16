@@ -5,6 +5,7 @@ import * as pressureWindows from "../../../src/domain/geometry/pressure/pressure
 import * as simplification from "../../../src/domain/geometry/stroke-simplification";
 import * as strokeSlices from "../../../src/domain/geometry/pressure/pressure-outline";
 import * as intersections from "../../../src/domain/geometry/pressure/pressure-boundary-intersections";
+import * as geometryBounds from "../../../src/domain/geometry/primitives";
 import { LiveStrokeBuilder, type LiveStrokeChunk } from "../../../src/editor/tools/live-stroke";
 import { createMaximumStroke } from "./standard-domain-fixture";
 
@@ -18,6 +19,7 @@ describe("maximum live-stroke primitives", () => {
       style: source.style,
     });
     const pressureResponse = vi.spyOn(Math, "expm1");
+    const bounds = vi.spyOn(geometryBounds, "boundsFromPoints");
     for (let point = 0; point < source.points.length; point += 3) {
       builder.append({
         pressure: source.points[point + 2]!,
@@ -34,6 +36,10 @@ describe("maximum live-stroke primitives", () => {
     });
     expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(131);
     expect(commit.instrumentation.maximumFinalizedChunkSamples).toBeLessThanOrEqual(256);
+    expect(bounds.mock.calls.length).toBeLessThanOrEqual(
+      commit.instrumentation.tailBuilds + Math.ceil(MAX_STROKE_POINTS / 64) + 1,
+    );
+    for (const [centers] of bounds.mock.calls) expect(centers.length).toBeLessThanOrEqual(131);
     expect(commit.points).toHaveLength(MAX_STROKE_POINTS * 3);
     expect(commit.geometry.length).toBeGreaterThan(0);
     expect(commit.geometry.every(({ d }) => d.length > 0)).toBe(true);

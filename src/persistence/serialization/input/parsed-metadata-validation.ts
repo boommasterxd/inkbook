@@ -14,6 +14,8 @@ import type { StrokeSampleEncodingCache } from "../metadata/stroke-sample-encodi
 import { validateFontResourceSteps } from "../../fonts/font-resources";
 import { restoreCompactFontResourcesSteps } from "../metadata/compact-font-resources";
 import { usedFontResourcesSteps } from "../../fonts/used-font-resources";
+import { validateImageResourceSteps } from "../../images/image-resources";
+import { restoreCompactImageResourcesSteps } from "../metadata/compact-image-resources";
 
 interface MetadataValidationContext {
   readonly checkpoint: ChunkedInputCheckpoint;
@@ -45,7 +47,7 @@ export async function validateParsedMetadata(
     };
   }
   const compact = context.prelude?.metadataEncoding === COMPACT_METADATA_ENCODING;
-  const restored = await restoreParsedFonts(parsed.value, context);
+  const restored = await restoreParsedResources(parsed.value, context);
   if (!restored.ok) return restored;
   if (compact) {
     try {
@@ -76,8 +78,8 @@ export async function validateParsedMetadata(
     context.checkpoint,
   );
   if (!migrated.ok) return migrated;
-  const fonts = await validateParsedFonts(migrated.value, context);
-  if (!fonts.ok) return fonts;
+  const resources = await validateParsedResources(migrated.value, context);
+  if (!resources.ok) return resources;
   const integrity = validateCurrentMetadataIntegrity(
     context.metadataText,
     context.prelude?.snapshotHash ?? null,
@@ -145,4 +147,58 @@ async function runSteps<T>(
     step = iterator.next();
   }
   return step.value;
+}
+
+async function restoreParsedImages(
+  value: unknown,
+  context: MetadataValidationContext,
+): Promise<DocumentCodecResult<boolean>> {
+  try {
+    return {
+      ok: true,
+      value: await runSteps(
+        restoreCompactImageResourcesSteps(value, context.prelude),
+        context.checkpoint,
+      ),
+    };
+  } catch {
+    context.signal?.throwIfAborted();
+    return {
+      ok: false,
+      error: { code: "snapshot-invalid", message: "Embedded image descriptors are invalid." },
+    };
+  }
+}
+async function validateParsedImages(
+  snapshot: MigratedSnapshot["snapshot"],
+  context: MetadataValidationContext,
+): Promise<DocumentCodecResult<void>> {
+  try {
+    for (const image of snapshot.imageResources ?? [])
+      await runSteps(validateImageResourceSteps(image, context.signal), context.checkpoint);
+    return { ok: true, value: undefined };
+  } catch {
+    context.signal?.throwIfAborted();
+    return {
+      ok: false,
+      error: { code: "snapshot-invalid", message: "Image resource content is invalid." },
+    };
+  }
+}
+
+async function restoreParsedResources(
+  value: unknown,
+  context: MetadataValidationContext,
+): Promise<DocumentCodecResult<boolean>> {
+  const fonts = await restoreParsedFonts(value, context);
+  if (!fonts.ok) return fonts;
+  const images = await restoreParsedImages(value, context);
+  return images.ok ? { ok: true, value: fonts.value || images.value } : images;
+}
+async function validateParsedResources(
+  migrated: MigratedSnapshot,
+  context: MetadataValidationContext,
+): Promise<DocumentCodecResult<void>> {
+  const fonts = await validateParsedFonts(migrated, context);
+  return fonts.ok ? validateParsedImages(migrated.snapshot, context) : fonts;
 }

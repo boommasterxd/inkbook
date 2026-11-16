@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { validatePathDataSteps } from "../../../../src/persistence/documents/path-data-validator";
 import { inspectTrustedSvgOutput } from "../../../../src/persistence/scheduling/trusted-svg-output";
+import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
 import { validateSafeSvgSteps } from "../../../../src/persistence/documents/safe-svg-validator";
 import {
   validateFontStylesheetSteps,
@@ -66,15 +67,26 @@ describe("safe SVG validation performance", () => {
   });
 
   it("validates a maximum-size, maximum-command path with cooperative checkpoints", async () => {
+    const source = createMaximumComplexitySvg();
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    const hash = vi.spyOn(ChunkedSha256.prototype, "update");
     let checkpoints = 0;
-    const trusted = await inspectTrustedSvgOutput(createMaximumComplexitySvg(), undefined, {
-      checkpoint: async () => {
-        checkpoints += 1;
-      },
-      signal: new AbortController().signal,
-    });
-    expect(trusted.revision).toBe(3);
-    expect(checkpoints).toBeGreaterThan(700);
+    try {
+      const trusted = await inspectTrustedSvgOutput(source, undefined, {
+        checkpoint: async () => {
+          checkpoints += 1;
+        },
+        signal: new AbortController().signal,
+      });
+      expect(trusted.revision).toBe(3);
+      expect(checkpoints).toBeGreaterThan(700);
+      expect(digest).toHaveBeenCalledExactlyOnceWith("SHA-256", expect.any(Uint8Array));
+      expect(digest.mock.calls[0]![1].byteLength).toBe(new TextEncoder().encode(source).byteLength);
+      expect(hash).not.toHaveBeenCalled();
+    } finally {
+      digest.mockRestore();
+      hash.mockRestore();
+    }
   }, 120_000);
 
   it("bounds actual path input reads and commands between generator checkpoints", () => {

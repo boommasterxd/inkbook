@@ -30,6 +30,7 @@ Work through an equation, connect the steps of a process, or highlight the part 
 | **Sketch and connect**  | Shapes including stars, straight or curved lines and arrows, coordinate systems, and tables, with connectors that follow shape anchors. |
 | **Hold to shape**       | Hold a pen stroke still to preview a native shape; release to accept or continue drawing to cancel.                                     |
 | **Type and format**     | Multiline text fields with Markdown tables, LaTeX formulas, local fonts, text colors, and backgrounds.                                  |
+| **Annotate a source**   | Import PNG, JPEG, static WebP or selected PDF pages below your annotations; crop images without losing imported pixels.                 |
 | **Refine a drawing**    | Selection and lasso, move, resize, rotate, style, and arrange controls.                                                                 |
 | **Find your rhythm**    | Zoom, undo and redo, copy and paste, and a page that grows as you write.                                                                |
 | **Choose your paper**   | Plain, lined, dotted, or square backgrounds, with adjustable spacing.                                                                   |
@@ -50,7 +51,7 @@ The font dropdown previews each family in its own typeface. Inter, Source Serif 
 
 ![The same text field rendered in Obsidian's dark Reading view, with formatted paragraphs, a nested list, and inline and display mathematics.](docs/assets/readme-text-reading-dark.webp)
 
-See [Text fields](docs/text-fields.md) for supported formatting, fonts, and export behavior.
+See [Text fields](docs/text-fields.md) for supported formatting, fonts, and export behavior. Use the Image action to import PNG, JPEG, static WebP or selected PDF pages, then draw or highlight above them. Images remain inside the self-contained SVG; cropping retains the complete imported pixels. Inkbook uses lossless WebP when it is smaller than the previous format, with PNG/JPEG fallback. See [Images and PDF pages](docs/images.md) for import, crop, reader compatibility and capacity limits.
 
 ## Your notes stay yours
 
@@ -136,14 +137,15 @@ The code separates pure domain logic, editor interactions, imperative SVG render
 
 ## Documentation and feedback
 
-| Guide                                                | What you will find                                            |
-| ---------------------------------------------------- | ------------------------------------------------------------- |
-| [Editor tools](docs/editor-tools.md)                 | Drawing, selection, shapes, connections, erasing, and styles. |
-| [Text fields](docs/text-fields.md)                   | Markdown, LaTeX, fonts, text formatting, and portable output. |
-| [Features](docs/features.md)                         | Paper, page growth, history, clipboard, and locking.          |
-| [Keyboard shortcuts](docs/keyboard-shortcuts.md)     | Canvas bindings and customization.                            |
-| [Settings](docs/settings.md)                         | Tool defaults and vault or device preferences.                |
-| [Obsidian integration](docs/obsidian-integration.md) | Embed syntax, host behavior, and release requirements.        |
+| Guide                                                | What you will find                                                       |
+| ---------------------------------------------------- | ------------------------------------------------------------------------ |
+| [Editor tools](docs/editor-tools.md)                 | Drawing, selection, shapes, connections, erasing, and styles.            |
+| [Text fields](docs/text-fields.md)                   | Markdown, LaTeX, fonts, text formatting, and portable output.            |
+| [Images and PDF pages](docs/images.md)               | Local import, nondestructive crop, resource limits, and portable images. |
+| [Features](docs/features.md)                         | Paper, page growth, history, clipboard, and locking.                     |
+| [Keyboard shortcuts](docs/keyboard-shortcuts.md)     | Canvas bindings and customization.                                       |
+| [Settings](docs/settings.md)                         | Tool defaults and vault or device preferences.                           |
+| [Obsidian integration](docs/obsidian-integration.md) | Embed syntax, host behavior, and release requirements.                   |
 
 The [complete documentation index](AGENTS.md#documentation-index) links all maintained technical guides.
 

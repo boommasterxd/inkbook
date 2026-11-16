@@ -62,7 +62,7 @@ export class SelectionCenterTrace {
           cachedCenterPath === null ? undefined : (cachedCenterPath ?? this.#cache.read(element));
         path = cached ?? this.#cache.build(element);
         if (cached === undefined) this.#instrumentation.selectionTraceGeometryBuilds += 1;
-      } else if (element.kind === "text") {
+      } else if (element.kind === "text" || element.kind === "image") {
         const { x, y, width, height } = element;
         path = `M ${x} ${y} H ${x + width} V ${y + height} H ${x} Z`;
       } else {
@@ -95,7 +95,7 @@ export class SelectionCenterTrace {
     const previous = this.#basis;
     if (previous === element && this.#parts === parts) return false;
     if (previous === undefined || previous.kind !== element.kind) return true;
-    if (element.kind === "text") return previous !== element;
+    if (element.kind === "text" || element.kind === "image") return previous !== element;
     if (element.kind === "stroke" && element.style.pressureEnabled)
       return !sameStrokeCenters(previous as StrokeElementV1, element);
     return this.#parts !== parts;

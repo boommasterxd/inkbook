@@ -46,7 +46,7 @@ export function* selectBySelectionAreaCandidatesSteps(
   try {
     let step = candidates.next();
     while (!step.done) {
-      if (step.value !== undefined) {
+      if (step.value !== undefined && step.value.element.locked !== true) {
         const { id, bounds, element, preparedPressure, textPaintGeometry } = step.value;
         if (
           yield* elementMatchesSelectionAreaSteps(

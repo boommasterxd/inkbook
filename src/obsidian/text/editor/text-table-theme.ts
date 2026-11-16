@@ -55,7 +55,7 @@ export const textTableThemeRules = {
     borderRadius: "0",
     boxShadow: "none",
     background: "transparent",
-    color: "var(--text-normal, var(--inkbook-text-color, #222222))",
+    color: "var(--text-normal, #222222)",
     cursor: "pointer",
     pointerEvents: "auto",
   },

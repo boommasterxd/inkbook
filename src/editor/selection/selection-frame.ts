@@ -3,6 +3,7 @@ import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 import { sameLocalSelectionShape } from "../../domain/store/records/prepared-stroke-center-cache";
 import {
   canonicalPoint,
+  boundsCorners,
   calculateElementBoundsSteps,
   normalizeRotation,
   rotatePointClockwise,
@@ -335,12 +336,7 @@ export function selectionFramePoint(frame: OrientedSelectionFrame, position: Box
 }
 
 export function selectionFrameBoundsPoints(bounds: Bounds): OrientedSelectionFrame["points"] {
-  return [
-    { x: bounds.minX, y: bounds.minY },
-    { x: bounds.maxX, y: bounds.minY },
-    { x: bounds.maxX, y: bounds.maxY },
-    { x: bounds.minX, y: bounds.maxY },
-  ];
+  return boundsCorners(bounds);
 }
 
 export function transformSelectionFrame(

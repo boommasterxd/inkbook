@@ -1,5 +1,6 @@
 import type { PressureWindow } from "../../domain/geometry/pressure/pressure-window";
-import { roundCanonical } from "../../domain/geometry/public";
+import { effectiveStrokeWidth, roundCanonical } from "../../domain/geometry/public";
+import type { Bounds } from "../../domain/geometry/primitives";
 import {
   LiveStrokeGeometry,
   LIVE_STROKE_WINDOW,
@@ -25,6 +26,7 @@ export interface LiveStrokeChunk {
   readonly firstSample: number;
   readonly sampleCount: number;
   readonly geometry: StrokePathGeometry;
+  readonly bounds?: Readonly<Bounds> | undefined;
 }
 
 export interface LiveStrokePreview {
@@ -34,6 +36,7 @@ export interface LiveStrokePreview {
     readonly sampleCount: number;
     readonly boundarySamples: number;
     readonly geometry: StrokePathGeometry;
+    readonly bounds?: Readonly<Bounds> | undefined;
   };
 }
 
@@ -87,7 +90,10 @@ export class LiveStrokeBuilder {
   private maximumFinalizedChunkSamples = 0;
 
   constructor(private readonly options: LiveStrokeBuilderOptions) {
-    this.geometry = new LiveStrokeGeometry(options.style);
+    this.geometry = new LiveStrokeGeometry(
+      options.style,
+      effectiveStrokeWidth({ kind: "stroke", tool: options.tool ?? "pen", style: options.style }),
+    );
     if (!Number.isFinite(options.input.zoom) || options.input.zoom <= 0) {
       throw new RangeError("Stroke zoom must be a positive finite number.");
     }
@@ -229,6 +235,7 @@ export class LiveStrokeBuilder {
           firstSample: this.finalizedSamples,
           sampleCount: LIVE_STROKE_WINDOW,
           geometry,
+          bounds: this.geometry.finalizedBounds,
         }),
       );
       this.finalizedChunkBuilds += 1;
@@ -247,6 +254,7 @@ export class LiveStrokeBuilder {
       sampleCount,
       boundarySamples: Number(this.finalizedSamples > 0),
       geometry: this.geometry.preview(this.canonicalPoints, this.finalizedSamples),
+      bounds: this.geometry.previewBounds,
     });
     this.tailBuilds += 1;
     this.maximumTailSamples = Math.max(this.maximumTailSamples, sampleCount);

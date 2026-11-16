@@ -34,7 +34,7 @@ export type SceneToolCursorFrameReader = (layoutChanged: boolean) => SceneToolCu
 export interface SceneToolCursorDom {
   readonly surface: SVGSVGElement;
   readonly group: SVGGElement;
-  readonly ring: SVGCircleElement;
+  readonly rings: readonly SVGCircleElement[];
   readonly icon: SVGGElement;
 }
 
@@ -47,19 +47,22 @@ export function createToolCursorDom(document: Document): SceneToolCursorDom {
   group.setAttribute("class", "inkbook-tool-cursor");
   group.setAttribute("display", "none");
   group.setAttribute("pointer-events", "none");
-  const ring = document.createElementNS(SVG_NAMESPACE, "circle");
-  ring.setAttribute("fill", "none");
-  ring.setAttribute("stroke", "var(--inkbook-text)");
-  ring.setAttribute("stroke-dasharray", "4 3");
-  ring.setAttribute("visibility", "hidden");
-  group.append(ring);
+  const rings = ["#000000", "#ffffff"].map((color) => {
+    const ring = document.createElementNS(SVG_NAMESPACE, "circle");
+    ring.setAttribute("fill", "none");
+    ring.setAttribute("stroke", color);
+    ring.setAttribute("visibility", "hidden");
+    group.append(ring);
+    return ring;
+  });
+  rings[1]!.setAttribute("stroke-dasharray", "4 4");
   const icon = document.createElementNS(SVG_NAMESPACE, "g");
   icon.setAttribute("transform", "translate(10 -28)");
   icon.setAttribute("visibility", "hidden");
   group.append(icon);
   surface.append(group);
   document.body.append(surface);
-  return { surface, group, ring, icon };
+  return { surface, group, rings, icon };
 }
 
 /** Retained decorations and icon; pointer frames change only the group transform. */
@@ -113,10 +116,12 @@ export class SceneToolCursorWriter {
         : `polygon(${clip.left}px ${clip.top}px, ${clip.right}px ${clip.top}px, ${clip.right}px ${clip.bottom}px, ${clip.left}px ${clip.bottom}px)`,
     );
     const eraser = state.kind === "eraser";
-    this.attribute(this.dom.ring, "visibility", eraser ? "visible" : "hidden");
+    for (const ring of this.dom.rings) {
+      this.attribute(ring, "visibility", eraser ? "visible" : "hidden");
+      if (eraser) this.attribute(ring, "r", String(state.radius));
+    }
     this.attribute(this.dom.icon, "visibility", eraser ? "hidden" : "visible");
-    if (eraser) this.attribute(this.dom.ring, "r", String(state.radius));
-    else this.writeIcon(state);
+    if (!eraser) this.writeIcon(state);
   }
 
   private writeIcon(state: Extract<SceneToolCursor, { kind: "tool" }>): void {

@@ -22,6 +22,7 @@ import type { WorkerRuntimeFailure } from "../../../persistence/worker/runtime/b
 import { VaultDocumentSessionFactory } from "../document-session/vault-document-session-factory";
 import type { VaultDocumentSessionHooks } from "../document-session/vault-document-recovery";
 import type { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
+import { prepareNativeTextInkBounds } from "../../text/native-text-ink-bounds";
 
 interface WorkspaceRuntimeWindowPorts {
   readonly fallbackWindow: () => Window | undefined;
@@ -54,7 +55,19 @@ export function createWorkspaceSessionFactory(options: {
       ownerWindowVersion: () => options.profiles.ownerWindowVersion(),
       subscribeSchedulingProfile: (listener) => options.profiles.subscribe(listener),
     }),
-    options.hooks,
+    {
+      ...options.hooks,
+      prepareTextInkBounds: (documentId, snapshot, cancelled, elements) => {
+        const ownerWindow = options.owningWindow(documentId);
+        return prepareNativeTextInkBounds({
+          cancelled,
+          document: ownerWindow.document,
+          elements,
+          resources: snapshot.fontResources ?? [],
+          scheduler: options.profiles.workScheduler(ownerWindow),
+        });
+      },
+    },
   );
 }
 

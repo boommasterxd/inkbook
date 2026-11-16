@@ -22,30 +22,45 @@ afterEach(() => {
 });
 
 describe("owned export input hashing", () => {
-  it("digests exactly copied bytes and separates source mutation from consumed ownership", async () => {
-    const source = new Uint8Array([1, 2, 3, 4]);
-    const hash = new ChunkedInputHash(options(source.length));
-    const first = hash.copy(source.subarray(0, 2))!;
-    source.fill(9);
-    const second = hash.copy(source.subarray(2))!;
-    source.fill(7);
-    expect(first.buffer).toBe(second.buffer);
-    expect(first.buffer).not.toBe(source.buffer);
-    expect([...first, ...second]).toEqual([1, 2, 9, 9]);
-    await expect(hash.complete()).resolves.toBe(sha256Hex(new Uint8Array([1, 2, 9, 9])));
-    expect(hash.retainedBytes).toBe(4);
-    hash.release();
-    expect(hash.retainedBytes).toBe(0);
-  });
+  it.each(["export", "runtime"])(
+    "digests owned %s chunks despite source mutation",
+    async (mode) => {
+      const source = new Uint8Array([1, 2, 3, 4]);
+      const hash = new ChunkedInputHash(
+        mode === "export"
+          ? options(source.length)
+          : {
+              staticValidation: "safe",
+              nativeInputBytes: source.byteLength,
+              onValidatedSnapshot: () => undefined,
+            },
+      );
+      const first = hash.copy(source.subarray(0, 2))!;
+      source.fill(9);
+      const second = hash.copy(source.subarray(2))!;
+      source.fill(7);
+      expect(first.buffer).toBe(second.buffer);
+      expect(first.buffer).not.toBe(source.buffer);
+      expect([...first, ...second]).toEqual([1, 2, 9, 9]);
+      await expect(hash.complete()).resolves.toBe(sha256Hex(new Uint8Array([1, 2, 9, 9])));
+      expect(hash.retainedBytes).toBe(4);
+      hash.release();
+      expect(hash.retainedBytes).toBe(0);
+    },
+  );
 
-  it("uses the existing full JavaScript digest when native hashing fails", async () => {
+  it.each(["export", "runtime"])("falls back from failed native %s hashing", async (mode) => {
     const source = new Uint8Array(128 * 1024).fill(17);
     const expected = sha256Hex(source);
     const digest = vi
       .spyOn(crypto.subtle, "digest")
       .mockRejectedValue(new Error("Native unavailable"));
     const updates = vi.spyOn(ChunkedSha256.prototype, "update");
-    const hash = new ChunkedInputHash(options(source.length));
+    const hash = new ChunkedInputHash(
+      mode === "export"
+        ? options(source.length)
+        : { staticValidation: "safe", nativeInputBytes: source.length },
+    );
     hash.copy(source);
     await expect(hash.complete()).resolves.toBe(expected);
     expect(digest).toHaveBeenCalledTimes(1);
@@ -75,6 +90,9 @@ describe("owned export input hashing", () => {
       { ...options(4), nativeExportHash: false },
       { ...options(4), staticValidation: "canonical" as const },
       { ...options(4), onValidatedSnapshot: () => undefined },
+      { nativeInputBytes: MAX_NATIVE_HASH_BYTES + 1, staticValidation: "safe" as const },
+      { nativeInputBytes: Number.NaN, staticValidation: "safe" as const },
+      { nativeInputBytes: -1, staticValidation: "safe" as const },
       {},
     ]) {
       const hash = new ChunkedInputHash(config);

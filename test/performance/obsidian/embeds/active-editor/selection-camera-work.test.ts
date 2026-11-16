@@ -302,7 +302,7 @@ async function hydratedStandardStrokes(maximum: boolean) {
 async function scheduledDocumentFixture(maximum = false) {
   const { store, originals } = await hydratedStandardStrokes(maximum);
   const work = { reads: 0, points: 0, maxReads: 0, maxPoints: 0, totalPoints: 0, yields: 0 };
-  const arrangementReads = { content: 0, highlight: 0 };
+  const arrangementReads = { image: 0, content: 0, highlight: 0 };
   const countRead = () => {
     work.reads += 1;
     work.maxReads = Math.max(work.maxReads, work.reads);
@@ -464,7 +464,7 @@ it.each(["bring-forward", "send-backward", "bring-to-front", "send-to-back"] as 
       expect(
         await test.documentHistory.arrange(action, selection, test.scheduler, () => true),
       ).toBe("applied");
-      expect(test.arrangementReads).toEqual({ content: 5_000, highlight: 5_000 });
+      expect(test.arrangementReads).toEqual({ image: 0, content: 5_000, highlight: 5_000 });
       expect(test.history.commandCount).toBe(1);
       expect(publications).toHaveBeenCalledOnce();
       expect(await test.history.undoAsync()).toBe(true);

@@ -1,9 +1,9 @@
+import { FakeSceneStore, fakeRectangleRecord } from "../../../../unit/rendering/scene/fakes";
 import { describe, expect, it, vi } from "vitest";
 
 import * as motionVisual from "../../../../../src/rendering/scene/presentation/motion-visual";
 import { createSceneFixture } from "../../../../fixtures/rendering/scene";
 import { snapshot } from "../../../../unit/domain/schema/fixtures";
-import { FakeSceneStore, fakeRectangleRecord } from "../../../../unit/rendering/scene/fakes";
 
 describe.each(["restore", "remove"] as const)("motion during %s", (membership) => {
   it.each(["order", "paint", "geometry"] as const)(

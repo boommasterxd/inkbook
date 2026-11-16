@@ -59,7 +59,14 @@ it("shares exact cutout geometry with source editing even when measured ranges o
   const result = finishGeometrySteps(
     partitionTextBackgroundSteps({ x: 0, y: 0, width: 100, height: 100 }, [
       { x: -5, y: 10, width: 35, height: 30, color: null, opacity: 0 },
-      { x: 20, y: 20, width: 30, height: 30, color: { type: "theme-text" }, opacity: 0.3 },
+      {
+        x: 20,
+        y: 20,
+        width: 30,
+        height: 30,
+        color: { type: "rgba", value: "#000000FF" },
+        opacity: 0.3,
+      },
     ]),
   );
   expect(covers(result.basePath, 25, 25)).toBe(false);
@@ -70,7 +77,7 @@ it("shares exact cutout geometry with source editing even when measured ranges o
 });
 
 it("keeps corner holes transparent where overlapping overrides meet the rounded outside contour", () => {
-  const color = { type: "theme-text" } as const;
+  const color = { type: "rgba", value: "#000000FF" } as const;
   const result = finishGeometrySteps(
     partitionTextBackgroundSteps({ x: 0, y: 0, width: 100, height: 100 }, [
       { x: 0, y: 0, width: 1, height: 1, color, opacity: 0.2 },
@@ -86,7 +93,7 @@ it("keeps corner holes transparent where overlapping overrides meet the rounded 
 });
 
 it("retains color-group order and one nonzero paint per color and alpha across overlapping fragments", () => {
-  const first = { type: "rgba", value: "#FFFF00FF" } as const;
+  const first = { type: "theme-text" } as const;
   const second = { type: "rgba", value: "#0000FFFF" } as const;
   const result = finishGeometrySteps(
     partitionTextBackgroundSteps(

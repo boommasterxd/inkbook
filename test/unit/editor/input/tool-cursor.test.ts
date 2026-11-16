@@ -129,7 +129,12 @@ describe("tool cursor erasing and hints", () => {
       expect(
         resolve({ pointer: activePointer, state: createInputState({ activeTool: "select" }) })
           .overlay,
-      ).toEqual({ kind: "tool", tool: "select", color: { type: "theme-text" }, opacity: 1 });
+      ).toEqual({
+        kind: "tool",
+        tool: "select",
+        color: { type: "theme-text" },
+        opacity: 1,
+      });
     }
     expect(
       resolve({ pointer: { ...pointer, pointerType: "pen", penRole: "normal" } }).overlay?.kind,

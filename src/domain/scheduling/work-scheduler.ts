@@ -21,6 +21,8 @@ export class SchedulerDisposedError extends Error {
 export interface WorkScheduler {
   now(): number;
   deadline(): number;
+  /** Existing central admission identity; reading it never opens or renews a slice. */
+  admissionId?(): number;
   budgetMs(): number;
   shouldYield(): boolean;
   requestFrame(callback: (timestamp: number) => void, priority?: WorkPriority): number;

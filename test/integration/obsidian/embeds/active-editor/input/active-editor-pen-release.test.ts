@@ -19,7 +19,7 @@ import { ManualFrameScheduler } from "../../../../../fixtures/obsidian/manual-fr
 import { toolCursorHarness } from "../../../../../fixtures/obsidian/tool-cursor";
 
 const style = {
-  color: { type: "theme-text" as const },
+  color: { type: "rgba" as const, value: "#000000FF" as const },
   opacity: 1,
   pressureEnabled: true,
   smoothing: 0.5 as const,

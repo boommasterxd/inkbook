@@ -11,6 +11,7 @@ export function observeArrangementBandReads(onRead: (band: RenderBand) => void) 
       {
         ...source,
         bands: {
+          image: observeSchemaArray(source.bands.image, () => onRead("image")).observed,
           content: observeSchemaArray(source.bands.content, () => onRead("content")).observed,
           highlight: observeSchemaArray(source.bands.highlight, () => onRead("highlight")).observed,
         },

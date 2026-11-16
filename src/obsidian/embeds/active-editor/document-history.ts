@@ -89,6 +89,7 @@ export class ActiveDocumentHistory {
       const bands = await this.#collectBandOrder(scheduler, isCancelled);
       if (bands === "cancelled") return { status: "cancelled", token: null };
       const ids = (function* () {
+        yield* bands.image;
         yield* bands.highlight;
         yield* bands.content;
       })();
@@ -107,7 +108,8 @@ export class ActiveDocumentHistory {
       const wait = scheduler.checkpoint(undefined, "frame");
       if (wait !== undefined) await wait;
       if (isCancelled()) return { status: "cancelled", token: null };
-      if (this.#model.store.get(id) !== undefined) ids.push(id);
+      const element = this.#model.store.get(id)?.element;
+      if (element !== undefined && element.locked !== true) ids.push(id);
     }
     if (isCancelled()) return { status: "cancelled", token: null };
     if (ids.length === 0) return { status: "noop", token: null };
@@ -167,8 +169,8 @@ export class ActiveDocumentHistory {
 export async function collectDocumentBandOrder(
   store: ElementStore,
   scheduler: TransformSliceScheduler,
-): Promise<{ content: string[]; highlight: string[] } | "cancelled"> {
-  const bands = { content: [] as string[], highlight: [] as string[] };
+): Promise<{ image: string[]; content: string[]; highlight: string[] } | "cancelled"> {
+  const bands = { image: [] as string[], content: [] as string[], highlight: [] as string[] };
   const cursor = store.beginOrder();
   try {
     while (!scheduler.isCancelled?.()) {
@@ -214,6 +216,7 @@ export async function applyDocumentHistoryMutation(
   if (cancelled()) return false;
   try {
     const prepared = await model.prepareElementMutation(mutation, {
+      protectLocked: false,
       replay,
       replaySource: "retained",
       isCancelled: cancelled,

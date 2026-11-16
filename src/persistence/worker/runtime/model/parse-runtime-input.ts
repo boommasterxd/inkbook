@@ -3,7 +3,7 @@ import type { ValidatedSnapshotConsumer } from "../../../serialization/metadata/
 import type { RuntimeSliceContext } from "../types";
 import type { StrokeSampleEncodingCache } from "../../../serialization/metadata/stroke-sample-encoding-cache";
 import { SafeStaticProof } from "../../../serialization/input/safe-static-proof";
-import { hashRuntimeInput } from "./runtime-input-hash";
+import { hashConfirmedRuntimeInput } from "./runtime-input-hash";
 import { isNativeUint8Array } from "../../../serialization/transfer-array";
 import { writeRuntimeInput } from "./runtime-input-writing";
 
@@ -25,6 +25,7 @@ export async function parseRuntimeInput(
     ...(context === undefined ? {} : { checkpoint: context.checkpoint, signal: context.signal }),
     inputSliceBytes,
     staticValidation,
+    ...(isNativeUint8Array(input) ? { nativeInputBytes: input.byteLength } : {}),
     ...(onValidatedSnapshot === undefined ? {} : { onValidatedSnapshot }),
     ...(sampleEncodingCache === undefined ? {} : { sampleEncodingCache }),
     ...(matchingProof === undefined ? {} : { safeStaticProof: matchingProof }),
@@ -44,7 +45,7 @@ async function matchRuntimePreviewProof(
     throw new TypeError("Safe SVG proof must come from an owned validation producer.");
   }
   if (isNativeUint8Array(input) && input.byteLength !== proof.totalBytes) return undefined;
-  const hash = await hashRuntimeInput(input, context, proof.totalBytes);
+  const hash = await hashConfirmedRuntimeInput(input, context, proof.totalBytes);
   context?.signal.throwIfAborted();
   return hash === proof.outputHash ? proof : undefined;
 }

@@ -57,6 +57,7 @@ export async function planElementReplacement(
   const fallbackYields = canonical.yields;
   let reverseVisits = 0;
   const ports: ReplacementPlannerPorts = {
+    ...(scheduler.protectLocked === undefined ? {} : { protectLocked: scheduler.protectLocked }),
     getRecord: (id) => requireElementRecord(source.records, id),
     getReferences: (id) => source.reverseConnections.get(id),
     onReverseVisit: () => {
@@ -127,7 +128,7 @@ export async function planElementReplacement(
     capacityPatch: dependentPatches.capacityPatch,
     delta: Object.freeze({
       changes,
-      dirtyBands: Object.freeze({ content: false, highlight: false }),
+      dirtyBands: Object.freeze({ image: false, content: false, highlight: false }),
       geometryVersion: nextGeometryVersion,
       paintVersion: nextPaintVersion,
     }),

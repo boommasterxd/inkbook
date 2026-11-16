@@ -17,6 +17,7 @@ import type { DetachedSceneElementCache } from "../content/detached-element-cach
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { SceneTextPreparation } from "../content/scene-text-preparation";
 import type { Bounds } from "../../../domain/geometry/primitives";
+import type { SceneImageResources } from "../content/image-resources";
 
 export interface PreviewTransform {
   readonly textBasis?: TextElementV2 | undefined;
@@ -33,6 +34,7 @@ interface PendingPath {
 }
 
 interface MountPreparationOptions {
+  readonly imageResources?: SceneImageResources;
   readonly textViewport?: (element: TextElementV2) => Bounds | undefined;
   readonly mounted?: ReadonlyMap<string, MountedSceneElement>;
   readonly ownerDocument: Document;
@@ -179,6 +181,7 @@ export class SceneMountPreparation {
         parts,
         this.options.instrumentation,
         this.#text.take(record.id),
+        this.options.imageResources,
       );
     }
     if (preview !== undefined) {
@@ -210,6 +213,7 @@ export class SceneMountPreparation {
     allowLocal = true,
     preemptLocal = false,
   ): readonly SvgPathPart[] | undefined {
+    if (record.element.kind === "image") return [];
     if (record.element.kind === "text") return this.prepareOther(record, slice, undefined);
     const { store } = this.options;
     const pressure = store.pressureGeometry?.(record.id, record.geometryVersion);

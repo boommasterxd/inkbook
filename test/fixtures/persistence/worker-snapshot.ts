@@ -3,6 +3,7 @@ import type {
   InkSnapshotV1,
   StrokeElementV1,
 } from "../../../src/domain/schema/public";
+import { elementSnapshotVersion } from "../../../src/domain/schema/snapshot-version";
 
 export function createTestStroke(): StrokeElementV1 {
   return {
@@ -13,7 +14,7 @@ export function createTestStroke(): StrokeElementV1 {
     points: [10, 10, 0.5, 20, 20, 1],
     rotation: 0,
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba" as const, value: "#000000FF" as const },
       opacity: 1,
       pressureEnabled: true,
       smoothing: 0.5,
@@ -31,7 +32,11 @@ export function createMultiWindowPressureStroke(): StrokeElementV1 {
   };
 }
 
-export function createWorkerSnapshot(elements: InkElementV1[], revision = 0): InkSnapshotV1 {
+export function createWorkerSnapshot(
+  elements: InkElementV1[],
+  revision = 0,
+  version?: InkSnapshotV1["version"],
+): InkSnapshotV1 {
   return {
     elements,
     format: "inkbook",
@@ -43,6 +48,21 @@ export function createWorkerSnapshot(elements: InkElementV1[], revision = 0): In
       margin: 24.3,
     },
     revision,
-    version: 1,
+    version: version ?? elementSnapshotVersion(elements),
   };
+}
+
+/** Ten thousand small independent strokes cover a retained scene and export workload. */
+export function createCapacityStrokes(): StrokeElementV1[] {
+  const original = createTestStroke();
+  return Array.from({ length: 10_000 }, (_, index) => {
+    const x = 100 + (index % 100) * 12;
+    const y = 12 + Math.floor(index / 100) * 9;
+    return {
+      ...original,
+      id: `00000000-0000-4000-8000-${String(index + 1000).padStart(12, "0")}`,
+      points: [x, y, 0.5, x + 8, y + 3, 0.5],
+      style: { ...original.style, pressureEnabled: false },
+    };
+  });
 }

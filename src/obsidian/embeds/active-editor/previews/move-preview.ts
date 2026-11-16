@@ -20,6 +20,7 @@ import { snapMarkerPath } from "./snap-marker-path";
 import { selectionPreviewBounds } from "./selection-preview-bounds";
 import { ConnectionPreviewPreparation } from "./connection-preview-preparation";
 import { hasLinearConnectionDependencies } from "../../../../editor/selection/selection-work-budget";
+import { LockedElementMutationError } from "../../../../domain/store/public";
 
 export class MovePreview implements GesturePreview {
   readonly #connectionPreparation: ConnectionPreviewPreparation;
@@ -48,8 +49,13 @@ export class MovePreview implements GesturePreview {
   public constructor(options: SelectionPreviewOptions) {
     this.#options = options;
     this.#frameScheduler = options.frameScheduler;
-    this.#selectedIds = options.selection();
     const selectedGeometry = options.selectionGeometry?.() ?? this.#readSelectedGeometry();
+    const sourceSelection = options.selection();
+    this.#selectedIds =
+      options.editableSelection?.() ??
+      (sourceSelection.size === selectedGeometry.length
+        ? sourceSelection
+        : new Set(selectedGeometry.map(({ element }) => element.id)));
     this.#elements = selectedGeometry.map(({ element }) => element);
     this.#moveLookup = new ScheduledMoveSnap({
       canConnect: (sourceId, targetId) => options.sceneStore.canConnect(sourceId, targetId),
@@ -160,9 +166,9 @@ export class MovePreview implements GesturePreview {
 
   #readSelectedGeometry(): SelectedElementGeometry[] {
     const geometry: SelectedElementGeometry[] = [];
-    for (const id of this.#selectedIds) {
+    for (const id of this.#options.selection()) {
       const record = this.#options.store.get(id);
-      if (record !== undefined) {
+      if (record !== undefined && record.element.locked !== true) {
         geometry.push({
           bounds: record.bounds,
           element: record.element as InkElementV1,
@@ -206,7 +212,9 @@ export class MovePreview implements GesturePreview {
       this.#moveSnap?.candidate.anchor.kind === "linear-endpoint"
     )
       return false;
-    const plan = this.#options.store.planReplacements(this.#movedElements());
+    const plan = this.#options.store.planReplacements(this.#movedElements(), {
+      protectLocked: true,
+    });
     if (plan === null) return false;
     return commitPreviewReplacement({
       effect,
@@ -224,7 +232,18 @@ export class MovePreview implements GesturePreview {
     this.#current = this.#moveSnap?.delta ?? rawDelta;
     this.#version += 1;
     const transform = this.#translationTransform();
-    const connected = this.#renderConnectedElements(transform);
+    let connected: ConnectedSelectionPreview;
+    try {
+      connected = this.#renderConnectedElements(transform);
+    } catch (error: unknown) {
+      if (!(error instanceof LockedElementMutationError)) throw error;
+      this.#current = { x: 0, y: 0 };
+      this.#options.renderer.clearPreviewTransforms();
+      this.#options.renderer.clearElementPreviews?.();
+      this.#options.renderer.setSnapMarkerPath?.(null);
+      this.#renderSelectionOverlay(null);
+      return this.#selectedMaximumBottom;
+    }
     const translation = `translate(${String(this.#current.x)} ${String(this.#current.y)})`;
     const matrix = [1, 0, 0, 1, this.#current.x, this.#current.y] as const;
     const bounds = selectionPreviewBounds(transform);
@@ -307,6 +326,7 @@ export class MovePreview implements GesturePreview {
       }
       return connected;
     } catch (error: unknown) {
+      if (error instanceof LockedElementMutationError) throw error;
       if (!(error instanceof RangeError)) throw error;
       this.#options.renderer.setElementPreviews([], this.#version);
       return { elements: [], selectedPreviewIds: new Set() };

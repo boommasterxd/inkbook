@@ -1,13 +1,14 @@
-import { expect, it, vi } from "vitest";
-import { createSceneFixture } from "../../../../fixtures/rendering/scene";
-import { NAVIGATION_PAGE } from "../../../../fixtures/rendering/pressure-navigation";
-import { activeFade, activeFades, fadeFrames } from "../../../../fixtures/rendering/scene-fades";
 import {
   FakeNode,
   FakeSceneStore,
   fakeNode,
   fakeRectangleRecord,
+  sceneBandNode,
 } from "../../../../unit/rendering/scene/fakes";
+import { expect, it, vi } from "vitest";
+import { createSceneFixture } from "../../../../fixtures/rendering/scene";
+import { NAVIGATION_PAGE } from "../../../../fixtures/rendering/pressure-navigation";
+import { activeFade, activeFades, fadeFrames } from "../../../../fixtures/rendering/scene-fades";
 
 function setup() {
   const records = Array.from({ length: 260 }, (_, rank) =>
@@ -19,7 +20,7 @@ function setup() {
   scene.renderer.setReducedMotion(true);
   scene.scheduler.runAll();
   scene.renderer.setReducedMotion(false);
-  const content = fakeNode(scene.renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(scene.renderer.svg), "content");
   const remove = (historyReplay = false) => {
     store.records.clear();
     scene.renderer.applyDelta({

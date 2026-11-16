@@ -1,3 +1,4 @@
+import { readElementStyle } from "../../../../../fixtures/domain/element-style";
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 
@@ -21,7 +22,7 @@ import {
   useHoldFixtures,
 } from "../../../../../fixtures/obsidian/hold-to-shape";
 import { ManualFrameScheduler } from "../../../../../fixtures/obsidian/manual-frame-scheduler";
-import { fakeNode } from "../../../../../unit/rendering/scene/fakes";
+import { fakeNode, sceneBandNode } from "../../../../../unit/rendering/scene/fakes";
 import {
   CLOSED_VERTICES,
   quadraticSamples,
@@ -78,8 +79,9 @@ function expectNativeElement(
     start: { x: 0, y: 0 },
     end: { x: 200, y: 100 },
   });
+  const nativeStyle = readElementStyle(native);
   expect(element.style.outlineStyle).toBe(
-    "outlineStyle" in native.style ? native.style.outlineStyle : undefined,
+    "outlineStyle" in nativeStyle ? nativeStyle.outlineStyle : undefined,
   );
   if (element.kind === "line") expect(element.bend === null).toBe(kind !== "curve");
   expect(element.style).toMatchObject({
@@ -105,7 +107,7 @@ function expectCommittedPaint(
   expect(canonical.map((part) => part.d)).toEqual(expect.arrayContaining([ghostPath]));
   if (element.kind !== "arrow") return;
   expect(canonical.map((part) => part.paint)).toEqual(["stroke", "fill"]);
-  const content = fakeNode(fixture.renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(fixture.renderer.svg), "content");
   const filledNode = content.nodes.flatMap((node) =>
     node.tagName === "g" ? node.nodes : [node],
   )[1]!;

@@ -44,6 +44,7 @@ export class SelectionScaleGesture {
   readonly #singleSource: InkElementV1 | null;
   readonly #startPointer: PointV1;
   readonly #minimumTextScale: number;
+  readonly #minimumImageScale: number;
   #previewDelta: PointV1 = { x: 0, y: 0 };
   #previewFrame: OrientedSelectionFrame | null = null;
 
@@ -56,6 +57,7 @@ export class SelectionScaleGesture {
     this.#action = action;
     this.#elements = elements;
     this.#minimumTextScale = minimumTextScale(elements);
+    this.#minimumImageScale = minimumImageScale(elements);
     const recovered = elements.length === 1 ? recoverCollapsedScaleSource(elements[0]!) : null;
     this.#singleSource =
       recovered !== null && recovered.element !== elements[0] ? recovered.element : null;
@@ -83,7 +85,8 @@ export class SelectionScaleGesture {
     const current = rotatePointClockwise(pointer, anchor, -this.#action.rotation);
     const axes = activeScaleAxes(this.#action.position);
     const text = this.#minimumTextScale > 0;
-    uniform = text && this.#elements.length === 1 ? axes.x && axes.y : uniform || text;
+    uniform =
+      this.#minimumImageScale > 0 || uniformSelectionScale(this.#elements, axes, uniform, text);
     const span = { x: start.x - anchor.x, y: start.y - anchor.y };
     if (Math.abs(span.x) < 1e-9 && this.#initialFactors.x === 0)
       span.x = this.#action.position.includes("left") ? -1 : 1;
@@ -96,8 +99,9 @@ export class SelectionScaleGesture {
       uniform,
       this.#initialFactors,
     );
-    if (text && uniform) {
-      const value = Math.max(factors.x, this.#minimumTextScale);
+    const minimum = Math.max(this.#minimumTextScale, this.#minimumImageScale);
+    if (minimum > 0 && uniform) {
+      const value = Math.max(factors.x, minimum);
       return { x: value, y: value };
     }
     return factors;
@@ -249,6 +253,24 @@ export class SelectionScaleGesture {
       ? { ...scaled, headerHeight: defaultTableHeaderHeight(scaled.height) }
       : scaled;
   }
+}
+
+function minimumImageScale(elements: readonly InkElementV1[]): number {
+  let minimum = 0;
+  for (const element of elements) {
+    if (element.kind === "image")
+      minimum = Math.max(minimum, 0.001 / Math.min(element.width, element.height));
+  }
+  return minimum;
+}
+
+function uniformSelectionScale(
+  elements: readonly InkElementV1[],
+  axes: { readonly x: boolean; readonly y: boolean },
+  uniform: boolean,
+  text: boolean,
+): boolean {
+  return text && elements.length === 1 ? axes.x && axes.y : uniform || text;
 }
 
 function minimumTextScale(elements: readonly InkElementV1[]): number {

@@ -24,6 +24,7 @@ export {
   PAGE_WIDTH,
   assertFinitePoint,
   boundsFromPoints,
+  boundsCorners,
   canonicalPoint,
   linearPivot,
   normalizeRotation,

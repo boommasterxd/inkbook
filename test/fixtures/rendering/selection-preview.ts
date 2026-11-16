@@ -1,4 +1,4 @@
-import { renderBandOf } from "../../../src/domain/commands/render-bands";
+import { RENDER_BANDS, renderBandOf } from "../../../src/domain/commands/render-bands";
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import { indexedStroke } from "../editor/stroke";
 import { createAllElementSnapshot } from "../../unit/persistence/serialization/fixtures";
@@ -42,10 +42,8 @@ export function createDenseSelectionPreview(count: number, pressureEnabled = tru
   const camera = fakeNode(scene.renderer.svg).nodes[1]!;
   const selected = new Set(ids);
   const nodes = new Map<string, ReturnType<typeof fakeNode>>();
-  for (const [band, group] of [
-    ["highlight", camera.nodes[3]!],
-    ["content", camera.nodes[4]!],
-  ] as const) {
+  for (const [bandIndex, band] of RENDER_BANDS.entries()) {
+    const group = camera.nodes[bandIndex + 3]!;
     const records = [...store.records.values()].filter((record) => record.band === band);
     records.sort((left, right) => left.rank - right.rank);
     for (const [index, record] of records.entries()) nodes.set(record.id, group.nodes[index]!);

@@ -14,6 +14,7 @@ import {
   asElement,
   fakeRectangleRecord,
   fakeNode,
+  sceneBandNode,
 } from "../../../../unit/rendering/scene/fakes";
 
 const PAGE: PageV1 = {
@@ -294,7 +295,7 @@ describe("resumable scene reconciliation after invalidation", () => {
     scheduler.runAll();
 
     const expected = [promotedId, ...originalOrder.slice(1, -1), demotedId];
-    const contentGroup = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const contentGroup = sceneBandNode(fakeNode(renderer.svg), "content");
     expect(renderer.mountedIds("content")).toEqual(expected);
     expect(contentGroup.nodes.map((node) => node.attributes.get("d"))).toEqual(
       expected.map((id) => buildElementPathParts(store.records.get(id)!.element)[0]!.d),
@@ -341,7 +342,7 @@ describe("pending scene state replacement", () => {
     const committedOrder = [...ids].reverse();
     expect(renderer.mountedIds("content")).toEqual(committedOrder);
     expect(renderer.instrumentation().domFragmentRuns).toBe(1);
-    const contentGroup = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const contentGroup = sceneBandNode(fakeNode(renderer.svg), "content");
     const roots = [...contentGroup.nodes];
 
     renderer.setViewport({ height: 100, left: 0, top: 10_000, width: 100 });

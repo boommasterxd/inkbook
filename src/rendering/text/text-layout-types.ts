@@ -35,6 +35,12 @@ export interface MeasuredText {
   readonly descent: number;
   readonly fontResourceId?: string;
   readonly lineHeight?: number;
+  readonly inkBounds?: {
+    readonly minX: number;
+    readonly minY: number;
+    readonly maxX: number;
+    readonly maxY: number;
+  };
 }
 
 export interface TextMeasurer {

@@ -209,7 +209,7 @@ it("reuses validated order without scanning 10k elements for a small edit", () =
   };
   const options = {
     currentElements,
-    currentOrders: { content, highlight: [] },
+    currentOrders: { image: [], content, highlight: [] },
     currentPage: createSnapshot().page,
   };
   const changed = { ...elements[0]!, createdAt: 100 };

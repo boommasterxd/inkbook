@@ -30,11 +30,11 @@ function rectangle(fillOpacity: number, id = "rectangle"): BoxShapeElementV1 {
     width: 100,
     height: 100,
     style: {
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba", value: "#000000FF" },
       outlineWidth: 4,
       outlineOpacity: 1,
       outlineStyle: "solid",
-      fillColor: fillOpacity === 0 ? null : { type: "theme-text" },
+      fillColor: fillOpacity === 0 ? null : { type: "rgba", value: "#000000FF" },
       fillOpacity,
     },
   };
@@ -63,7 +63,7 @@ function stroke(points: number[], id = "stroke"): StrokeElementV1 {
     points,
     rotation: 0,
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba", value: "#000000FF" },
       opacity: 1,
       pressureEnabled: true,
       smoothing: 0.5,
@@ -85,7 +85,7 @@ function table(): TableElementV1 {
     pivot: { x: 75, y: 50 },
     rotation: 0,
     style: {
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba", value: "#000000FF" },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 4,
@@ -188,7 +188,7 @@ describe("visible text point hits", () => {
     const element = textElement();
     element.style.opacity = 0;
     expect(elementContainsPoint(element, { x: 120, y: 110 }, 0)).toBe(false);
-    element.backgroundColor = { type: "theme-text" };
+    element.backgroundColor = { type: "rgba", value: "#000000FF" };
     element.backgroundOpacity = 1;
     expect(elementContainsPoint(element, { x: 190, y: 140 }, 0)).toBe(true);
     expect(elementContainsPoint(element, { x: 100, y: 100 }, 0)).toBe(false);

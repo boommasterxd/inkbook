@@ -125,7 +125,7 @@ function verifyBoundedSelectionFrame(renderer: SvgSceneRenderer, store: ElementS
 }
 
 function transformedContentCount(renderer: SvgSceneRenderer): number {
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   return content.nodes.filter(({ attributes }) => attributes.has("transform")).length;
 }
 

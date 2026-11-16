@@ -3,16 +3,30 @@ import { PAGE_WIDTH, PORTABLE_PALETTE_V1, type BackgroundV1 } from "../../domain
 import type { RenderBand } from "../../domain/commands/render-bands";
 import { createToolCursorDom, type SceneToolCursorDom } from "./tool-cursor";
 import { SVG_NAMESPACE } from "./constants";
-import type { DocumentScheme, SceneInputHandlers, SceneRendererOptions } from "./types";
+import type {
+  DocumentScheme,
+  MutableSceneInstrumentation,
+  SceneInputHandlers,
+  SceneRendererOptions,
+} from "./types";
 import { SceneSurface } from "./scene-surface";
 import { SCENE_SURFACE_STYLES } from "./scene-surface-styles";
+import { SceneImageResources } from "./content/image-resources";
 
 type InputEventName = keyof SceneInputHandlers;
-type SurfaceOptions = Pick<SceneRendererOptions, "surfaceThemeRoot" | "onSurfaceFailure">;
+type SurfaceOptions = Pick<
+  SceneRendererOptions,
+  "surfaceThemeRoot" | "onSurfaceFailure" | "imageResource"
+> & {
+  readonly store?: SceneRendererOptions["store"];
+  readonly instrumentation?: MutableSceneInstrumentation;
+  readonly workScheduler?: SceneRendererOptions["workScheduler"];
+};
 type SceneDomOptions = Pick<
   SceneRendererOptions,
-  "container" | "accessibleName" | "inputHandlers" | "surfaceThemeRoot" | "onSurfaceFailure"
->;
+  "container" | "accessibleName" | "inputHandlers"
+> &
+  SurfaceOptions;
 
 let nextBackgroundPatternId = 0;
 
@@ -23,6 +37,8 @@ export class SceneDom {
   public readonly cameraGroup: SVGGElement;
   public readonly contentGroup: SVGGElement;
   public readonly highlightGroup: SVGGElement;
+  public readonly imageGroup: SVGGElement;
+  public readonly imageResources: SceneImageResources;
   public readonly inputSurface: HTMLDivElement;
   public readonly liveGroup: SVGGElement;
   public readonly liveStrokeGroup: SVGGElement;
@@ -31,6 +47,7 @@ export class SceneDom {
   public readonly overlayPath: SVGPathElement;
   public readonly selectionTraceGroup: SVGGElement;
   public readonly selectionOverlayPath: SVGPathElement;
+  public readonly lockedSelectionOverlayPath: SVGPathElement;
   public readonly selectionHandlePath: SVGPathElement;
   public readonly snapMarkerPath: SVGPathElement;
   public readonly ownerDocument: Document;
@@ -74,6 +91,7 @@ export class SceneDom {
     nextBackgroundPatternId += 1;
     this.#backgroundPatternId = `inkbook-background-pattern-${String(nextBackgroundPatternId)}`;
     this.highlightGroup = this.createSvg("g");
+    this.imageGroup = this.createSvg("g");
     this.contentGroup = this.createSvg("g");
     this.motionGroup = this.createSvg("g");
     this.liveGroup = this.createSvg("g");
@@ -83,6 +101,7 @@ export class SceneDom {
     this.overlayPath = this.createSvg("path");
     this.selectionTraceGroup = this.createSvg("g");
     this.selectionOverlayPath = this.createSvg("path");
+    this.lockedSelectionOverlayPath = this.createSvg("path");
     this.selectionHandlePath = this.createSvg("path");
     this.snapMarkerPath = this.createSvg("path");
     const themeStyle = this.createSvg("style");
@@ -106,10 +125,7 @@ export class SceneDom {
     this.#backgroundPatternPath.setAttribute("fill", "none");
     this.#backgroundPatternPath.setAttribute("stroke", PORTABLE_PALETTE_V1.light.guide);
     this.#backgroundPattern.append(this.#backgroundPatternPath);
-    this.highlightGroup.setAttribute("pointer-events", "none");
-    this.highlightGroup.setAttribute("class", "inkbook-scene-highlights inkbook-scene-foreground");
-    this.contentGroup.setAttribute("pointer-events", "none");
-    this.contentGroup.setAttribute("class", "inkbook-scene-content inkbook-scene-foreground");
+    this.configureBandGroups();
     this.motionGroup.setAttribute("aria-hidden", "true");
     this.motionGroup.setAttribute("class", "inkbook-scene-motion inkbook-scene-foreground");
     this.motionGroup.setAttribute("pointer-events", "none");
@@ -127,6 +143,7 @@ export class SceneDom {
       this.pageSurface,
       this.backgroundPath,
       this.backgroundEdgePath,
+      this.imageGroup,
       this.highlightGroup,
       this.contentGroup,
       this.liveGroup,
@@ -135,13 +152,9 @@ export class SceneDom {
       this.selectionTraceGroup,
     );
     this.liveGroup.append(this.livePath);
-    overlayGroup.append(
-      this.overlayPath,
-      this.selectionOverlayPath,
-      this.selectionHandlePath,
-      this.snapMarkerPath,
-    );
+    this.appendSelectionOverlays(overlayGroup);
     const defs = this.createSvg("defs");
+    this.imageResources = new SceneImageResources(defs, options.imageResource ?? (() => undefined));
     defs.append(this.#backgroundPattern);
     this.svg.append(themeStyle, this.cameraGroup, overlayGroup, defs);
 
@@ -160,6 +173,21 @@ export class SceneDom {
     this.#surface.read();
   }
 
+  public memoryUsage(): number {
+    return this.imageResources.memoryUsage();
+  }
+
+  private configureBandGroups(): void {
+    for (const [group, name] of [
+      [this.imageGroup, "images"],
+      [this.highlightGroup, "highlights"],
+      [this.contentGroup, "content"],
+    ] as const) {
+      group.setAttribute("pointer-events", "none");
+      group.setAttribute("class", `inkbook-scene-${name} inkbook-scene-foreground`);
+    }
+  }
+
   public setTextEditing(active: boolean): void {
     this.#surface.setInteractive(active);
     if (active) this.svg.setAttribute("data-inkbook-text-editing", "");
@@ -174,6 +202,7 @@ export class SceneDom {
 
   private attachSurface(overlayGroup: SVGGElement): void {
     this.#surface.attach(this.svg, [
+      this.imageGroup,
       this.highlightGroup,
       this.contentGroup,
       this.motionGroup,
@@ -206,7 +235,8 @@ export class SceneDom {
     this.liveGroup.append(this.livePath);
   }
 
-  public group(band: "content" | "highlight"): SVGGElement {
+  public group(band: RenderBand): SVGGElement {
+    if (band === "image") return this.imageGroup;
     return band === "highlight" ? this.highlightGroup : this.contentGroup;
   }
 
@@ -219,8 +249,8 @@ export class SceneDom {
     const currentBand = kind === "path" ? this.#livePathBand : this.#liveStrokeBand;
     if (currentBand === band) return;
     const group = kind === "path" ? this.liveGroup : this.liveStrokeGroup;
-    if (band === "highlight") {
-      this.highlightGroup.append(group);
+    if (band === "highlight" || band === "image") {
+      this.group(band).append(group);
     } else if (kind === "path" && this.#liveStrokeBand === "content") {
       this.cameraGroup.insertBefore(group, this.liveStrokeGroup);
     } else {
@@ -311,6 +341,7 @@ export class SceneDom {
   }
 
   public release(): void {
+    this.imageResources.release();
     this.releaseInputSurface();
     this.#surface.release();
   }
@@ -346,9 +377,20 @@ export class SceneDom {
     this.selectionTraceGroup.setAttribute("pointer-events", "none");
     this.selectionOverlayPath.setAttribute("class", "inkbook-selection-overlay");
     this.selectionOverlayPath.setAttribute("data-selection-fill", "accent");
+    this.lockedSelectionOverlayPath.setAttribute("class", "inkbook-locked-selection-overlay");
     this.selectionHandlePath.setAttribute("class", "inkbook-selection-handles");
     this.snapMarkerPath.setAttribute("class", "inkbook-snap-guide");
     this.snapMarkerPath.setAttribute("pointer-events", "none");
+  }
+
+  private appendSelectionOverlays(group: SVGGElement): void {
+    group.append(
+      this.overlayPath,
+      this.selectionOverlayPath,
+      this.selectionHandlePath,
+      this.snapMarkerPath,
+      this.lockedSelectionOverlayPath,
+    );
   }
 
   private createSvg<K extends keyof SVGElementTagNameMap>(name: K): SVGElementTagNameMap[K] {

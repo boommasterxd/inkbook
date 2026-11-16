@@ -292,8 +292,7 @@ export class ActiveEditorController {
     if (!enabled) this.#actions.cancelPendingConfirmation();
     this.#availability.setEnabled(enabled);
   }
-  public readonly setLayout = (layout: ToolbarLayoutStage): void =>
-    this.#chromeState.setLayout(layout);
+  public readonly setLayout = (mode: ToolbarLayoutStage): void => this.#chromeState.setLayout(mode);
   public readonly setZoom = (zoom: number): void => this.#navigation.setZoom(zoom);
   public applyResize(update: ActiveEditorResizeUpdate): boolean {
     if (Interactions.hasStableGeometryGesture(this.#input, this.#handles))
@@ -351,6 +350,7 @@ export class ActiveEditorController {
         },
         selectionSignal: this.#pendingSelection.signal,
         selectionGeometry: () => this.#handles.selectionGeometry(),
+        editableSelection: () => this.#handles.editableSelection(),
         defaults: this.#textBindings.styles.defaults,
         ...(this.#holdToShape === undefined ? {} : { holdToShape: this.#holdToShape }),
         screenStart: start.pointer,
@@ -401,6 +401,7 @@ export class ActiveEditorController {
   }
   #createInteractions(options: ActiveEditorControllerOptions) {
     return Interactions.createActiveEditorInteractions({
+      finishText: () => this.#textBindings.session.finish(),
       onHandleSettled: () => this.#textBindings?.handleInput.settled(),
       registerApplied: (...args) =>
         this.#textBindings?.session.registerProvisionalGeometryHistory(...args),
@@ -488,10 +489,10 @@ export class ActiveEditorController {
     if (selection === this.#selection) return;
     this.#keyboard?.cancelSelection();
     this.#preparedHistory.cancel();
-    if (!Helpers.sameSelectionMembers(selection, this.#selection)) this.#selectionFrames.reset();
-    this.#selection = selection;
+    const same = Helpers.sameSelectionMembers(selection, this.#selection);
+    if (!same) this.#selectionFrames.reset();
+    this.#selection = same ? this.#selection : selection;
     this.#textBindings.styles.invalidateSelection();
-    this.#renderer.setSelectedElements(selection);
     this.#input = { ...this.#input, hasSelection: selection.size > 0 };
     this.#handles.renderSelection();
     this.#onStateChanged();

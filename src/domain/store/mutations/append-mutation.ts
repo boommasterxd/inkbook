@@ -1,3 +1,4 @@
+import { RENDER_BANDS } from "../../commands/render-bands";
 import { renderBandOf, type RenderBand } from "../../commands/render-bands";
 import type { InkElementV1 } from "../../schema/public";
 import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
@@ -20,7 +21,7 @@ export async function prepareAppendMutation(
 > {
   const work = new MutationPreparationScheduler(scheduler);
   const elements: InkElementV1[] = [];
-  const inserted: Record<RenderBand, string[]> = { content: [], highlight: [] };
+  const inserted: Record<RenderBand, string[]> = { image: [], content: [], highlight: [] };
   const ids = new Set<string>();
   for (const input of requested) {
     if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
@@ -36,7 +37,7 @@ export async function prepareAppendMutation(
   if (elements.length === 0) return null;
   const order = createUnchangedMutationOrder(source.bands);
   const { bands, ranks, dirtyBands } = order;
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of RENDER_BANDS) {
     if (inserted[band].length === 0) continue;
     const next: string[] = [];
     for (const id of source.bands[band]) {

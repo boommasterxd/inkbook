@@ -1,11 +1,10 @@
+import { FakeDocument, FakeNode, asElement, fakeNode } from "./fakes";
 import { describe, expect, it } from "vitest";
 
 import { emptyAppliedLivePath, writeLivePath } from "../../../../src/rendering/scene/frame-writes";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import { SceneDom } from "../../../../src/rendering/scene/scene-dom";
 import type { LivePathState } from "../../../../src/rendering/scene/types";
-
-import { FakeDocument, FakeNode, asElement, fakeNode } from "./fakes";
 
 describe("drag preview path writer", () => {
   it("reconciles separately presented path parts and clears them together", () => {

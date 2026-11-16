@@ -1,5 +1,7 @@
 import { fonts as enFonts } from "./locales/en/fonts";
 import { fonts as deFonts } from "./locales/de/fonts";
+import { images as enImages } from "./locales/en/images";
+import { images as deImages } from "./locales/de/images";
 import { importWarnings as enImportWarnings } from "./locales/en/import-warnings";
 import { importWarnings as deImportWarnings } from "./locales/de/import-warnings";
 import { settingsControls as enSettingsControls } from "./locales/en/settings-controls";
@@ -18,6 +20,7 @@ import { settings as enSettings } from "./locales/en/settings";
 import { settings as deSettings } from "./locales/de/settings";
 
 export const english = {
+  ...enImages,
   ...enFonts,
   ...enSettings,
   ...enImportWarnings,
@@ -31,6 +34,7 @@ export const english = {
 export type MessageKey = keyof typeof english;
 export type MessageCatalog = Readonly<Record<MessageKey, string>>;
 export const german: MessageCatalog = {
+  ...deImages,
   ...deFonts,
   ...deSettings,
   ...deImportWarnings,

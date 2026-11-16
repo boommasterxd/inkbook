@@ -70,6 +70,7 @@ function observeFilterWrites(node: FakeNode) {
 
 function createFilledShapeEntry() {
   const record = fakeRectangleRecord("filled", 0, 0);
+  if (record.element.kind !== "rectangle") throw new Error("Expected a rectangle.");
   if (!("fillColor" in record.element.style)) throw new Error("Expected closed shape");
   record.element.style.fillColor = { type: "rgba", value: "#123456FF" };
   return createMountedElement(

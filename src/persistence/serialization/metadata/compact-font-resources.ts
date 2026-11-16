@@ -6,7 +6,12 @@ export function* restoreCompactFontResourcesSteps(
   value: unknown,
   prelude: SafeSvgPrelude | null,
 ): Generator<void, boolean> {
-  if (!isRecord(value) || value.version !== 2 || value.fontResources === undefined) return false;
+  if (
+    !isRecord(value) ||
+    (value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== 5) ||
+    value.fontResources === undefined
+  )
+    return false;
   if (!Array.isArray(value.fontResources) || value.fontResources.length > 64) invalidFonts();
   const faces = prelude?.fontFaces ?? [];
   for (const resource of value.fontResources) {

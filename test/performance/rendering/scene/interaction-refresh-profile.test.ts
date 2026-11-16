@@ -5,12 +5,7 @@ import {
   DETACHED_ELEMENT_CACHE_MAX_BYTES,
   PATH_CACHE_MAX_BYTES,
 } from "../../../../src/rendering/scene/constants";
-import {
-  FakeScheduler,
-  FakeNode,
-  FakeSceneStore,
-  fakeNode,
-} from "../../../unit/rendering/scene/fakes";
+import { FakeNode, FakeSceneStore, fakeNode } from "../../../unit/rendering/scene/fakes";
 import {
   createPressureNavigationHarness,
   createPressureNavigationRecords,
@@ -20,6 +15,7 @@ import {
 import { createSceneFixture, flushSceneViewport } from "../../../fixtures/rendering/scene";
 import { observePathPreparationSteps } from "../../../fixtures/rendering/path-preparation-work";
 import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
+import { InteractionProfileScheduler as ProfileScheduler } from "../../../fixtures/rendering/interaction-profile-scheduler";
 
 // Actual store/path work spends the simulated slice; reading its clock does not.
 const SIMULATED_WORK_COST_MS = 0.5;
@@ -28,17 +24,6 @@ beforeAll(() => {
   pressureRecords = createPressureNavigationRecords();
 });
 afterEach(() => vi.restoreAllMocks());
-
-class ProfileScheduler extends FakeScheduler {
-  public constructor() {
-    super(INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs);
-  }
-
-  public override runNext(): void {
-    this.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
-    super.runNext();
-  }
-}
 
 it("finishes cold pressure mounting during uninterrupted zoom and reuses dense offscreen paths", () => {
   const { document, renderer, scheduler } = createPressureNavigationHarness(
@@ -61,7 +46,7 @@ it("finishes cold pressure mounting during uninterrupted zoom and reuses dense o
   expect(nodes.mock.calls.filter(([, tag]) => tag === "path")).toHaveLength(
     NAVIGATION_VISIBLE_STROKES,
   );
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   const original = new Set(content.nodes);
 
   flushSceneViewport(renderer, scheduler, { height: 100, left: 0, top: 10_000, width: 100 });

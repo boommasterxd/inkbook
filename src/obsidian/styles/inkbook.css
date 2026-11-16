@@ -12,6 +12,9 @@
 @import url("./font-choice-dropdown.css");
 @import url("./font-library-dialog.css");
 @import url("./font-import-wizard.css");
+@import url("./image-dialog.css");
+@import url("./image-import-dialog.css");
+@import url("./image-crop.css");
 @import url("./menu-feedback.css");
 @import url("./background-menu.css");
 @import url("./settings.css");
@@ -27,6 +30,7 @@
 
 .inkbook-root {
   --inkbook-page-surface: #f6f6f6;
+  --inkbook-text: #222;
   --inkbook-motion-fast: 120ms;
   --inkbook-motion-toolbar: 220ms;
   --inkbook-motion-standard: 180ms;
@@ -48,6 +52,7 @@
 
 .inkbook-root[data-inkbook-scheme="dark"] {
   --inkbook-page-surface: #212121;
+  --inkbook-text: #dadada;
 }
 
 .inkbook-root.inkbook-embed-root {

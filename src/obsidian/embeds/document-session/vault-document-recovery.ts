@@ -1,6 +1,10 @@
 import type { FileManager } from "obsidian";
 
-import { FILE_SCHEMA_LIMITS, type InkSnapshotV1 } from "../../../domain/schema/public";
+import {
+  FILE_SCHEMA_LIMITS,
+  type InkSnapshotV1,
+  type TextElementV2,
+} from "../../../domain/schema/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type {
   RecoveryOperationIdentity,
@@ -46,6 +50,12 @@ export interface VaultDocumentPersistedEvent {
 }
 
 export interface VaultDocumentSessionHooks {
+  readonly prepareTextInkBounds?: (
+    documentId: string,
+    snapshot: InkSnapshotV1,
+    cancelled: () => boolean,
+    elements: readonly TextElementV2[],
+  ) => Promise<readonly TextElementV2[]>;
   readonly persisted?: (event: VaultDocumentPersistedEvent) => void;
   readonly safeStaticProof?: (documentId: string) => SafeStaticProof | undefined;
   readonly trustedHeads?: TrustedDocumentHeadPort;

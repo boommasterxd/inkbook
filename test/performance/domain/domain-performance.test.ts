@@ -434,7 +434,7 @@ function findFrontmostHit(
   pointerType: "mouse" | "pen" | "touch",
   zoom: number,
   candidates: Iterable<{
-    readonly band: "content" | "highlight";
+    readonly band: "image" | "content" | "highlight";
     readonly element: InkElementV1;
     readonly rank: number;
   }>,

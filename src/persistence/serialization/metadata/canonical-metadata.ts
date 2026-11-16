@@ -1,3 +1,4 @@
+import { elementSnapshotVersion } from "../../../domain/schema/snapshot-version";
 import type { InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
 
 import { canonicalElement, canonicalPage } from "./canonical-snapshot";
@@ -12,6 +13,7 @@ import { ChunkedSha256 } from "../chunked-output-sha256";
 import type { MigratedSnapshot } from "./document-migration";
 import type { DocumentCodecResult } from "../types";
 import { canonicalFontResource, snapshotTextResources } from "../output/text-fonts";
+import { snapshotImageResources } from "../output/image-markup";
 import { boundedJsonFragments } from "./bounded-json-fragments";
 import { metadataSliceEnd } from "../input/chunked-input-utils";
 import { bindSnapshotFontResources, textFontBindingMode } from "../../fonts/bound-font-resources";
@@ -76,9 +78,10 @@ function canonicalMetadataMatches(
   input: string,
   snapshot: InkSnapshotV1,
   encoding: SnapshotMetadataEncoding,
+  sourceVersion: number,
 ): boolean {
   let offset = 0;
-  for (const fragment of canonicalMetadataFragments(snapshot, encoding, false)) {
+  for (const fragment of canonicalMetadataFragments(snapshot, encoding, false, sourceVersion)) {
     if (!input.startsWith(fragment, offset)) return false;
     offset += fragment.length;
   }
@@ -96,7 +99,7 @@ export function validateCurrentMetadataIntegrity(
   if (migrated.sourceVersion < 1) return { ok: true, value: undefined };
   if (
     validation === "canonical" &&
-    !canonicalMetadataMatches(metadataText, migrated.snapshot, encoding)
+    !canonicalMetadataMatches(metadataText, migrated.snapshot, encoding, migrated.sourceVersion)
   ) {
     return metadataFailure("invalid-json", "Snapshot metadata is not canonical compact JSON.");
   }
@@ -140,14 +143,22 @@ export function metadataPrefix(
         ? { fontResources: snapshot.fontResources?.map(canonicalFontResource) }
         : snapshotTextResources(snapshot);
   const version =
-    snapshot?.version === 2 && snapshot.elements.some((element) => element.kind === "text") ? 2 : 1;
+    snapshot === undefined || snapshot.version === 1
+      ? 1
+      : elementSnapshotVersion(snapshot.elements);
   const fonts =
     resources.fontResources === undefined
       ? ""
       : `,"fontResources":${[...boundedJsonFragments(resources.fontResources.map(({ data: _data, ...descriptor }) => descriptor))].join("")}`;
+  const images =
+    snapshot === undefined ? undefined : snapshotImageResources(snapshot, true).imageResources;
+  const imageMetadata =
+    images === undefined
+      ? ""
+      : `,"imageResources":${JSON.stringify(images.map((resource) => ({ id: resource.id, mimeType: resource.mimeType, width: resource.width, height: resource.height })))}`;
   return (
     `{"format":"inkbook","version":${version},"revision":${revision},` +
-    `"page":${JSON.stringify(canonicalPage(page))}${fonts},"elements":[`
+    `"page":${JSON.stringify(canonicalPage(page))}${fonts}${imageMetadata},"elements":[`
   );
 }
 
@@ -155,14 +166,23 @@ function* canonicalMetadataFragments(
   snapshot: InkSnapshotV1,
   encoding: SnapshotMetadataEncoding = COMPACT_METADATA_ENCODING,
   normalizeBindings = true,
+  sourceVersion?: number,
 ): Iterable<string> {
   if (normalizeBindings) snapshot = bindSnapshotFontResources(snapshot);
-  yield metadataPrefix(
+  const prefix = metadataPrefix(
     snapshot.revision,
     snapshot.page,
     snapshot,
     !normalizeBindings && textFontBindingMode(snapshot) === "legacy",
   );
+  // Older image documents keep their declared reader contract during strict comparison.
+  // Writers still choose the current image format through metadataPrefix above.
+  yield sourceVersion === 3 || sourceVersion === 4
+    ? prefix.replace(
+        /^\{"format":"inkbook","version":\d+,/u,
+        `{"format":"inkbook","version":${sourceVersion},`,
+      )
+    : prefix;
   for (let index = 0; index < snapshot.elements.length; index += 1) {
     if (index > 0) yield ",";
     const element = snapshot.elements[index]!;

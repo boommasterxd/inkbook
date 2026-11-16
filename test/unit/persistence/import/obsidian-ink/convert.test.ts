@@ -35,7 +35,10 @@ describe("Obsidian Ink handwritten document conversion", () => {
       kind: "stroke",
       createdAt: 1234,
       offset: { x: 34.3, y: 44.3 },
-      style: { color: { type: "theme-text" }, pressureEnabled: true },
+      style: {
+        color: { type: "theme-text" },
+        pressureEnabled: true,
+      },
     });
     const points = imported.snapshot.elements[0];
     if (points?.kind !== "stroke") throw new Error("Expected imported handwriting.");

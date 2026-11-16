@@ -1,13 +1,5 @@
 # Quality, Performance, Animation, and Testing
 
-## Cache Lifecycle Tooling
-
-`typecheck:cache-lifecycle` applies strict CheckJS to the portable cache runtime through
-`scripts/cache-lifecycle/tsconfig.json` and remains part of the native CI quality gate.
-Native Vitest adapters execute replacement, metadata, transport and recovery regressions;
-workflow tests exercise the actual receipt writer and verify the privileged cleanup
-boundary. Runtime source and shared fixtures retain the canonical GitHub plugin bytes.
-
 ## Quality Priorities
 
 No animation, abstraction, or background task may degrade live ink input. When requirements compete, use this order:
@@ -28,7 +20,7 @@ The standard large-document fixture contains:
 - 500 additional mixed shapes, including coordinate systems and tables
 - 500 lines and arrows with endpoint connections distributed across shapes, including one target at the 512-endpoint limit
 - a derived page height of at least 200,000 page units
-- a mix of portable Theme text and fixed-color styles
+- the complete shared palette, including theme-dependent Auto and fixed Black, White and grayscale styles
 - selected content in and outside the viewport
 - adversarial long strokes and large shapes that enter the spatial-index overflow collection
 
@@ -125,7 +117,7 @@ Additional rules:
 ## Performance Architecture Rules
 
 - Locked embeds use the static SVG preview and mount no editor store or React tree.
-- The runtime store is one aggregate containing the private ID map, two ordered ID bands, derived ranks, capacity counters, spatial index, reverse connection map, and commit-time versions. Synchronous commands preflight all affected capacity, connection, and index changes before publishing one atomic delta. Time-sliced mutations prepare all affected members against one source mutation version and adopt them as one transaction. A cancelled, failed, or stale preparation changes none of the aggregate; ordinary commands retain unchanged record identities and do not clone a persisted snapshot.
+- The runtime store is one aggregate containing the private ID map, three ordered ID bands, derived ranks, capacity counters, spatial index, reverse connection map, and commit-time versions. Synchronous commands preflight all affected capacity, connection, and index changes before publishing one atomic delta. Time-sliced mutations prepare all affected members against one source mutation version and adopt them as one transaction. A cancelled, failed, or stale preparation changes none of the aggregate; ordinary commands retain unchanged record identities and do not clone a persisted snapshot.
 - Viewport queries, hit testing, erasing, and page extent queries use the spatial index.
 - React owns application chrome and coarse editor state only. Individual ink elements are owned by the imperative SVG scene renderer.
 - Pointer-move, pan, zoom, pinch, scroll, snapping, culling, and preview frames produce zero React renders, React state updates, and React-visible store notifications. Discrete selection and tool changes may enqueue one coarse UI update after imperative feedback. Cursor-only updates retain fixed SVG-node identity, share at most one pending scene frame, bound actual layout reads independently of pointer-event count, allow at most one synchronous transform write per changed pointer position without rebuilding nodes, and perform no content query or geometry build. Deterministic coverage uses the 10,000-stroke fixture and all five scheduling profiles.
@@ -246,6 +238,7 @@ Implementation rules:
 - Connected endpoints update with their target in the same live frame and are never tweened behind it.
 - Committing a live stroke or gesture transform is immediate because the committed path exactly replaces an already visible preview. It MUST NOT flash, fade, or move during handoff.
 - Undo uses the inverse transition of its command; Redo uses the forward transition. Membership removal uses the shared 150-millisecond opacity fade, and restoration runs its reverse from hidden to the original paint opacity over 150 milliseconds. Direction follows the resulting membership rather than the button: Redo of erasing fades out, while Undo of erasing fades in. These transitions add neither blur nor scale. Move, scale, rotate, bend, and axis edits interpolate their preview transform from current to restored geometry over 120 milliseconds, then materialize the exact target.
+- Image membership fades use the existing scene fade owner to update inline opacity with the same 150-millisecond easing: native animation on an SVG `use` clone does not reliably sample its opacity. Ink retains its native fade path.
 - Model removal is atomic. Removal feedback retains non-interactive scene nodes or a bounded visual tombstone, excluded from hit testing, bounds, history, export, and accessibility state.
 - Any discrete user-visible UI or canvas change not named in the table uses the 120-millisecond opacity fallback. Immediate behavior is permitted only for live input, exact preview-to-commit handoff, focus and accessibility state, reduced motion, or a recovery action whose delay could risk data.
 
@@ -327,7 +320,7 @@ Unit tests cover pure or isolated behavior:
 - selection Style summaries for coordinate-system dimensionality and table column count, including homogeneous, mixed-value, mixed-kind, absolute multi-selection edits, and no-op states
 - Select session and vault defaults for Rectangle, Lasso, Fully enclosed, and Touched, including version 3 migration, Style and Settings parity, selected-state accessibility, reset behavior, and availability beside element Style controls while Select is active
 - rectangle and bounded freeform-lasso candidate matching for Touched and Fully enclosed across strokes, straight and curved linear elements, arrow nodes, filled and unfilled closed shapes, tables, coordinate systems, rotation, additive selection, cancellation, invalid input, and identity-preserving no-op results
-- active-tool Style-icon derivation and in-place toolbar updates for neutral, stroke, outline-only, no-fill shape, and filled-shape states across every supported outline style and Theme text color
+- active-tool Style-icon derivation and in-place toolbar updates for neutral, stroke, outline-only, no-fill shape, and filled-shape states across every supported outline style and fixed palette color
 - coordinate-system dimensionality and axis-handle commands plus table column-count and separator-handle commands, including retained and removed-axis connections, absolute 45-degree axis snapping, canonical persisted column width, local-right addition and removal, fractional widths such as a 121-unit three-column creation, header default-position snapping, equal-column snapping, zero-sized tables and coincident separators, optional `columnOffsets` round trips and backward-compatible omission, repeated count changes without column-width drift, the maximum per-edit rendered left-edge displacement across the complete rotation range with a 0.003-page-unit bound, per-table multi-selection geometry, bounds rejection, atomic dependent-anchor updates, Undo, and Redo
 - straight-highlighter open centerline selection with start, bend, and end handles, no rectangular fill or rotation handle, bend canonicalization, and endpoint edits
 - canonical box-resize pivots derived from rounded bounds for fractional and rotated box shapes and tables, plus stable transformed freehand pivots without preview flicker, no-op commits, or position jumps
@@ -365,7 +358,7 @@ Integration tests cover only important boundaries:
 - locked-preview integration proving that only completely safe-envelope-validated presentation markup mounts, metadata and embedded styles are absent from the mounted tree, native image handlers cannot attach, and guide weight and intensity match the active scene at DPR 1 and 2 across representative fractional width-fit scales
 - renderer topology integration proving one path for constant-width strokes or simple shapes when paint permits, one retained root path for single-part pressure strokes with normalized alpha, at most 16 pressure parts sharing one opacity wrapper when multipart, pressure/flat and single/multipart transitions, independent fill-fade/root-Motion cleanup, compound paths for compatible table and coordinate-system geometry, direct ID-to-node references, and ordered `DocumentFragment` insertion for contiguous runs
 - zoom and resize adapters proving all layout reads occur before the first DOM write and unchanged observations schedule nothing
-- renderer order plus order-only worker updates across both fixed render bands
+- renderer order plus order-only worker updates across all three fixed render bands
 - connection reverse map plus renderer, bounds, path cache, and spatial-index updates after target transforms, including line-to-line and arrow-to-arrow endpoints, cycle rejection, and transitive dependent propagation
 - hold-to-shape integration with native connection snapping, semantic endpoints instead of raw arrow-wing positions, preview-to-commit geometry, target movement, disabled snapping, deferred single-entry refinement and cancellation by movement, Undo, stale ownership or a new gesture
 - selection overlay and handle integration for straight highlighters, line and arrow angular guides, transient endpoint straightening with commit-only bend removal, coordinate-axis and coordinate-origin angular guides, accent edit lines for coordinate axes and table separators, constant-screen rotation-handle spacing, and stable box-resize previews while content and overlays remain synchronized
@@ -432,6 +425,8 @@ The deterministic suite covers JavaScript work that can be measured without brow
 
 ## Coverage and CI Gates
 
+`typecheck:cache-lifecycle` applies strict CheckJS to the portable cache runtime through `scripts/cache-lifecycle/tsconfig.json` and remains part of the native CI quality gate. Native Vitest adapters execute replacement, metadata, transport and recovery regressions; workflow tests exercise the actual receipt writer and verify the privileged cleanup boundary. Runtime source and shared fixtures retain the canonical GitHub plugin bytes.
+
 Local and GitHub CI enforce the same [deterministic work/resource and scheduling contracts](performance-ci.md). Real-time comparisons, baselines, tolerance percentages, timing warnings, and statistical sampling are removed. A computation can become slower while its observed work remains unchanged; CI no longer detects that class of regression or establishes p99 latency.
 
 Local npm checks use one exclusive loopback listener on `127.0.0.1:47839` across checkouts and worktrees. `ci` and `ci:quality` expand into their existing sequential steps under that single guard; standalone test, benchmark, lint, build, and other validation commands use the same guard. If the port is already occupied, the second command exits unsuccessfully before starting any tool. It does not wait, retry failures, skip tests, or change any acceptance threshold. A different service using that port also blocks checks conservatively. Normal completion releases the guard after the active tool exits. On POSIX, handled interruption signals the tool process group and waits for its running members to finish; Windows forwards the signal to the direct child only. After five seconds, remaining children receive `SIGKILL`; another second without confirmed shutdown, or an unverifiable group state, produces an explicit cleanup failure. Direct tool invocations, the development watcher, and unrelated applications are outside this cooperative guard; avoid competing heavy checks. Killing the runner forcibly can leave tool descendants running even though the operating system releases its port. Check for those processes before starting another check. Tooling files use the explicit `tsconfig.tooling.json` project for type-aware ESLint analysis, avoiding the default-project file-count limit without disabling lint rules.
@@ -493,3 +488,11 @@ A release is acceptable only when:
 - the public Obsidian API and Community directory requirements in [Obsidian Integration](obsidian-integration.md) pass against source and release artifacts
 
 Related documentation: [Implementation specification](specification.md), [File format](file-format.md), [Rendering and performance](rendering-and-performance.md), [Embed UI](embed-ui.md), [Zoom](zoom.md), [Settings](settings.md), and [Obsidian integration](obsidian-integration.md).
+
+## Image Import and Crop Acceptance
+
+Image behavior follows [Images and PDF Pages](images.md). Unit and focused Integration coverage must protect version 1/2 compatibility, legacy version 3/4 image reading, and version 5 resource round trips; digest, MIME, dimensions, malformed references and capacity rejection; image/highlight/content order; selection and transform geometry; nondestructive rotated crop and reset; ordinary and page-width locked import; one-step import/crop history; clipboard resource remapping and deduplication; safe locked-preview references; and cancellation and temporary-resource cleanup. Deterministic work/resource checks observe actual raster-resource reuse and retained resource bounds. Native Obsidian acceptance exercises import and crop with keyboard, pointer and touch across desktop, tablet and phone, both themes, and constrained phone viewport height. Physical-device responsiveness and the existing 10,000-stroke requirements remain separate acceptance obligations.
+
+Element locks follow [Element Locks](editor-tools.md#element-locks). Unit and focused Integration coverage protects all element kinds, old-document and version 4 round trips, mixed-selection commands and exact Undo/Redo state, lasso and keyboard selection, mutation and eraser protection, clipboard and whole-canvas actions, connected-dependency conflicts, and stale or cancelled operations. Deterministic work checks cover lock changes on large selections without rebuilding unaffected geometry, copying stroke samples, or replacing spatial membership. Native Obsidian acceptance covers the affected context menu, pointer and keyboard selection, locked-image annotation, and import on desktop, tablet and phone.
+
+Color acceptance covers the complete shared palette, Auto switching only with the document scheme, unchanged explicit RGBA values across light and dark schemes, image transparency and overlap, and consistent style, fill, text-background and settings choices. Live text editing, saved text, strokes and shapes must apply the same Auto semantics. Fixed Black annotation over a light image must remain dark after switching schemes; Auto never samples or adapts to image pixels. Text paint bounds include actual glyph overhang, and legacy text preparation preserves its source and layout while safely upgrading its stored bounds. The active scene, saved SVG, locked preview, and PDF export must preserve the same logical result in supported renderers. Work checks observe actual geometry preparation, resource reuse, cache invalidation, and export capacity. The external-viewer matrix remains subject to the renderer compatibility boundary in [Standalone SVG Envelope](svg-envelope.md#external-compatibility-and-verification).

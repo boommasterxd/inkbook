@@ -22,8 +22,11 @@ export class SceneDeltaCoordinator {
     delta: SceneStoreDelta,
     visibility?: { applyDelta(delta: SceneStoreDelta): void },
   ): void {
+    const graphicDelta = delta.affected.some(interactionOnly)
+      ? { ...delta, affected: delta.affected.filter((entry) => !interactionOnly(entry)) }
+      : delta;
     let fadedRemovals: string[] | undefined;
-    for (const affected of delta.affected) {
+    for (const affected of graphicDelta.affected) {
       const membership =
         delta.historyReplay === true &&
         ((affected.before === null && affected.after != null) ||
@@ -47,9 +50,14 @@ export class SceneDeltaCoordinator {
         fadedRemovals.push(affected.id);
       }
     }
-    const consumedSuppression = this.options.motion.applyDelta(delta.affected, fadedRemovals);
-    routeSceneDelta(delta, this.options.routing);
-    visibility?.applyDelta(delta);
+    const consumedSuppression = this.options.motion.applyDelta(
+      graphicDelta.affected,
+      fadedRemovals,
+    );
+    if (graphicDelta.affected.length > 0) {
+      routeSceneDelta(graphicDelta, this.options.routing);
+      visibility?.applyDelta(graphicDelta);
+    }
     this.options.previews.consume(consumedSuppression);
     this.options.commits.markPending();
     this.options.schedule();
@@ -70,4 +78,8 @@ export class SceneDeltaCoordinator {
   public release(): void {
     this.#fadedIds.clear();
   }
+}
+
+function interactionOnly(entry: SceneStoreDelta["affected"][number]): boolean {
+  return entry.domains.length === 1 && entry.domains[0] === "interaction";
 }

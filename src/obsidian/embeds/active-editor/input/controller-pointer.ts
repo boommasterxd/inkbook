@@ -108,7 +108,7 @@ export class ActiveEditorPointerController {
       pressure: 0,
     };
     this.#options.setLastPointer({ ...point, ...pointer }, { ...screenPoint, ...pointer });
-    const target = this.#selectionTarget(point, "mouse");
+    const target = this.#selectionTarget(point, "mouse", true);
     this.#options.menus.dispatchFromEvent(event, () =>
       this.#options.dispatch({
         type: "context-menu",
@@ -222,7 +222,11 @@ export class ActiveEditorPointerController {
     }
   }
 
-  #selectionTarget(point: InputPoint, pointerType: PointerSample["pointerType"]) {
+  #selectionTarget(
+    point: InputPoint,
+    pointerType: PointerSample["pointerType"],
+    includeLocked = false,
+  ) {
     return selectionTargetAt(
       this.#options.sceneStore,
       this.#options.selection(),
@@ -234,6 +238,7 @@ export class ActiveEditorPointerController {
           ? {}
           : { frames: this.#options.selectionFrames }),
         geometry: () => this.#options.handles.selectionGeometry(),
+        includeLocked,
       },
     );
   }
@@ -260,7 +265,7 @@ export class ActiveEditorPointerController {
   #pointerDownTarget(pointer: PointerSample, button: number) {
     if (pointer.pointerType === "mouse") {
       this.#secondaryContextOwned = false;
-      if (button === 2) return this.#selectionTarget(pointer, "mouse");
+      if (button === 2) return this.#selectionTarget(pointer, "mouse", true);
     }
     return this.#options.getInput().activeTool === "select" && pointer.pointerType !== "touch"
       ? this.#selectedTarget(pointer)
@@ -274,6 +279,7 @@ export class ActiveEditorPointerController {
     return this.#selectionTarget(
       this.#options.navigation.pageSample({ ...pointer, ...interaction.start }),
       pointer.pointerType,
+      true,
     );
   }
 
@@ -290,6 +296,7 @@ export class ActiveEditorPointerController {
     return this.#selectionTarget(
       this.#options.navigation.pagePointFromScreen(interaction.start),
       "pen",
+      true,
     );
   }
 

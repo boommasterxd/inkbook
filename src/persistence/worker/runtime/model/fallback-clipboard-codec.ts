@@ -1,9 +1,11 @@
+import { elementSnapshotVersion } from "../../../../domain/schema/snapshot-version";
 import type {
   ClipboardElementBodyV1,
   ClipboardElementV1,
   InkClipboardV1,
   InkElementV1,
   FontResourceV2,
+  ImageResourceV3,
 } from "../../../../domain/schema/public";
 import { MAX_JSON_DEPTH } from "../../../../domain/schema/public";
 import { CLIPBOARD_LIMITS, INKBOOK_CLIPBOARD_TEXT_PREFIX } from "../../../clipboard/constants";
@@ -16,6 +18,7 @@ import type {
 } from "../../../clipboard/types";
 import { validateClipboardPayloadSliced } from "../../../clipboard/validation";
 import { encodeRuntimeSelection } from "../../../clipboard/codec";
+import { usedImageResourcesSteps } from "../../../images/used-image-resources";
 import { usedFontResourcesSteps } from "../../../fonts/used-font-resources";
 import { bindTextElementFontResourcesSteps } from "../../../fonts/bound-font-resources";
 import { consumeSerializationSteps } from "../../../serialization/output/serialization-model-preparation";
@@ -33,8 +36,14 @@ export function encodeRuntimeSelectionWrite(
   selected: readonly InkElementV1[],
   selectedIds: readonly string[],
   fontResources: readonly FontResourceV2[] = [],
+  imageResources: readonly ImageResourceV3[] = [],
 ): ClipboardResult<ClipboardWritePayload> {
-  const result = encodeRuntimeSelection(selected, new Set(selectedIds), fontResources);
+  const result = encodeRuntimeSelection(
+    selected,
+    new Set(selectedIds),
+    fontResources,
+    imageResources,
+  );
   if (!result.ok) return result;
   const { byteLength, customText, plainText } = result.value;
   return { ok: true, value: { byteLength, customText, plainText } };
@@ -49,6 +58,7 @@ export async function encodeRuntimeSelectionChunked(
   selectedIds: readonly string[],
   context: RuntimeSliceContext,
   fontResources: readonly FontResourceV2[] = [],
+  imageResources: readonly ImageResourceV3[] = [],
 ): Promise<ClipboardResult<ClipboardWritePayload>> {
   const profile = runtimeWorkProfile(context);
   const selection = new Set(selectedIds);
@@ -56,6 +66,19 @@ export async function encodeRuntimeSelectionChunked(
   const selected = await selectedElementsInOrder(elementsInRenderOrder, selection, context);
   if (selected.length !== selection.size) {
     return clipboardFailure("missing-selection", "The selection contains an unknown element.");
+  }
+  const hasImages = selected.some((element) => element.kind === "image");
+  let images: ImageResourceV3[];
+  try {
+    images = hasImages
+      ? await consumeSerializationSteps(usedImageResourcesSteps(selected, imageResources), context)
+      : [];
+  } catch {
+    context.signal.throwIfAborted();
+    return clipboardFailure(
+      "invalid-schema",
+      "The selection references an unavailable image resource.",
+    );
   }
   const hasText = selected.some((element) => element.kind === "text");
   const fonts = hasText
@@ -86,8 +109,9 @@ export async function encodeRuntimeSelectionChunked(
     {
       elements: clipboardElements,
       format: "inkbook-elements",
-      version: hasText ? 2 : 1,
+      version: elementSnapshotVersion(selected),
       ...(hasText ? { fontResources: fonts.value } : {}),
+      ...(hasImages ? { imageResources: images } : {}),
     },
     context,
     true,
@@ -376,10 +400,17 @@ function createBody(
   documentIds: ReadonlyMap<string, string>,
 ): ClipboardElementBodyV1 {
   if (element.kind !== "line" && element.kind !== "arrow") {
-    const { createdAt: _createdAt, id: _id, ...body } = element;
-    return body;
+    const { createdAt: _createdAt, id: _id, locked, ...body } = element;
+    return { ...body, ...(locked === true ? { locked: true } : {}) };
   }
-  const { createdAt: _createdAt, endConnection, id: _id, startConnection, ...body } = element;
+  const {
+    createdAt: _createdAt,
+    endConnection,
+    id: _id,
+    startConnection,
+    locked,
+    ...body
+  } = element;
   const remap = (connection: typeof startConnection) => {
     if (connection === null) return null;
     const targetClipId = documentIds.get(connection.targetId);
@@ -387,6 +418,7 @@ function createBody(
   };
   return {
     ...body,
+    ...(locked === true ? { locked: true } : {}),
     endConnection: remap(endConnection),
     startConnection: remap(startConnection),
   };

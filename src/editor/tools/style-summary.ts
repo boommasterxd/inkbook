@@ -5,6 +5,8 @@ import {
   type TextSelectionStyleSummary,
   type TextBackgroundValue,
 } from "./text-style-summary";
+type StyledElement = Exclude<InkElementV1, ImageElementV3>;
+
 export type { TextSelectionStyleSummary } from "./text-style-summary";
 import type {
   ArrowNodeV1,
@@ -13,6 +15,7 @@ import type {
   OutlineStyleV1,
   ShapeStyleV1,
   StrokeStyleV1,
+  ImageElementV3,
 } from "../../domain/schema/public";
 import type { StartupToolV1, ToolDefaultsV1 } from "../../domain/settings/types";
 import {
@@ -85,7 +88,8 @@ export type ActiveToolStyleSummary =
     }
   | null;
 
-export function summarizeSelectionStyle(elements: readonly InkElementV1[]): SelectionStyleSummary {
+export function summarizeSelectionStyle(input: readonly InkElementV1[]): SelectionStyleSummary {
+  const elements = input.filter((element) => element.kind !== "image");
   if (elements.length === 0) return null;
   if (elements.every((element) => element.kind === "text")) return summarizeTextStyle(elements);
   if (elements.every(isStrokeStyled)) return summarizeStrokeSelection(elements);
@@ -168,7 +172,7 @@ export function summarizeActiveToolStyle(
   };
 }
 
-function summarizeCommonSelection(elements: readonly InkElementV1[]): SelectionStyleSummary {
+function summarizeCommonSelection(elements: readonly StyledElement[]): SelectionStyleSummary {
   const backgrounds: TextBackgroundValue[] = [];
   const styles = elements.flatMap<{ readonly color: ColorV1; readonly opacity: number }>(
     (element) => {
@@ -240,7 +244,7 @@ function common<T>(
 function equalColor(left: ColorV1, right: ColorV1): boolean {
   return (
     left.type === right.type &&
-    (left.type === "theme-text" || left.value === (right as typeof left).value)
+    (left.type === "theme-text" || (right.type === "rgba" && left.value === right.value))
   );
 }
 
@@ -249,20 +253,20 @@ function equalNullableColor(left: ColorV1 | null, right: ColorV1 | null): boolea
 }
 
 function isStrokeStyled(
-  element: InkElementV1,
-): element is InkElementV1 & { readonly style: StrokeStyleV1 } {
+  element: StyledElement,
+): element is StyledElement & { readonly style: StrokeStyleV1 } {
   return element.kind === "stroke" || element.kind === "straight-highlighter";
 }
 
 function isOutlineStyled(
-  element: InkElementV1,
-): element is InkElementV1 & { readonly style: OutlineStyleV1 } {
+  element: StyledElement,
+): element is StyledElement & { readonly style: OutlineStyleV1 } {
   return !isStrokeStyled(element) && element.kind !== "text";
 }
 
 function isClosedShape(
-  element: InkElementV1,
-): element is InkElementV1 & { readonly style: ShapeStyleV1 } {
+  element: StyledElement,
+): element is StyledElement & { readonly style: ShapeStyleV1 } {
   return (
     element.kind === "rectangle" ||
     element.kind === "ellipse" ||

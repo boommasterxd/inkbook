@@ -56,7 +56,6 @@ export class TextFieldEditor {
   readonly #geometry: TextEditorGeometry;
   readonly #previewGeometry: TextPreviewGeometry;
   readonly #releaseStyles: () => void;
-
   public constructor(options: TextFieldEditorOptions) {
     this.#options = options;
     this.#scroll = new TextEditorScroll(options);
@@ -205,7 +204,6 @@ export class TextFieldEditor {
       ...standardKeymap,
     ]);
   }
-
   public get source(): string {
     return this.view.state.doc.toString();
   }
@@ -239,18 +237,15 @@ export class TextFieldEditor {
   public get ready(): Promise<void> {
     return Promise.all([this.#preview.ready, this.#background!.ready]).then(() => undefined);
   }
-
   public focusAt(
     position?: number | { readonly x: number; readonly y: number },
     reveal = true,
   ): void {
     if (!this.#disposed) focusTextEditorAt(this.view, this.#tables, position, reveal);
   }
-
   public focusSelectionPreserved(): void {
     if (!this.#disposed) focusTextEditorSelection(this.view, this.#tables);
   }
-
   public requestCaretReveal(): void {
     if (this.#tables.inputEditor) this.#tables.inputEditor.requestCaretReveal();
     else this.#scroll.reveal();

@@ -75,7 +75,8 @@ export class HitTestScratch {
       return true;
     }
     return (
-      (band === "content" && this.#hitBand === "highlight") ||
+      (band !== this.#hitBand &&
+        (band === "content" || (band === "highlight" && this.#hitBand === "image"))) ||
       (band === this.#hitBand &&
         (rank > this.#hitRank || (rank === this.#hitRank && id.localeCompare(this.#hitId) < 0)))
     );
@@ -120,6 +121,9 @@ export function elementContainsPoint(
     return linearElementHit(element, point, tolerance);
   if (element.kind === "coordinate-system") return coordinateSystemHit(element, point, tolerance);
   if (element.kind === "table") return tableHit(element, point, tolerance);
+  if (element.kind === "image") {
+    return imageHit(element, point, tolerance);
+  }
   if (element.kind === "text") {
     return textPaintHit(element, point, tolerance, textGeometry);
   }
@@ -131,6 +135,19 @@ export function elementContainsPoint(
     (element.style.fillColor !== null &&
       element.style.fillOpacity > 0 &&
       pointInPolygon(point, vertices))
+  );
+}
+
+function imageHit(
+  image: Extract<InkElementV1, { kind: "image" }>,
+  point: PointV1,
+  tolerance: number,
+): boolean {
+  return (
+    point.x >= image.x - tolerance &&
+    point.x <= image.x + image.width + tolerance &&
+    point.y >= image.y - tolerance &&
+    point.y <= image.y + image.height + tolerance
   );
 }
 

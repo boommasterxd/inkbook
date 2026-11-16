@@ -17,6 +17,8 @@ describe("collapsed geometry persistence", () => {
           element.kind === "text"
         )
           continue;
+        if (element.kind === "image")
+          throw new Error("Collapsed geometry fixture must contain vector elements.");
         element.style.outlineStyle = outlineStyle;
         const paths = serializeElementPaths(element);
         expect(paths, element.kind).toHaveLength(1);

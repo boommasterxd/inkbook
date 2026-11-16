@@ -26,7 +26,7 @@ import { buildPressureResizeFrame } from "./geometry-frame-fixture";
 import { createAdversarialPressureWindow } from "../../fixtures/domain/adversarial-pressure-window";
 import { observePressureStitchBuckets } from "../../fixtures/domain/pressure-stitching-observation";
 const STYLE = {
-  color: { type: "theme-text" as const },
+  color: { type: "rgba" as const, value: "#000000FF" as const },
   opacity: 1,
   pressureEnabled: true,
   smoothing: 0.5 as const,

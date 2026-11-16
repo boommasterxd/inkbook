@@ -19,6 +19,7 @@ import {
   FakeSceneStore,
   fakeNode,
   fakeRectangleRecord,
+  sceneBandNode,
 } from "../../../../unit/rendering/scene/fakes";
 
 function setup(records: SceneElementRecord[]) {
@@ -37,7 +38,7 @@ function setup(records: SceneElementRecord[]) {
   );
   renderer.setReducedMotion(true);
   scheduler.runAll();
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = sceneBandNode(fakeNode(renderer.svg), "content");
   return { content, renderer, scheduler, store };
 }
 
@@ -215,7 +216,9 @@ describe("sliced scene exit cleanup", () => {
       harness.scheduler.runAll();
       remove(harness, [...records].reverse(), false);
       let previous = 0;
+      let frames = 0;
       while (harness.scheduler.pendingCount > 0) {
+        expect(frames++).toBeLessThan(Math.ceil(records.length / 64) + 2);
         harness.scheduler.runNext();
         expect(removed.length - previous).toBeLessThanOrEqual(64);
         previous = removed.length;

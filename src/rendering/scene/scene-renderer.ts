@@ -8,7 +8,7 @@ import { SceneContentRenderer } from "./content-renderer";
 import { SceneElementPreviews } from "./presentation/scene-element-previews";
 import * as fadeController from "./presentation/element-fade-controller";
 import { SceneFrameWriter } from "./scene-frame-writer";
-import { SceneFrameWork } from "./scene-frame-work";
+import { createFrameWork, type SceneFrameWork } from "./scene-frame-work";
 import * as stats from "./instrumentation";
 import { ScenePathCache, type PreparedScenePath } from "./content/path-cache";
 import { ScenePreviewInput } from "./presentation/scene-preview-input";
@@ -25,7 +25,27 @@ import type * as Scene from "./types";
 import { SceneTransformPreviewController } from "./presentation/transform-preview-controller";
 import { SceneVisibilityState } from "./visibility/visibility-state";
 import { SceneTextController } from "./scene-text-controller";
+import { SceneImageCropController } from "./scene-image-crop";
+import { SceneSelectionController } from "./scene-selection-controller";
 export class SvgSceneRenderer {
+  readonly #selection = new SceneSelectionController(() => {
+    runtime.assertSceneActive(this.#disposed);
+    return {
+      content: this.#content,
+      writer: this.#frameWriter,
+      schedule: () => this.#frames.schedule(),
+    };
+  });
+  public readonly setSelectedElements = this.#selection.select;
+  public readonly setSelectionHighlightsEnabled = this.#selection.highlights;
+  public readonly setSelectionOverlayPath = this.#selection.outline;
+  public readonly setLockedSelectionOverlayPath = this.#selection.lockedOutline;
+  public readonly setSnapMarkerPath = this.#selection.snap;
+  readonly #crop = new SceneImageCropController(
+    () => [this.#dom, this.#stats, this.#camera, this.#content],
+    () => this.#frames.schedule(),
+  );
+  public readonly beginImageCrop = this.#crop.begin;
   readonly #text = new SceneTextController(() => [this.#dom, this.#content]);
   public readonly textDocument: Document;
   public readonly beginTextEditing = this.#text.begin;
@@ -67,7 +87,7 @@ export class SvgSceneRenderer {
     this.#background = new SceneBackgroundController(options.page, this.#scheduler, this.#stats);
     const render = this.renderFrame.bind(this);
     this.#frames = new SceneFrameScheduler(this.#scheduler, this.#stats, render);
-    this.#dom = SceneDom.create(options);
+    this.#dom = SceneDom.create({ ...options, instrumentation: this.#stats });
     this.textDocument = this.#dom.ownerDocument;
     this.#dom.onSurfaceInvalidated = (themeChanged) =>
       themeChanged === true ? this.invalidateLayout() : this.#frames.schedule();
@@ -103,7 +123,7 @@ export class SvgSceneRenderer {
       this.#pathCache,
       this.#motion,
       options.onResourceUsageChanged ?? (() => undefined),
-      () => this.#visibilityCoordinator.previewMemoryUsage(),
+      () => this.#visibilityCoordinator.previewMemoryUsage() + this.#dom.memoryUsage(),
       this.#detachedCache,
     );
     this.#elementPreviews = new SceneElementPreviews(this.#content, options.store);
@@ -122,16 +142,13 @@ export class SvgSceneRenderer {
     );
     this.#sceneCommits = new SceneCommitCoordinator(options.onSceneCommitted);
     this.#sceneCommits.markPending();
-    this.#frameWork = new SceneFrameWork({
-      backgroundPending: () => this.#background.dirty && this.#viewport !== undefined,
-      queryPending: () => this.#visibilityCoordinator.hasPendingQuery,
-      content: this.#content,
-      contentScheduler: this.#contentScheduler,
-      elements: this.#elementPreviews,
-      motion: this.#motion,
-      scheduler: this.#scheduler,
-      writeBackground: (deadline, allowAtomic) => this.writeBackground(deadline, allowAtomic),
-    });
+    this.#frameWork = createFrameWork(
+      this.#background,
+      this.#frameWriter,
+      [this.#content, this.#contentScheduler, this.#elementPreviews, this.#motion],
+      this.#scheduler,
+      () => [this.#viewport, this.#camera, this.#visibilityCoordinator],
+    );
     this.#previewInput = this.createPreviewInput();
     this.#deltas = new SceneDeltaCoordinator({
       commits: this.#sceneCommits,
@@ -214,6 +231,7 @@ export class SvgSceneRenderer {
     const zoomChanged = camera.zoom !== this.#camera.zoom;
     if (this.#visibilityCoordinator.initialVisibleOnly) this.#sceneCommits.markPending();
     this.#camera = camera;
+    this.#crop.camera(camera);
     this.#frameWriter.setCamera(camera);
     this.#visibilityCoordinator.setContext(camera, this.#viewport);
     if (zoomChanged && this.#background.invalidateZoom()) {
@@ -282,7 +300,7 @@ export class SvgSceneRenderer {
   public commitLivePath(id: string): void {
     runtime.assertSceneActive(this.#disposed);
     this.#frameWriter.commitLivePath(id);
-    this.#frameWriter.livePathCommits.settle((key) => this.#content.hasMounted(key));
+    this.#frameWriter.livePathCommits.settle(this.#content.hasMounted);
     this.#frames.schedule();
   }
   public commitLiveStroke(id: string, prepared?: PreparedScenePath): void {
@@ -299,26 +317,6 @@ export class SvgSceneRenderer {
   public setOverlayPath(d: string | null): void {
     runtime.assertSceneActive(this.#disposed);
     if (!this.#frameWriter.setOverlayPath(d)) return;
-    this.#frames.schedule();
-  }
-  public setSelectionHighlightsEnabled(enabled: boolean): void {
-    runtime.assertSceneActive(this.#disposed);
-    this.#content.setSelectionHighlightsEnabled(enabled);
-    this.#frames.schedule();
-  }
-  public setSelectedElements(ids: ReadonlySet<string>): void {
-    runtime.assertSceneActive(this.#disposed);
-    this.#content.setSelectedElements(ids);
-    this.#frames.schedule();
-  }
-  public setSelectionOverlayPath(...args: Parameters<SceneFrameWriter["setSelectionPath"]>): void {
-    runtime.assertSceneActive(this.#disposed);
-    this.#frameWriter.setSelectionPath(...args);
-    this.#frames.schedule();
-  }
-  public setSnapMarkerPath(d: string | null): void {
-    runtime.assertSceneActive(this.#disposed);
-    this.#frameWriter.setSnapPath(d);
     this.#frames.schedule();
   }
   public suppressMotionForNextDelta(ids: readonly string[]): void {
@@ -342,7 +340,9 @@ export class SvgSceneRenderer {
     refreshCursorLayout = false,
   ): void {
     runtime.assertSceneActive(this.#disposed);
+    this.#crop.flush();
     if (refreshCursorLayout) this.#frameWriter.readToolCursor(true);
+    this.#contentScheduler.prepareTranslation(this.#transformPreviews, deadline);
     this.#frameWriter.writePointerFeedback(
       this.#transformPreviews,
       this.#elementPreviews,
@@ -412,6 +412,7 @@ export class SvgSceneRenderer {
   public destroy(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#crop.release();
     this.#text.release();
     this.#frames.dispose();
     this.#visibilityCoordinator.release();
@@ -475,13 +476,9 @@ export class SvgSceneRenderer {
       startedAt,
     );
     this.#frameWriter.writeSelection(this.#elementPreviews, this.#motion);
+    this.#crop.flush();
     this.#frameWork.complete(work, this.#sceneCommits, this.#frames);
     if (this.#scheduler.now() < deadline) this.#resourcePolicy.notifyUsageChanged();
-  }
-  private writeBackground(deadline: number, allowAtomic = false): boolean {
-    return this.#viewport === undefined
-      ? false
-      : this.#background.write(this.#frameWriter, this.#camera.zoom, deadline, allowAtomic);
   }
   private createPreviewInput(): ScenePreviewInput {
     return new ScenePreviewInput(this.#motion, this.#content, {

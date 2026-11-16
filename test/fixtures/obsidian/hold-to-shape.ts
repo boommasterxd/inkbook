@@ -15,7 +15,7 @@ import { immediateWorkScheduler, pausedWorkScheduler } from "./immediate-work-sc
 import { elementReplacementPorts } from "./element-mutation-ports";
 import { createWorkerSnapshot } from "../persistence/worker-snapshot";
 import { createSceneFixture, sceneDeltaEntries } from "../rendering/scene";
-import { fakeNode } from "../../unit/rendering/scene/fakes";
+import { fakeNode, sceneBandNode } from "../../unit/rendering/scene/fakes";
 import { endpointMotif } from "../../unit/domain/recognition/arrow-fixtures";
 import { quadraticSamples } from "../../unit/domain/recognition/recognition-fixtures";
 
@@ -118,7 +118,7 @@ export function createHoldFixture(options: HoldFixtureOptions) {
   preview.observeInputSamples(samples);
   preview.updateSamples(samples);
   scene.scheduler.runAll();
-  const camera = fakeNode(scene.renderer.svg).nodes[1]!;
+  const content = sceneBandNode(fakeNode(scene.renderer.svg), "content");
   return {
     ...scene,
     store,
@@ -128,8 +128,8 @@ export function createHoldFixture(options: HoldFixtureOptions) {
     defaults,
     admission,
     refinement,
-    ghost: camera.nodes[5]!,
-    raw: camera.nodes[6]!,
+    ghost: content.nextSibling!,
+    raw: content.nextSibling!.nextSibling!,
     marker: fakeNode(scene.renderer.svg).nodes[2]!.nodes[3]!,
     invalidate: () => {
       current = false;

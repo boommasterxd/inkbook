@@ -101,7 +101,7 @@ export function firstMountedSuccessor(
   }
   return undefined;
 }
-import type { RenderBand } from "../../../domain/commands/render-bands";
+import { RENDER_BANDS, type RenderBand } from "../../../domain/commands/render-bands";
 import type { SceneStorePort } from "../types";
 import type { VisibilityResult } from "./visibility-types";
 import type { VisibilityRemovalReuse } from "./visibility-removal";
@@ -118,7 +118,7 @@ export function commitVisibleBands(
   removalReuse?: VisibilityRemovalReuse,
 ): void {
   let generation = removalReuse?.beginCommit(visibility);
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of RENDER_BANDS) {
     const visible = visibility[band];
     ids[band] = visible.ids;
     counts[band] = visible.count;

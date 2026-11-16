@@ -30,9 +30,9 @@ function cutFixture() {
   const store = new ElementStore([selected]);
   const pending = createDeferredPreparation();
   const commit = vi.fn(() => ({
-    forward: { bands: { content: [], highlight: [] } },
+    forward: { bands: { image: [], content: [], highlight: [] } },
     payloadBytes: 1,
-    reverse: { bands: { content: [selected.id], highlight: [] } },
+    reverse: { bands: { image: [], content: [selected.id], highlight: [] } },
   }));
   const prepare = vi.fn(() => pending.promise);
   const model = createClipboardDocumentModel({

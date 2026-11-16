@@ -1,7 +1,7 @@
 import { prepareStrokeShapeSteps, type StrokeShapeCache } from "./stroke-shape-cache";
 import type { StrokeSampleEncodingCache } from "../metadata/stroke-sample-encoding-cache";
 import type { StrokeFragmentPathRange } from "./stroke-fragment-paths";
-import { isHighlightElement } from "../../../domain/commands/render-bands";
+import { renderBandOf } from "../../../domain/commands/render-bands";
 import { calculateElementBounds } from "../../../domain/geometry/public";
 import type { InkElementV1 } from "../../../domain/schema/public";
 import { escapeXmlText } from "../../documents/xml-text";
@@ -36,10 +36,10 @@ export interface ElementFragments {
   readonly strokePaths: readonly StrokeFragmentPathRange[] | undefined;
 }
 
-export type RenderBand = "content" | "highlight";
+export type RenderBand = "image" | "content" | "highlight";
 
 export function elementRenderBand(element: InkElementV1): RenderBand {
-  return isHighlightElement(element) ? "highlight" : "content";
+  return renderBandOf(element);
 }
 
 export function buildElementFragments(

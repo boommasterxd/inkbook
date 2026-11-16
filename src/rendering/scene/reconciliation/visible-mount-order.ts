@@ -1,4 +1,4 @@
-import type { RenderBand } from "../../../domain/commands/render-bands";
+import { RENDER_BANDS, type RenderBand } from "../../../domain/commands/render-bands";
 import type { MountSlice, MountYieldReason } from "./mount-slice";
 import type { MountedSceneElement } from "../content/mounted-element";
 import type { MutableSceneInstrumentation } from "../types";
@@ -23,6 +23,11 @@ export class VisibleMountOrder {
     private readonly epoch: number,
   ) {
     this.#bands = {
+      image: {
+        positions: new Map(),
+        tree: new Uint32Array(visibility.image.count + 1),
+        index: 0,
+      },
       content: {
         positions: new Map(),
         tree: new Uint32Array(visibility.content.count + 1),
@@ -41,15 +46,14 @@ export class VisibleMountOrder {
   }
 
   public memoryUsage(): number {
-    return (
-      this.#bands.content.tree.byteLength +
-      this.#bands.highlight.tree.byteLength +
-      (this.#bands.content.positions.size + this.#bands.highlight.positions.size) * 48
-    );
+    return RENDER_BANDS.reduce((bytes, band) => {
+      const order = this.#bands[band];
+      return bytes + order.tree.byteLength + order.positions.size * 48;
+    }, 0);
   }
 
   public build(slice: MountSlice): MountYieldReason | undefined {
-    for (const band of ["highlight", "content"] as const) {
+    for (const band of RENDER_BANDS) {
       const order = this.#bands[band];
       const visible = this.visibility[band];
       while (order.index < visible.count) {

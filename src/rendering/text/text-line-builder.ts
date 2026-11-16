@@ -14,6 +14,7 @@ import {
   TEXT_TAB_SIZE,
 } from "../../domain/text/text-layout-style";
 import type { TextLayoutAtom } from "./text-layout-atoms";
+import { measureTextRunInkBounds } from "./text-ink-bounds";
 import {
   admitTextLayout,
   type MeasuredText,
@@ -163,6 +164,7 @@ export class TextLineBuilder {
           : 0;
     const x = this.#indent + Math.max(0, offset);
     const runs: TextLayoutRunV2[] = [];
+    const measurements = new WeakMap<TextLayoutRunV2, MeasuredText>();
     let cursor = 0;
     let previousTab = false;
     for (const atom of this.#atoms) {
@@ -178,11 +180,31 @@ export class TextLineBuilder {
           height: canonical(atom.math.height),
           paths: atom.math.paths,
         });
-      else appendTextRun(runs, atom, cursor, width, extra === 0 && !atom.tab && !previousTab);
+      else
+        appendTextRun(
+          runs,
+          atom,
+          cursor,
+          width,
+          extra === 0 && !atom.tab && !previousTab,
+          measurements,
+        );
       previousTab = atom.tab === true;
       cursor += width;
     }
-    if (marker) this.#appendMarker(runs, marker);
+    if (marker) {
+      this.#appendMarker(runs, marker);
+      measurements.set(runs[0]!, marker);
+    }
+    for (const run of runs) {
+      const inkBounds = measureTextRunInkBounds(
+        run,
+        this.#style,
+        this.#ports.measure,
+        measurements.get(run),
+      );
+      if (inkBounds !== undefined) run.inkBounds = inkBounds;
+    }
     this.lines.push({
       x: canonical(x),
       y: canonical(this.#top),
@@ -242,6 +264,7 @@ function appendTextRun(
   x: number,
   width: number,
   merge: boolean,
+  measurements: WeakMap<TextLayoutRunV2, MeasuredText>,
 ): void {
   const previous = runs[runs.length - 1];
   if (
@@ -253,6 +276,7 @@ function appendTextRun(
     previous.text += atom.text;
     previous.end = atom.end;
     previous.width = canonical(x + width - previous.x);
+    measurements.delete(previous);
   } else
     runs.push({
       text: atom.text,
@@ -263,6 +287,7 @@ function appendTextRun(
       style: atom.style,
       ...(atom.fontResourceId === undefined ? {} : { fontResourceId: atom.fontResourceId }),
     });
+  if (runs[runs.length - 1] !== previous) measurements.set(runs[runs.length - 1]!, atom);
 }
 
 function lineDimensions(

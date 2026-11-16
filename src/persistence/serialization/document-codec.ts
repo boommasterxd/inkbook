@@ -1,12 +1,12 @@
-import { deriveRenderBands } from "../../domain/commands/render-bands";
 import { derivePageExtent } from "../../domain/geometry/public";
 import type { InkSnapshotV1, ValidationError } from "../../domain/schema/public";
 import { FILE_SCHEMA_LIMITS, validateInkSnapshotV1 } from "../../domain/schema/public";
 import { validateSafeSvg } from "../documents/safe-svg-validator";
 import { serializeSvgEnvelope } from "../documents/svg-envelope";
 import { serializeSvgNumber } from "../documents/svg-number";
-import { backgroundFitsStaticLimit, serializeBackgroundPaths } from "./output/background";
-import { serializeElementPaths } from "./output/path-markup";
+import { backgroundFitsStaticLimit } from "./output/background";
+import { boundedSvgBands } from "./output/bounded-svg-bands";
+import { ChunkedOutputLimitError } from "./output/chunked-output-assembler";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import type {
   DocumentCodecError,
@@ -14,6 +14,7 @@ import type {
   DocumentCodecResult,
   SerializedInkbookDocument,
 } from "./types";
+import { validateImageResourceSteps } from "../images/image-resources";
 import { validateFontResourceSteps } from "../fonts/font-resources";
 import { canonicalSnapshot } from "./metadata/canonical-snapshot";
 
@@ -28,8 +29,17 @@ export function serializeInkbookDocument(
     return failure("snapshot-invalid", "Snapshot validation failed.", validation.error);
   }
   try {
-    for (const resource of validation.value.fontResources ?? []) {
-      const steps = validateFontResourceSteps(resource);
+    for (const resource of [
+      ...(validation.value.fontResources ?? []),
+      ...(validation.value.imageResources ?? []),
+    ]) {
+      const steps = resource.mimeType.startsWith("image/")
+        ? validateImageResourceSteps(
+            resource as import("../../domain/schema/public").ImageResourceV3,
+          )
+        : validateFontResourceSteps(
+            resource as import("../../domain/schema/public").FontResourceV2,
+          );
       while (!steps.next().done) {
         /* Complete synchronous public codec. */
       }
@@ -54,12 +64,13 @@ export function serializeInkbookDocument(
   ) {
     return failure("static-output-limit-exceeded", "Generated background exceeds file limits.");
   }
-  const bands = deriveRenderBands(snapshot.elements);
-  const svg = serializeSvgEnvelope(snapshot, lockedHeight, {
-    background: serializeBackgroundPaths(snapshot.page.background, lockedHeight),
-    highlights: bands.highlight.flatMap(serializeElementPaths),
-    content: bands.content.flatMap(serializeElementPaths),
-  });
+  let svg: string;
+  try {
+    svg = serializeSvgEnvelope(snapshot, lockedHeight, boundedSvgBands(snapshot, lockedHeight));
+  } catch (error) {
+    if (!(error instanceof ChunkedOutputLimitError)) throw error;
+    return failure("static-output-limit-exceeded", "Generated document exceeds file limits.");
+  }
   const staticValidation = validateSafeSvg(svg);
   if (staticValidation === null || staticValidation.snapshotHash === null) {
     return failure(

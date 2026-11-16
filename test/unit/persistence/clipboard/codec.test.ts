@@ -43,6 +43,37 @@ describe("clipboard star connection validation", () => {
   });
 });
 
+describe("clipboard theme and fixed paints", () => {
+  it("retains theme and fixed neutral paints in copied selections", () => {
+    const target = rectangle();
+    target.style.outlineColor = { type: "theme-text" };
+    target.style.fillColor = { type: "rgba", value: "#FFFFFFFF" };
+    const dependent = arrow();
+    dependent.style.outlineColor = { type: "rgba", value: "#000000FF" };
+    const encoded = encodeRuntimeSelection([target, dependent], new Set([RECTANGLE_ID, ARROW_ID]));
+    if (!encoded.ok) throw new Error(encoded.error.message);
+    const decoded = decodeCustomClipboardText(encoded.value.customText);
+    expect(decoded).toMatchObject({
+      ok: true,
+      value: {
+        payload: {
+          elements: [
+            {
+              element: {
+                style: {
+                  outlineColor: { type: "theme-text" },
+                  fillColor: { type: "rgba", value: "#FFFFFFFF" },
+                },
+              },
+            },
+            { element: { style: { outlineColor: { type: "rgba", value: "#000000FF" } } } },
+          ],
+        },
+      },
+    });
+  });
+});
+
 describe("clipboard codec", () => {
   it("encodes identities as compact clip IDs and preserves internal connections", () => {
     const encoded = encodeRuntimeSelection(selectedElements(), new Set([RECTANGLE_ID, ARROW_ID]));
@@ -183,7 +214,7 @@ describe("clipboard validation", () => {
       rotation: 0,
       pivot: { x: 10, y: 10 },
       style: {
-        color: { type: "theme-text" as const },
+        color: { type: "rgba" as const, value: "#000000FF" as const },
         width: 8 as const,
         opacity: 0.5,
         pressureEnabled: false,

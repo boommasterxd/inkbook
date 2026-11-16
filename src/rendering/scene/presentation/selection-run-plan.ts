@@ -73,6 +73,7 @@ export class SelectionRunPlanning {
     private readonly mounted: ReadonlyMap<string, MountedSceneElement>,
     private readonly surfaceCost: (entry: MountedSceneElement) => number = (entry) =>
       entry.group === null ? entry.paths.length : 1,
+    private readonly acceptsMember: (entry: MountedSceneElement) => boolean = canonicalRunMember,
   ) {
     this.#cursor = selection.size > PREVIEW_SNAPSHOT_PATH_LIMIT ? store.beginOrder?.() : undefined;
     this.#steps = this.plan();
@@ -140,7 +141,7 @@ export class SelectionRunPlanning {
         record === undefined ||
         entry === undefined ||
         entry.geometryVersion !== record.geometryVersion ||
-        !canonicalRunMember(entry)
+        !this.acceptsMember(entry)
       ) {
         this.#invalid = true;
         yield;

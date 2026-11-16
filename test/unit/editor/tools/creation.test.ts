@@ -1,3 +1,4 @@
+import { readElementStyle } from "../../../fixtures/domain/element-style";
 import { describe, expect, it } from "vitest";
 
 import { validateInkElementV1 } from "../../../../src/domain/schema/public";
@@ -103,7 +104,7 @@ describe("shape tool element creation", () => {
     });
 
     expect(shape).toMatchObject({ kind: tool, x: 40, y: 20, width: 60, height: 60 });
-    expect(shape.style).toHaveProperty("fillColor", null);
+    expect(readElementStyle(shape)).toHaveProperty("fillColor", null);
     expect(validateInkElementV1(shape).ok).toBe(true);
   });
 

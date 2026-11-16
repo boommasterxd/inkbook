@@ -20,7 +20,7 @@ function arrangeElement(index: number): BoxShapeElementV1 {
     style: {
       fillColor: null,
       fillOpacity: 0,
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba", value: "#000000FF" },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 2,
@@ -68,7 +68,7 @@ beforeAll(() => {
 
 describe("arrange locality work bounds", () => {
   it.each(actions)("refreshes only changed authoritative rank slots for %s", (action) => {
-    store.reorderBands({ content: originalOrder, highlight: [] });
+    store.reorderBands({ image: [], content: originalOrder, highlight: [] });
     store.resetInstrumentation();
     const selectedIndex =
       action === "bring-to-front" ? ELEMENT_COUNT - 2 : action === "send-to-back" ? 1 : 100;
@@ -108,6 +108,7 @@ describe("arrange locality work bounds", () => {
       try {
         const source = {
           bands: {
+            image: [],
             content: observe(content, () => {
               contentReads += 1;
             }),
@@ -135,7 +136,11 @@ describe("arrange locality work bounds", () => {
         expect(highlightReads).toBe(0);
         expect(rankReads).toHaveBeenCalledTimes(1);
         expect(prepared.order.ranks.size).toBe(2);
-        expect(prepared.order.dirtyBands).toEqual({ content: true, highlight: false });
+        expect(prepared.order.dirtyBands).toEqual({
+          image: false,
+          content: true,
+          highlight: false,
+        });
         expect(prepared.order.bands.highlight).toBe(source.bands.highlight);
         expect(content).toEqual(originalOrder.slice(0, ELEMENT_COUNT / 2));
       } finally {
@@ -187,7 +192,7 @@ describe("arrange command work bounds", () => {
 
   it("bounds all four operations for an alternating 5,000-element selection", () => {
     for (const action of actions) {
-      store.reorderBands({ content: originalOrder, highlight: [] });
+      store.reorderBands({ image: [], content: originalOrder, highlight: [] });
       store.resetInstrumentation();
       const delta = store.arrange(selected, action);
       expect(delta).not.toBeNull();
@@ -199,4 +204,49 @@ describe("arrange command work bounds", () => {
       });
     }
   });
+});
+
+it("arranges image ranks without visiting highlight or content orders at capacity", async () => {
+  const image = Array.from({ length: ELEMENT_COUNT }, (_, index) => `image-${index}`);
+  let imageReads = 0;
+  const observed = new Proxy(image, {
+    get(target, key, receiver) {
+      if (typeof key === "string" && /^\d+$/u.test(key)) imageReads += 1;
+      return Reflect.get(target, key, receiver) as unknown;
+    },
+  });
+  const untouchable = new Proxy(originalOrder, {
+    get(target, key, receiver) {
+      if (typeof key === "string" && /^\d+$/u.test(key))
+        throw new Error("Image arrangement must not read another paint band's IDs.");
+      return Reflect.get(target, key, receiver) as unknown;
+    },
+  });
+  const ranks = new Map<string, ElementRank>(
+    image.map((id, rank) => [id, { band: "image", rank }]),
+  );
+  const source = {
+    bands: { image: observed, highlight: untouchable, content: untouchable },
+    ranks,
+  };
+  const rankReads = vi.spyOn(ranks, "get");
+  try {
+    const prepared = await prepareArrangementMutation(
+      source,
+      "bring-forward",
+      new Set([image[100]!]),
+      { shouldYield: () => false, yieldControl: () => Promise.resolve() },
+    );
+    if (prepared === null || prepared === "cancelled")
+      throw new Error("Expected image arrangement.");
+    expect(imageReads).toBe(ELEMENT_COUNT);
+    expect(rankReads).toHaveBeenCalledTimes(1);
+    expect(prepared.order.ranks.size).toBe(2);
+    expect(prepared.order.dirtyBands).toEqual({ image: true, highlight: false, content: false });
+    expect(prepared.order.bands.highlight).toBe(untouchable);
+    expect(prepared.order.bands.content).toBe(untouchable);
+    expect(prepared.order.bands.image[101]).toBe(image[100]);
+  } finally {
+    rankReads.mockRestore();
+  }
 });

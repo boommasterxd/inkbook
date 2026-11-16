@@ -14,7 +14,7 @@ export const INTERACTION_ELEMENT_COUNT = 10_000;
 export const LIVE_STROKE_FRAME_COUNT = 450;
 export const LIVE_STROKE_SAMPLES_PER_FRAME = 8;
 export const LIVE_PRESSURE_STYLE: StrokeStyleV1 = {
-  color: { type: "theme-text" },
+  color: { type: "rgba" as const, value: "#000000FF" as const },
   opacity: 1,
   pressureEnabled: true,
   smoothing: 0.5,

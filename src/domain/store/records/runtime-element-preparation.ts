@@ -5,6 +5,7 @@ import { takeImmutableElementOwnershipSteps } from "./immutability";
 import type { MutationPreparationScheduler } from "../mutations/mutation-preparation-scheduler";
 import type { ElementRecord } from "../types";
 import { preparedInsertionBounds } from "../mutations/prepared-insertion-element";
+import { isElementLockReplacement } from "./element-lock";
 
 /** Validate the same privately staged values that record preparation will adopt. */
 export function prepareRuntimeElement(
@@ -13,6 +14,7 @@ export function prepareRuntimeElement(
   retained: ElementRecord | undefined,
   scheduler: MutationPreparationScheduler,
 ): InkElementV1 | "cancelled" | Promise<InkElementV1 | "cancelled"> {
+  if (current !== undefined && isElementLockReplacement(current.element, element)) return element;
   if (current === undefined && preparedInsertionBounds(element) !== undefined) return element;
   const owned = retained ?? current;
   const points = owned?.element.kind === "stroke" ? owned.element.points : undefined;

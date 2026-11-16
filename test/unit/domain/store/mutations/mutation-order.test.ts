@@ -19,6 +19,7 @@ import { connectedLine, highlighter, IDS, rectangle } from "../fixtures";
 
 const rectangles = () => [rectangle(), rectangle(IDS.other), rectangle(IDS.line)];
 const bands = (store: ElementStore) => ({
+  image: [],
   content: store.materializeBandOrder("content"),
   highlight: store.materializeBandOrder("highlight"),
 });
@@ -73,7 +74,7 @@ describe("structural membership order deltas", () => {
     const store = new ElementStore([...elements, highlighter()]);
     const ids = scope === "all" ? elements.map(({ id }) => id) : [elements[2]!.id];
     const delta = store.remove(ids)!;
-    expect(delta.dirtyBands).toEqual({ content: true, highlight: false });
+    expect(delta.dirtyBands).toEqual({ image: false, content: true, highlight: false });
     expect(delta.changes.map(({ id }) => id)).toEqual(ids);
     expect(store.materializeBandOrder("highlight")).toEqual([IDS.highlight]);
   });
@@ -83,7 +84,7 @@ describe("structural membership order deltas", () => {
     const store = new ElementStore(elements);
     const first = elements[0]!.id;
     const removed = await apply(store, {
-      bands: { content: elements.slice(1).map(({ id }) => id), highlight: [] },
+      bands: { image: [], content: elements.slice(1).map(({ id }) => id), highlight: [] },
       removeIds: [first],
     });
     expect(removed.delta.changes.map(({ id }) => id)).toEqual([first]);
@@ -99,7 +100,7 @@ describe("structural membership order deltas", () => {
     const elements = rectangles();
     const store = new ElementStore(elements);
     const result = await apply(store, {
-      bands: { content: [elements[2]!.id, elements[1]!.id], highlight: [] },
+      bands: { image: [], content: [elements[2]!.id, elements[1]!.id], highlight: [] },
       removeIds: [elements[0]!.id],
     });
     expect(result.delta.changes.find(({ id }) => id === elements[2]!.id)?.domains).toEqual([
@@ -129,7 +130,11 @@ describe("structural membership order deltas", () => {
     const capacity = observeCapacityDirections();
     try {
       const result = await apply(store, {
-        bands: { content: [elements[2]!.id, target.id, inserted.id], highlight: [IDS.highlight] },
+        bands: {
+          image: [],
+          content: [elements[2]!.id, target.id, inserted.id],
+          highlight: [IDS.highlight],
+        },
         removeIds: [elements[0]!.id],
         elements: [replacement, inserted],
       });
@@ -143,7 +148,7 @@ describe("structural membership order deltas", () => {
         { id: inserted.id, domains: ["geometry", "paint", "order", "visibility", "connection"] },
         { id: elements[2]!.id, domains: ["order"] },
       ]);
-      expect(result.delta.dirtyBands).toEqual({ content: true, highlight: false });
+      expect(result.delta.dirtyBands).toEqual({ image: false, content: true, highlight: false });
       await apply(store, result.transition.reverse, result.transition);
       expect(bands(store).content).toEqual(elements.map(({ id }) => id));
       expect(store.get(target.id)?.element).toEqual(target);
@@ -162,7 +167,7 @@ describe("order-only capacity projections", () => {
     const capacity = observeCapacityDirections();
     try {
       const result = await apply(store, {
-        bands: { content: elements.map(({ id }) => id).reverse(), highlight: [] },
+        bands: { image: [], content: elements.map(({ id }) => id).reverse(), highlight: [] },
       });
       expect(capacity.directions).toEqual([{ before: [], after: [] }]);
       expect(result.delta.changes.map(({ domains }) => domains)).toEqual([["order"], ["order"]]);
@@ -241,7 +246,11 @@ describe("replay order cancellation and misuse", () => {
     const elements = rectangles();
     const store = new ElementStore(elements);
     const removed = store.removeWithHistory([elements[0]!.id])!;
-    const sourceBands = { content: [...store.materializeBandOrder("content")], highlight: [] };
+    const sourceBands = {
+      image: [],
+      content: [...store.materializeBandOrder("content")],
+      highlight: [],
+    };
     let cancelled = false;
     expect(
       await restoreOwnedReplayBands(

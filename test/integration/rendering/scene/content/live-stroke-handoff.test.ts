@@ -1,3 +1,4 @@
+import { FakeNode, FakeSceneStore, fakeNode } from "../../../../unit/rendering/scene/fakes";
 import { describe, expect, it, vi } from "vitest";
 import * as pressureJoins from "../../../../../src/domain/geometry/pressure/pressure-joins";
 import * as elementPaths from "../../../../../src/domain/geometry/element-path";
@@ -5,7 +6,6 @@ import { LiveStrokeBuilder } from "../../../../../src/editor/tools/live-stroke";
 import { indexedStroke, tightPressureLoopSamples } from "../../../../fixtures/editor/stroke";
 import { createSceneFixture, createSceneRecord } from "../../../../fixtures/rendering/scene";
 import { buildStrokePathParts } from "../../../../../src/domain/geometry/stroke-path";
-import { FakeNode, FakeSceneStore, fakeNode } from "../../../../unit/rendering/scene/fakes";
 
 const page = {
   activeBufferLines: 3,

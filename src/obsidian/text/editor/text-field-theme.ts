@@ -14,7 +14,7 @@ export function textStyleCss(style: TextStyleV2, fontResourceId?: string): strin
   const decoration = [style.underline ? "underline" : "", style.strikethrough ? "line-through" : ""]
     .filter(Boolean)
     .join(" ");
-  return `${textFontCss(style, fontResourceId)};text-decoration:${decoration || "none"};color:${style.color.type === "rgba" ? style.color.value : "var(--inkbook-text-color, #222222)"};opacity:${style.opacity}`;
+  return `${textFontCss(style, fontResourceId)};text-decoration:${decoration || "none"};color:${style.color.type === "rgba" ? style.color.value : "var(--inkbook-text-color, #222222FF)"};opacity:${style.opacity}`;
 }
 
 export function textFontCss(style: TextStyleV2, fontResourceId?: string): string {

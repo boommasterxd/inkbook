@@ -1,7 +1,12 @@
 import type { ArrangeAction } from "../../../domain/commands/arrange";
 import type { DocumentSaveStatus } from "../../../editor/session/session-port";
 import type { RenderBand } from "../../../domain/commands/render-bands";
-import type { FontResourceV2, InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
+import type {
+  FontResourceV2,
+  ImageResourceV3,
+  InkElementV1,
+  InkSnapshotV1,
+} from "../../../domain/schema/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type {
   AppliedElementMutation,
@@ -22,6 +27,7 @@ import type {
   PasteRepeatState,
 } from "../../../persistence/clipboard/public";
 import type { AutosaveClock } from "../../../persistence/saving/autosave/public";
+import type { PreparedImageResources } from "./session-image-resources";
 import type { DocumentRuntimePort } from "../../../persistence/worker/runtime/public";
 
 export interface DocumentRuntimeFactories {
@@ -62,7 +68,14 @@ export interface EditableDocumentModel {
   isGestureActive?(): boolean;
   readonly mutationAvailability: DocumentMutationAvailability;
   readonly fontResources?: readonly FontResourceV2[];
-  readonly formatVersion?: 1 | 2;
+  readonly imageResources?: readonly ImageResourceV3[];
+  imageResource?(id: string): ImageResourceV3 | undefined;
+  addImageResources?(resources: readonly ImageResourceV3[]): Promise<void>;
+  prepareImageResources?(
+    resources: readonly ImageResourceV3[],
+    cancellation: { isCancelled(): boolean },
+  ): Promise<PreparedImageResources | null>;
+  readonly formatVersion?: InkSnapshotV1["version"];
   ensureFontResources?(resources: readonly FontResourceV2[]): void | Promise<void>;
   readonly page: InkSnapshotV1["page"];
   readonly revision: number;
@@ -77,22 +90,26 @@ export interface EditableDocumentModel {
       isCancelled(): boolean;
       readonly replay?: AppliedElementMutation;
       readonly replaySource?: "retained";
+      readonly protectLocked?: boolean;
     },
   ): Promise<PreparedElementMutationResult>;
   prepareElementRemoval(
     ids: ReadonlySet<string> | readonly string[],
-    cancellation: { isCancelled(): boolean },
+    cancellation: { isCancelled(): boolean; readonly protectLocked?: boolean },
   ): Promise<PreparedElementMutationResult>;
   prepareElementArrangement(
     action: ArrangeAction,
     selection: ReadonlySet<string>,
-    cancellation: { isCancelled(): boolean },
+    cancellation: { isCancelled(): boolean; readonly protectLocked?: boolean },
   ): Promise<PreparedElementMutationResult>;
   prepareElementAppend(
     elements: readonly InkElementV1[],
-    cancellation: { isCancelled(): boolean },
+    cancellation: { isCancelled(): boolean; readonly protectLocked?: boolean },
   ): Promise<PreparedElementMutationResult>;
-  commitPreparedElementMutation(token: PreparedElementMutation): AppliedElementMutation | null;
+  commitPreparedElementMutation(
+    token: PreparedElementMutation,
+    resources?: PreparedImageResources,
+  ): AppliedElementMutation | null;
   encodeClipboard(selectedIds: ReadonlySet<string>): Promise<ClipboardWritePayload | null>;
   planClipboardPaste(
     candidates: ClipboardCandidates,
@@ -107,7 +124,7 @@ export interface EditableDocumentModel {
   ): void;
   prepareElementReplacement(
     replacements: readonly InkElementV1[],
-    cancellation: { isCancelled(): boolean },
+    cancellation: { isCancelled(): boolean; readonly protectLocked?: boolean },
   ): Promise<PreparedElementReplacementResult>;
   commitPreparedElementReplacement(
     token: PreparedElementReplacement,

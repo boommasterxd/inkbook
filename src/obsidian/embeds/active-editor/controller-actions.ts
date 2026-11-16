@@ -14,12 +14,22 @@ import { ActiveEditorClipboardController } from "./controller-clipboard";
 import type { SynchronousClipboardData } from "./clipboard-reader";
 import { isClipboardAction } from "./controller-helpers";
 import { isTextOnlySelection } from "./clipboard-text-copy";
-import { arrangeSelectionAvailability, canArrangeSelection } from "./controller-elements";
+import {
+  arrangeSelectionAvailability,
+  canArrangeSelection,
+  editableSelection,
+} from "./controller-elements";
 import { ActiveDocumentHistory } from "./document-history";
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
+import { ActiveImageSession, type ActiveImageSessionOptions } from "./image-session";
+import { ElementLockSession } from "./element-lock-session";
 
-export interface ActiveEditorActionsOptions {
+export interface ActiveEditorActionsOptions extends Pick<
+  ActiveImageSessionOptions,
+  "onImportImages" | "onCropImage"
+> {
+  readonly finishText?: () => Promise<boolean>;
   readonly copyTextFieldsAsText?: boolean;
   readonly onPasteText?: import("./controller-clipboard").ActiveEditorClipboardOptions["onPasteText"];
   readonly confirmEraseAll?: ((signal: AbortSignal) => Promise<boolean>) | undefined;
@@ -36,7 +46,7 @@ export interface ActiveEditorActionsOptions {
   readonly onStateChanged: () => void;
   readonly ownerWindow: Window;
   readonly workScheduler: WorkScheduler;
-  readonly renderer: {
+  readonly renderer: NonNullable<ActiveImageSessionOptions["renderer"]> & {
     setElementFade(ids: readonly string[], durationMs: number): void;
     clearElementFade(ids: readonly string[]): void;
   };
@@ -47,6 +57,8 @@ export interface ActiveEditorActionsOptions {
 }
 
 export class ActiveEditorActions {
+  readonly #locks: ElementLockSession;
+  readonly #images: ActiveImageSession;
   readonly #renderer: ActiveEditorActionsOptions["renderer"];
   readonly #clipboard: ActiveEditorClipboardController;
   readonly #confirmEraseAll: ActiveEditorActionsOptions["confirmEraseAll"];
@@ -73,6 +85,24 @@ export class ActiveEditorActions {
   #copyTextFieldsAsText: boolean;
 
   public constructor(options: ActiveEditorActionsOptions) {
+    this.#locks = new ElementLockSession({
+      ...options,
+      onFailed: () => options.onFeedback?.("history-change-failed"),
+    });
+    this.#images = new ActiveImageSession({
+      ...options,
+      selection: options.currentSelection,
+      select: options.setSelection,
+      finishText: options.finishText ?? (() => Promise.resolve(true)),
+      onCommitted: (preserveTool) => {
+        if (preserveTool !== true) options.onPasteCommitted();
+        options.onStateChanged();
+      },
+      onFailed: (reason) =>
+        options.onFeedback?.(
+          reason === "capacity" ? "image-capacity-exceeded" : "image-change-failed",
+        ),
+    });
     this.#copyTextFieldsAsText = options.copyTextFieldsAsText ?? false;
     this.#renderer = options.renderer;
     this.#confirmEraseAll = options.confirmEraseAll;
@@ -125,6 +155,37 @@ export class ActiveEditorActions {
     return this.#clipboard.canCopyOrCut && this.#clipboard.canPaste;
   }
 
+  public get lockState(): "none" | "lock" | "unlock" {
+    const state = this.#locks.selectionState;
+    return state.unlocked > 0 ? "lock" : state.locked > 0 ? "unlock" : "none";
+  }
+
+  public get hasEditableSelection(): boolean {
+    return this.#locks.selectionState.unlocked > 0;
+  }
+
+  public get hasLockedElements(): boolean {
+    return this.#model.store.lockedCount > 0;
+  }
+
+  public get canImportImages(): boolean {
+    return this.#images.canImport;
+  }
+  public get canCropImage(): boolean {
+    return this.#images.canCrop;
+  }
+  public get selectedImageId(): string | undefined {
+    return this.#images.selectedImageId;
+  }
+  public importImages(point?: { readonly x: number; readonly y: number }): void {
+    if (this.#locks.pending) return;
+    this.#images.import(point);
+  }
+  public cropImage(): void {
+    if (this.#locks.pending) return;
+    this.#images.crop();
+  }
+
   public get canRequestPaste(): boolean {
     return (
       this.#isEnabled() &&
@@ -161,6 +222,8 @@ export class ActiveEditorActions {
   }
 
   public dispose(): void {
+    this.#locks.dispose();
+    this.#images.dispose();
     this.cancelPendingConfirmation();
     this.#clearConfirmationTimer();
     this.#clipboard.dispose();
@@ -168,6 +231,7 @@ export class ActiveEditorActions {
   }
 
   public cancelPendingConfirmation(): void {
+    this.#images.cancel();
     this.#eraseConfirmation?.abort();
     this.#eraseConfirmation = undefined;
   }
@@ -190,6 +254,9 @@ export class ActiveEditorActions {
       throw new Error(`Inkbook action is unavailable: ${action}`);
     }
     if (action === "delete") void this.#deleteSelection();
+    else if (action === "lock-selection") this.#locks.setLocked(true);
+    else if (action === "unlock-selection") this.#locks.setLocked(false);
+    else if (action === "select-locked") this.#locks.selectLocked();
     else if (isArrangeAction(action)) this.#arrange(action);
     else if (action === "erase-all") void this.#eraseAll();
     else if (action === "copy-embed") this.#onCopyEmbed();
@@ -197,16 +264,20 @@ export class ActiveEditorActions {
   }
 
   public isAvailable(action: ContextMenuAction): boolean {
-    if (!this.#isEnabled() || this.#documentHistory.pending) return false;
+    if (!this.#isEnabled() || this.#documentHistory.pending || this.#locks.pending) return false;
+    if (action === "lock-selection") return this.lockState === "lock";
+    if (action === "unlock-selection") return this.#locks.selectionState.locked > 0;
+    if (action === "select-locked") return this.hasLockedElements;
     if (action === "copy-text" || action === "copy-element") {
       return this.#clipboard.canCopyOrCut && this.canCopyText;
     }
     if (action === "copy" || action === "cut" || action === "delete") {
       return (
-        this.#currentSelection().size > 0 && (action === "delete" || this.#clipboard.canCopyOrCut)
+        (action === "copy" ? this.#currentSelection().size > 0 : this.hasEditableSelection) &&
+        (action === "delete" || this.#clipboard.canCopyOrCut)
       );
     }
-    if (action === "erase-all") return this.#model.store.size > 0;
+    if (action === "erase-all") return this.#model.store.size > this.#model.store.lockedCount;
     if (action === "paste") return this.canPaste;
     if (isArrangeAction(action)) return this.canArrange(action);
     return action === "copy-embed" || action === "delete-embed";
@@ -222,7 +293,7 @@ export class ActiveEditorActions {
   }
 
   public pasteFromClipboardData(data: SynchronousClipboardData | null): boolean {
-    if (!this.#isEnabled() || this.#documentHistory.pending) {
+    if (!this.#isEnabled() || this.#documentHistory.pending || this.#locks.pending) {
       this.#onFeedback?.("clipboard-operation-busy");
       return true;
     }
@@ -238,11 +309,12 @@ export class ActiveEditorActions {
     action: "copy" | "copy-text" | "copy-element" | "cut" | "paste",
     invocation: PasteInvocation | undefined,
   ): void {
-    if (!this.#isEnabled() || this.#documentHistory.pending) {
+    if (!this.#isEnabled() || this.#documentHistory.pending || this.#locks.pending) {
       this.#onFeedback?.("clipboard-operation-busy");
       return;
     }
     const selection = this.#currentSelection();
+    if (action === "cut" && !this.hasEditableSelection) return;
     const textOnly =
       (action === "copy-text" || (action === "copy" && this.#copyTextFieldsAsText)) &&
       isTextOnlySelection(this.#model.store, selection);
@@ -259,7 +331,7 @@ export class ActiveEditorActions {
     void this.#documentHistory
       .arrange(
         action,
-        selection,
+        this.#editableSelection(),
         this.#workScheduler,
         () => this.#isAttached() && this.#currentSelection() === selection,
       )
@@ -302,7 +374,7 @@ export class ActiveEditorActions {
           this.#renderer.setElementFade(ids, TRANSITION_DURATIONS.eraserPendingRemoval);
         },
       );
-      if (outcome === "applied") this.#setSelection(new Set());
+      if (outcome === "applied") this.#setSelection(this.#remainingSelection(selection));
       else if (outcome === "failed" || outcome === "stale") {
         this.#onFeedback?.("history-change-failed");
       }
@@ -340,7 +412,8 @@ export class ActiveEditorActions {
       this.#workScheduler,
       () => !signal.aborted && this.#isAttached(),
     );
-    if (outcome === "applied") this.#setSelection(new Set());
+    if (outcome === "applied")
+      this.#setSelection(this.#remainingSelection(this.#currentSelection()));
     else if (outcome === "failed" || outcome === "stale") {
       this.#onFeedback?.("history-change-failed");
     }
@@ -348,6 +421,17 @@ export class ActiveEditorActions {
 
   #toolbarPaste(): PasteInvocation {
     return { kind: "toolbar", visibleCanvasCenter: this.#visibleCenter() };
+  }
+
+  #editableSelection(): ReadonlySet<string> {
+    return editableSelection(this.#sceneStore, this.#currentSelection());
+  }
+
+  #remainingSelection(selection: ReadonlySet<string>): ReadonlySet<string> {
+    if (!this.hasLockedElements) return new Set();
+    return new Set(
+      [...selection].filter((id) => this.#model.store.get(id)?.element.locked === true),
+    );
   }
 }
 

@@ -24,9 +24,7 @@ function capacityFixture() {
   const fixture = createMarkdownExportFixture(
     "![[capacity.svg|One]]\n\n![[capacity.svg|Two]]",
     '<div><p><span><img alt="One" src="app://vault/capacity.svg"></span></p></div><div><p><span><img alt="Two" src="app://vault/capacity.svg"></span></p></div>',
-    exportDescriptor(
-      '<path class="inkbook-theme-stroke" d="M10 5000L30 5020" stroke="#000000FF"/>'.repeat(10_000),
-    ),
+    exportDescriptor('<path d="M10 5000L30 5020" stroke="#000000FF"/>'.repeat(10_000)),
   );
   document.body.append(fixture.root);
   return fixture;

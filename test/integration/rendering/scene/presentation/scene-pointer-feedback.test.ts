@@ -1,3 +1,13 @@
+import {
+  FakeDocument,
+  FakeNode,
+  FakeSceneStore,
+  FakeScheduler,
+  asElement,
+  fakeNode,
+  fakeRectangleRecord,
+  sceneBandNode,
+} from "../../../../unit/rendering/scene/fakes";
 import { describe, expect, it } from "vitest";
 
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
@@ -9,15 +19,6 @@ import type {
 } from "../../../../../src/domain/schema/public";
 import { SvgSceneRenderer } from "../../../../../src/rendering/scene";
 import type { SceneElementRecord } from "../../../../../src/rendering/scene/types";
-import {
-  FakeDocument,
-  FakeNode,
-  FakeSceneStore,
-  FakeScheduler,
-  asElement,
-  fakeNode,
-  fakeRectangleRecord,
-} from "../../../../unit/rendering/scene/fakes";
 
 const PAGE: PageV1 = {
   activeBufferLines: 3,
@@ -161,7 +162,7 @@ describe("canonical pressure preview staging", () => {
 });
 
 function contentGroup(renderer: SvgSceneRenderer): FakeNode {
-  return fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  return sceneBandNode(fakeNode(renderer.svg), "content");
 }
 
 function setup(records: readonly SceneElementRecord[] = [fakeRectangleRecord("a", 0, 10)]) {
@@ -185,7 +186,7 @@ function setup(records: readonly SceneElementRecord[] = [fakeRectangleRecord("a"
 
 function rectanglePreviewFixture() {
   const fixture = setup();
-  const contentPath = fakeNode(fixture.renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
+  const contentPath = sceneBandNode(fakeNode(fixture.renderer.svg), "content").nodes[0]!;
   const element = fixture.store.records.get("a")!.element as BoxShapeElementV1;
   return {
     ...fixture,

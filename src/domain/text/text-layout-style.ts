@@ -49,7 +49,7 @@ export function sameTextStyle(left: TextStyleV2, right: TextStyleV2): boolean {
       left.underline === right.underline &&
       left.strikethrough === right.strikethrough &&
       left.color.type === right.color.type &&
-      (left.color.type === "theme-text" ||
+      (left.color.type !== "rgba" ||
         (right.color.type === "rgba" && left.color.value === right.color.value)))
   );
 }

@@ -11,8 +11,9 @@ export function draining(
   factor = 2,
   dashed = false,
   frameBudgetMs = 8,
+  options: Parameters<typeof fixture>[5] = {},
 ) {
-  const f = fixture(600, dashed, true, additional, frameBudgetMs);
+  const f = fixture(600, dashed, true, additional, frameBudgetMs, options);
   f.factor.value = factor;
   const feedback = {
     ...f.feedback,

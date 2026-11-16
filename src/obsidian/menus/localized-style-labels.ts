@@ -1,5 +1,5 @@
 import { editor } from "../../domain/localization/locales/en/editor";
-import { BUILT_IN_COLORS } from "../../domain/settings/defaults";
+import { BUILT_IN_COLOR_OPTIONS } from "../../domain/settings/color-palette";
 import type { MessageKey } from "../../domain/localization";
 import type { StyleControl, StyleChoiceOption } from "./editor-menu-types";
 import { menuTranslator } from "./localized-menu-text";
@@ -22,24 +22,12 @@ export function choiceLabel(
   const key =
     id === "selection-area" ? `editor.shape.${option.value}` : `editor.option.${option.value}`;
   if (id.endsWith("color") && option.value.startsWith("#")) {
-    const color = BUILT_IN_COLORS.findIndex(
-      (color) => color.type === "rgba" && color.value === option.value,
+    const color = BUILT_IN_COLOR_OPTIONS.find(
+      ({ color }) => color.type === "rgba" && color.value === option.value,
     );
-    const names = [
-      "theme-text",
-      "red",
-      "orange",
-      "yellow",
-      "green",
-      "cyan",
-      "blue",
-      "violet",
-      "pink",
-      "gray",
-    ];
-    return color < 0
+    return color === undefined
       ? option.label
-      : menuTranslator(options)(`editor.option.${names[color]}` as MessageKey);
+      : menuTranslator(options)(`editor.option.${color.key}`);
   }
   return menuTranslator(options)(key as MessageKey);
 }

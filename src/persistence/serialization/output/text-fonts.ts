@@ -95,22 +95,6 @@ export function* fontStylesheetMarkupFragments(
   yield "</style>";
 }
 
-/** Recheck retained text references only when the registry changes. */
-export function* deltaTextElements(
-  current: ReadonlyMap<string, InkElementV1>,
-  changed: ReadonlyMap<string, InkElementV1>,
-  removed: ReadonlySet<string>,
-  registryChanged: boolean,
-): Iterable<InkElementV1> {
-  if (registryChanged) {
-    for (const element of current.values()) {
-      if (element.kind === "text" && !changed.has(element.id) && !removed.has(element.id))
-        yield element;
-    }
-  }
-  yield* changed.values();
-}
-
 export function retainsFontFaces(
   current: readonly FontResourceV2[],
   next: readonly FontResourceV2[],

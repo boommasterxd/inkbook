@@ -1,5 +1,7 @@
 import { validatedSampleExtrema } from "./stroke-sample-extrema";
 import { assertFontResourcesSteps } from "./font-resource-validation";
+import { assertImageResourcesSteps } from "./image-validation";
+import { validateSnapshotElementsSteps } from "./snapshot-element-validation";
 import type { ParsedJsonProof } from "./parsed-json-proof";
 import { strokeLocalGeometry } from "../geometry/stroke-position";
 import { calculateElementBoundsSteps } from "../geometry/bounds";
@@ -12,12 +14,12 @@ import {
   PAGE_MARGIN,
   type SchemaLimits,
 } from "./constants";
-import { assertInkElementSteps } from "./element-validation";
 import type {
   BackgroundV1,
   EndpointConnectionV1,
   InkElementV1,
   InkSnapshotV1,
+  ImageResourceV3,
   PageV1,
   PointV1,
 } from "./types";
@@ -157,15 +159,20 @@ function* validateSnapshotSteps(
         "page",
         "elements",
         ...(value.fontResources === undefined ? [] : ["fontResources"]),
+        ...(value.imageResources === undefined ? [] : ["imageResources"]),
       ],
       "$",
     );
     assertLiteral(value.format, INKBOOK_FORMAT, "$.format");
-    assertOneOf(value.version, [1, 2] as const, "$.version");
+    assertOneOf(value.version, [1, 2, 3, 4, 5] as const, "$.version");
     if (value.fontResources !== undefined) {
-      if (value.version !== 2)
+      if (value.version === 1)
         fail("invalid-literal", "$.version", "Font resources require snapshot version 2.");
       yield* assertFontResourcesSteps(value.fontResources, "$.fontResources");
+    }
+    if (value.imageResources !== undefined) {
+      if (value.version < 3) fail("invalid-literal", "$.version", "Images require version 3.");
+      yield* assertImageResourcesSteps(value.imageResources, "$.imageResources");
     }
     assertSafeInteger(value.revision, 0, "$.revision");
     assertPage(value.page, "$.page");
@@ -177,7 +184,12 @@ function* validateSnapshotSteps(
       statistics,
       ...(parsedDepth === undefined || parsedProof === undefined ? {} : { parsedProof }),
     };
-    yield* validateElements(value.elements, context, value.version === 2);
+    yield* validateSnapshotElementsSteps(
+      value.elements,
+      context,
+      value.version,
+      (value.imageResources ?? []) as ImageResourceV3[],
+    );
     const derivations = yield* validateDocumentRelations(
       value.elements as InkElementV1[],
       value.page,
@@ -230,27 +242,6 @@ function assertBackground(value: unknown, path: string): asserts value is Backgr
     return;
   }
   fail("invalid-literal", `${path}.type`, "Unsupported background type.");
-}
-
-function* validateElements(
-  elements: unknown[],
-  context: ValidationContext,
-  allowText: boolean,
-): Generator<void, void> {
-  let contentStarted = false;
-  for (let index = 0; index < elements.length; index += 1) {
-    const path = `$.elements[${index}]`;
-    const element = elements[index];
-    yield* assertInkElementSteps(element, path, context);
-    if (!allowText && (element as InkElementV1).kind === "text")
-      fail("invalid-literal", "$.version", "Text elements require snapshot version 2.");
-    const highlight = isHighlight(element as InkElementV1);
-    if (highlight && contentStarted) {
-      fail("invalid-render-band-order", path, "Highlight elements must precede content elements.");
-    }
-    contentStarted ||= !highlight;
-    yield;
-  }
 }
 
 function* validateDocumentRelations(
@@ -480,11 +471,4 @@ function completeValidation(
   let step = steps.next();
   while (!step.done) step = steps.next();
   return step.value;
-}
-
-function isHighlight(element: InkElementV1): boolean {
-  return (
-    element.kind === "straight-highlighter" ||
-    (element.kind === "stroke" && element.tool === "highlighter")
-  );
 }

@@ -62,7 +62,7 @@ async function expectRuntimeMigrationCancellation(
 
 describe("document runtime migration", () => {
   it("requires a bounded source version on worker unlock results", () => {
-    for (const sourceVersion of [0, 2]) {
+    for (const sourceVersion of [0, 1, 2, 3, 4, 5]) {
       expect(
         isDocumentRuntimeWireResult({
           lockedHeight: 348.6,
@@ -73,7 +73,7 @@ describe("document runtime migration", () => {
       ).toBe(true);
     }
     expect(isDocumentRuntimeWireResult({ sourceVersion: 0, type: "unlock-success" })).toBe(false);
-    for (const sourceVersion of [3, Number.NaN]) {
+    for (const sourceVersion of [-1, 6, Number.NaN]) {
       expect(
         isDocumentRuntimeWireResult({
           lockedHeight: 348.6,

@@ -53,6 +53,7 @@ export async function prepareStyleReplacement(
     for (const id of request.selection) {
       const record = model.store.get(id);
       if (!record) throw new RangeError("Style selection is stale.");
+      if (record.element.locked === true) continue;
       previous.push(record.element as InkElementV1);
       geometry.push({ element: record.element as InkElementV1, bounds: record.bounds });
       yield record.element as InkElementV1;

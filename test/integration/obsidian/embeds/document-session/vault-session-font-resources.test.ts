@@ -11,32 +11,47 @@ import {
   rectangle,
 } from "./vault-session-fixtures";
 
-it("adds fonts without materializing elements and preserves them through coalesced save and copy", async () => {
-  const font = await loadBuiltinFont("inter", 400, "normal", new TestWorkScheduler());
-  const harness = persistenceHarness();
-  try {
-    expect((await harness.session.unlock(operation())).status).toBe("active");
-    const model = harness.session.documentModel!;
-    const materialize = vi.spyOn(model.store, "materializeSnapshot");
-    await model.ensureFontResources!([font]);
-    expect(materialize).not.toHaveBeenCalled();
-    expect(model.revision).toBe(8);
-    expect(model.formatVersion).toBe(2);
-    expect(model.fontResources).toEqual([font]);
-    await model.ensureFontResources!([font]);
-    expect(model.revision).toBe(8);
-    model.commitElement(textElement());
-    expect((await harness.session.lockLatest(operation())).status).toBe("confirmed");
-    const saved = await parseInkbookDocumentForTest(harness.content());
-    expect(saved.ok).toBe(true);
-    if (!saved.ok) throw new Error(saved.error.message);
-    expect(saved.value.snapshot).toMatchObject({ version: 2, revision: 9, fontResources: [font] });
-    const copied = await model.encodeClipboard(new Set([textElement().id]));
-    expect(JSON.parse(copied!.customText)).toMatchObject({ fontResources: [font], version: 2 });
-  } finally {
-    harness.session.dispose();
-  }
-});
+it.each([false, true])(
+  "adds fonts without downgrading an existing locked document (%s)",
+  async (locked) => {
+    const font = await loadBuiltinFont("inter", 400, "normal", new TestWorkScheduler());
+    const harness = persistenceHarness(
+      locked
+        ? {
+            ...emptySnapshot(),
+            version: 4,
+            elements: [{ ...rectangle(), locked: true }],
+          }
+        : undefined,
+    );
+    try {
+      expect((await harness.session.unlock(operation())).status).toBe("active");
+      const model = harness.session.documentModel!;
+      const materialize = vi.spyOn(model.store, "materializeSnapshot");
+      await model.ensureFontResources!([font]);
+      expect(materialize).not.toHaveBeenCalled();
+      expect(model.revision).toBe(8);
+      expect(model.formatVersion).toBe(locked ? 4 : 2);
+      expect(model.fontResources).toEqual([font]);
+      await model.ensureFontResources!([font]);
+      expect(model.revision).toBe(8);
+      model.commitElement(textElement());
+      expect((await harness.session.lockLatest(operation())).status).toBe("confirmed");
+      const saved = await parseInkbookDocumentForTest(harness.content());
+      expect(saved.ok).toBe(true);
+      if (!saved.ok) throw new Error(saved.error.message);
+      expect(saved.value.snapshot).toMatchObject({
+        version: locked ? 4 : 2,
+        revision: 9,
+        fontResources: [font],
+      });
+      const copied = await model.encodeClipboard(new Set([textElement().id]));
+      expect(JSON.parse(copied!.customText)).toMatchObject({ fontResources: [font], version: 2 });
+    } finally {
+      harness.session.dispose();
+    }
+  },
+);
 
 it("keeps loaded resources across element mutation and rejects conflicting resource identities atomically", async () => {
   const font = await loadBuiltinFont("inter", 400, "normal", new TestWorkScheduler());

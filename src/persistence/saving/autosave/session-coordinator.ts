@@ -4,11 +4,12 @@ import type { ExistingFilePort } from "../save-ports";
 
 import { AutosaveCoordinator } from "./coordinator";
 import type { AutosaveSessionBaseOptions } from "./types";
+import type { RenderBand } from "../../../domain/commands/render-bands";
 
 interface AutosaveSessionOptions extends AutosaveSessionBaseOptions {
   readonly orderByBand: (
-    band: "content" | "highlight",
-  ) => Readonly<Partial<Record<"content" | "highlight", readonly string[]>>>;
+    band: RenderBand,
+  ) => Readonly<Partial<Record<RenderBand, readonly string[]>>>;
   readonly path: string;
   readonly sessionId: string;
   readonly snapshot: () => InkSnapshotV1;

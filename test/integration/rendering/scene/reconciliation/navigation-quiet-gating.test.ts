@@ -5,7 +5,7 @@ import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-edi
 import { ScenePathCache } from "../../../../../src/rendering/scene/content/path-cache";
 import { createSceneFixture, sceneDeltaEntries } from "../../../../fixtures/rendering/scene";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
-import { fakeNode } from "../../../../unit/rendering/scene/fakes";
+import { fakeNode, sceneBandNode } from "../../../../unit/rendering/scene/fakes";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { NAVIGATION_PAGE } from "../../../../fixtures/rendering/pressure-navigation";
 
@@ -126,7 +126,7 @@ it("resumes parked canonical geometry after overlapping leases without requiring
     fixture.scheduler.runAll();
     expect(builds).toHaveBeenCalledOnce();
     expect(fixture.renderer.mountedIds("content")).toEqual([source.id]);
-    const content = fakeNode(fixture.renderer.svg).nodes[1]!.nodes[4]!;
+    const content = sceneBandNode(fakeNode(fixture.renderer.svg), "content");
     expect(content.nodes[0]!.attributes.get("d")).toBe(buildElementPathParts(replacement)[0]!.d);
     expect(fixture.scheduler.pendingCount).toBe(0);
   } finally {

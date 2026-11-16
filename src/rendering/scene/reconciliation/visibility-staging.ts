@@ -1,4 +1,4 @@
-import type { RenderBand } from "../../../domain/commands/render-bands";
+import { RENDER_BANDS, type RenderBand } from "../../../domain/commands/render-bands";
 import type { MountedSceneElement } from "../content/mounted-element";
 import type { MountSlice, MountYieldReason } from "./mount-slice";
 import type {
@@ -29,8 +29,7 @@ export function canRetargetVisibilityDelta(
     progressive &&
     (pending === undefined || (pending.delta !== undefined && pending.delta.order === undefined)) &&
     !cancelled &&
-    options.orderDirty.content.size === 0 &&
-    options.orderDirty.highlight.size === 0 &&
+    RENDER_BANDS.every((band) => options.orderDirty[band].size === 0) &&
     delta !== undefined
   );
 }
@@ -82,7 +81,7 @@ function* entrantIds(visibility: VisibilityResult, entered?: readonly string[]):
     yield* entered;
     return;
   }
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of RENDER_BANDS) {
     const visible = visibility[band];
     for (let index = 0; index < visible.count; index += 1) {
       const id = visible.ids[index];
@@ -117,8 +116,8 @@ export function stageVisibilityBands(
     }
     options.finish();
     if (pending.cursor.band === "content") return undefined;
-    pending.cursor.band = "content";
-    pending.cursor.index = pending.visibility.content.count - 1;
+    pending.cursor.band = RENDER_BANDS[RENDER_BANDS.indexOf(pending.cursor.band) + 1]!;
+    pending.cursor.index = pending.visibility[pending.cursor.band].count - 1;
     pending.cursor.successor = undefined;
   }
 }

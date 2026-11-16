@@ -53,9 +53,9 @@ describe("replacement private staging", () => {
     expect(store.get(replacement.id)).toBe(before);
     expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("committed");
     const adopted = store.get(replacement.id)!.element;
-    expect(adopted.style).toMatchObject({ width: 8, opacity: 0.75 });
     if (adopted.kind !== "stroke" || before.element.kind !== "stroke")
       throw new Error("Expected stroke.");
+    expect(adopted.style).toMatchObject({ width: 8, opacity: 0.75 });
     expect(adopted.points).toBe(before.element.points);
     expect(adopted.points[0]).toBe(100);
   });

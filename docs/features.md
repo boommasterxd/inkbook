@@ -74,6 +74,7 @@ Every completed canvas gesture is stored as a command, for example:
 - modify shape
 - change style
 - change coordinate-system dimensionality or table column count
+- lock or unlock selected elements
 - arrange selection
 - Paste
 - Cut
@@ -91,9 +92,9 @@ Automatic changes to the handwriting height do not create undo steps.
 
 ## Annotation Ordering and Connections
 
-Arrange actions change the stable back-to-front element order inside the fixed highlight or content render band. They never move highlighter elements above content. Bring forward and Send backward cross one adjacent unselected rank; Bring to front and Send to back move to the corresponding band boundary. Multi-selection reordering is stable and commits as one command.
+Arrange actions change the stable back-to-front element order inside the fixed image, highlight, or content render band. They never move highlighter elements above content. Bring forward and Send backward cross one adjacent unselected rank; Bring to front and Send to back move to the corresponding band boundary. Multi-selection reordering is stable and commits as one command.
 
-Line and arrow endpoint connections follow every semantic target anchor that remains valid when a shape moves, scales, rotates, or changes geometry. This includes table anchors affected by a selected table's column-count change. Changing a coordinate system from 3D to 2D removes its third axis, so connections to that removed endpoint detach at their last resolved positions instead of following an anchor that no longer exists. The target change, every retained endpoint update, and every required detachment are one atomic history command. Target deletion, Cut, or erasing likewise detaches surviving external lines and arrows at their last resolved positions within the same command. Exact ordering and connection contracts are defined in [File Format and Geometry](file-format.md).
+Line and arrow endpoint connections follow every semantic target anchor that remains valid when a shape moves, scales, rotates, or changes geometry. This includes table anchors affected by a selected table's column-count change. Changing a coordinate system from 3D to 2D removes its third axis, so connections to that removed endpoint detach at their last resolved positions instead of following an anchor that no longer exists. The target change, every retained endpoint update, and every required detachment are one atomic history command. Target deletion, Cut, or erasing likewise detaches surviving external lines and arrows at their last resolved positions within the same command. A change that would alter a locked dependent is rejected under [Element Locks](editor-tools.md#element-locks). Exact ordering and connection contracts are defined in [File Format and Geometry](file-format.md).
 
 When the unified history is empty, the plugin does not automatically lock the embed. Instead, attached feedback indicates that the embed must be locked to continue undoing in Obsidian. This prevents existing canvas redo history from being lost unexpectedly.
 
@@ -117,15 +118,15 @@ The MIME identifier, versioned payload schema, validation rules, and limits are 
 
 Cut:
 
-- copies first
-- then removes the selected elements only if the same session, clipboard operation, basis revision, exact selection, and selected record versions are still current
+- copies the unlocked selected elements first
+- then removes the unlocked selected elements only if the same session, clipboard operation, basis revision, exact selection, and selected record versions are still current
 - creates one undo step
-- detaches unselected dependent lines or arrows at their current endpoint before removing a selected target
+- detaches unselected unlocked dependent lines or arrows at their current endpoint before removing a selected target; a locked dependent prevents its required detachment
 - keeps the copied payload but removes nothing and creates no history entry if the selection changes, an element is edited, the presentation detaches, or the operation otherwise becomes stale while the worker or system clipboard is pending
 
 Delete:
 
-- removes the selection
+- removes the unlocked elements in the selection
 - creates one undo step
 - is triggered through the toolbar, selection context menu, or `Delete`
 - previews a 150 ms opacity fade using retained scene nodes and bounded animation starts; committing does not wait for the animation
@@ -166,25 +167,29 @@ Moving beyond the long-press threshold, receiving a second touch, starting a pen
 
 When a selection exists, the menu begins with:
 
-1. Copy, or Copy text field for a text-only selection
-2. Copy text for a text-only selection, independently of the ordinary Copy preference
-3. Cut
-4. Paste, when `Clipboard.read()` is supported or a validated in-session payload is available
-5. a separator
-6. Delete
+1. Lock selection or Unlock selection, based on the [element lock rules](editor-tools.md#element-locks)
+2. Crop image or Edit text, when available for the selection
+3. Copy, or Copy text field for a text-only selection
+4. Copy text for a text-only selection, independently of the ordinary Copy preference
+5. Cut
+6. Paste, when `Clipboard.read()` is supported or a validated in-session payload is available
 7. a separator
-8. Bring forward
-9. Send backward
-10. Bring to front
-11. Send to back
+8. Delete
+9. a separator
+10. Bring forward
+11. Send backward
+12. Bring to front
+13. Send to back
 
 The canvas section follows after a separator:
 
-1. Copy embed
-2. Erase all
-3. Delete embed
+1. Select all locked elements, when at least one exists
+2. Image import, when available
+3. Copy embed
+4. Erase all
+5. Delete embed
 
-Without a selection, the selection section is omitted and Paste precedes the canvas section when `Clipboard.read()` is supported or a validated in-session payload is available. This action availability does not inspect system clipboard contents or permission. The four Arrange actions remain flat entries, preserving the existing menu structure. Disabled boundary actions remain visible. Delete removes only the selected annotations with one undoable canvas command. Erase all and Delete embed retain their confirmation behavior. Exact icons, destructive styling, focus behavior, and host API usage are defined in [Embed UI](embed-ui.md#context-menu-presentation) and [Obsidian Integration](obsidian-integration.md#commands-menus-icons-and-styling).
+Without a selection, the selection section is omitted and Paste appears in the canvas section when `Clipboard.read()` is supported or a validated in-session payload is available. This action availability does not inspect system clipboard contents or permission. The four Arrange actions remain flat entries, preserving the existing menu structure. Disabled boundary actions remain visible. Delete removes only unlocked selected annotations with one undoable canvas command. Erase all removes only unlocked elements and, like Delete embed, retains its confirmation behavior. Exact icons, destructive styling, focus behavior, and host API usage are defined in [Embed UI](embed-ui.md#context-menu-presentation) and [Obsidian Integration](obsidian-integration.md#commands-menus-icons-and-styling).
 
 ## Copying the Entire Embed
 
@@ -203,15 +208,15 @@ Duplicate creates a new SVG file and verifies its readback against the validated
 
 The **Import** group in Settings offers **Start import**, with a description that identifies Obsidian Ink, and a default-collapsed **Import history** disclosure. **Start import** opens a local, explicit workflow for migrating supported Obsidian Ink handwriting into editable Inkbook files. Its assistant contains no history list. Inkbook does not scan at startup or contact a network service. Scanning changes no vault files; review the preview before choosing **Import handwriting**.
 
-The workflow explains three steps: **1. Find handwriting** scans only supported handwriting sources referenced by notes; **2. Review the results** presents the convertible files, affected notes, warnings, and skipped items; **3. Switch the embeds** creates Inkbook copies and updates recognized note references. The entry explains this sequence, and the scan, preview, and import views identify their current step as 1, 2, and 3 respectively. A scan never changes files.
+The workflow explains three steps: **1. Find handwriting** scans only supported handwriting sources referenced by notes; **2. Review the results** presents the convertible files, affected notes, warnings, and skipped items; **3. Switch the embeds** creates Inkbook copies and updates recognized note references. The entry keeps its scan action and the fact that scanning changes no files visible. Its initially collapsed **Examples and steps** disclosure contains the detailed sequence and recovery explanation; the scan, preview, and import views identify their current step as 1, 2, and 3 respectively.
 
-Before **Scan vault**, the introduction shows three real before-and-after examples from official Obsidian Ink: a diagram with visibly different curved wedges, print handwriting, and cursive handwriting. Each example names possible differences in pressure, stroke weight, smoothing, fine details, or background spacing. The examples are illustrative captures, not previews of the user's files. They are embedded locally and require no network request or vault read. Only the current pair of images is mounted; compact Previous/Next controls retain focus and announce the selected example. Comparisons are side by side on wide screens and stacked at the shared 480-pixel phone breakpoint. Captured PNGs retain their original pixels and proportions; centered cropping of empty paper margins fills equal 2:1 stages without letterboxing or clipping handwriting. Update the after-captures when material converter changes would make these examples misleading. The examples do not trigger scanning, conversion, or cleanup.
+Before **Scan vault**, the optional disclosure offers three real before-and-after examples from official Obsidian Ink: a diagram with visibly different curved wedges, print handwriting, and cursive handwriting. Its contents and image nodes are created on first expansion and reused on reopening. Each example names possible differences in pressure, stroke weight, smoothing, fine details, or background spacing. The examples are illustrative captures, not previews of the user's files. They are embedded locally and require no network request or vault read. Only the current pair of images is mounted; compact Previous/Next controls retain focus and announce the selected example. Comparisons are side by side on wide screens and stacked at the shared 480-pixel phone breakpoint. Captured PNGs retain their original pixels and proportions; centered cropping of empty paper margins fills equal 2:1 stages without letterboxing or clipping handwriting. Update the after-captures when material converter changes would make these examples misleading. The examples do not trigger scanning, conversion, or cleanup.
 
 The scan recognizes official Ink handwriting references in Markdown and resolves their source files through Obsidian. Supported sources are legacy `.writing` files containing a tldraw snapshot, official handwriting SVGs containing tldraw metadata, and native InkCanvas snapshots at versions 1, 2, and 3. The SVG artwork is not mounted or trusted as the imported drawing: the importer reads the editable source metadata, converts supported strokes and shapes to native Inkbook elements, and validates the result against the existing Inkbook document schema. It does not introduce a new Inkbook file schema. Unsupported or invalid sources and unresolved references are reported and left unchanged.
 
-The preview summarizes convertible handwriting files and affected notes with a plain text summary and a concise note that local copies and recovery backups use additional vault and sync storage. The entry explains that originals are retained; the preview does not repeat that explanation in a separate card. All convertible files start selected. Each file has a checkbox, and **Select all** applies to the complete scan across pages. The control reflects a mixed selection as indeterminate, and the import action is disabled when no files are selected. The affected-note count reflects references to the selected sources. Selection and the scan findings remain separate: changing selection updates the selected-file and affected-note counts without changing or regrouping the findings.
+The preview summarizes convertible handwriting files and affected notes with a plain text summary and a concise note that local copies and recovery backups use additional vault and sync storage. The optional entry details explain that originals are retained; the preview does not repeat that explanation in a separate card. All convertible files start selected. Each file has a checkbox, and **Select all** applies to the complete scan across pages. The control reflects a mixed selection as indeterminate, and the import action is disabled when no files are selected. The affected-note count reflects references to the selected sources. Source-specific warnings and appearance differences follow the current selection, including their affected source and note paths. Prepared source-to-finding contributions and note sets are reused across checkbox changes; sources and reference lists are not read again. Unchanged finding groups retain their prepared representation, and changes to findings preserve the file list, its focus and retained disclosure state without replaying expansion animations.
 
-File rows show the source filename, full source path, and full Inkbook target path; file rows are paged at 25. Findings appear in three separate disclosures: **Appearance differences**, **Warnings**, and **Skipped items**; empty categories are omitted. Each category reports scan findings independently of selection. Identical messages are shown once, with their affected source and note paths grouped as origins where those paths are known, instead of repeating the message for every file. Origin lists use pages of 25 entries, with short lists shown inline, so large scans do not produce a wall of repeated text. Local-processing, backup-storage, and scan-limit information remains visible in the preview. Import applies only the selected sources and the associated note hashes; unchecked sources and their references remain unchanged. Import creates a new sibling named `<stem>.inkbook.svg`; if that path is occupied, it tries `<stem>.inkbook-1.svg`, then increasing numeric suffixes. It preserves the original source and replaces only recognized references for the selected sources in notes. Source files and original note contents receive separate verified backups, and a durable journal records each operation under `inkbook-imports/<run-id>/`. These backups use additional vault storage and may be included in vault-provider sync. This selection workflow does not change the Inkbook file schema.
+File rows show the source filename, full source path, and full Inkbook target path; file rows are paged at 25. Findings appear in three separate disclosures: **Appearance differences**, **Warnings**, and **Skipped items**; empty categories are omitted. Global scan problems, skipped sources and scan-limit findings remain visible regardless of selection, including when all convertible files are unchecked. Identical messages are shown once, with their affected source and note paths grouped as origins where those paths are known, instead of repeating the message for every file. Origin order remains stable after deselection and reselection. Origin lists use pages of 25 entries, with short lists shown inline, so large scans do not produce a wall of repeated text. Local-processing, backup-storage, and scan-limit information remains visible in a nonempty preview. A scan with no convertible sources instead shows **No supported handwriting found**, explains that only referenced handwriting is included, preserves global scan findings and offers **Scan again**. It omits selection counters, selection guidance and import-storage guidance; this differs from explicitly deselecting every source in a nonempty scan. Import applies only the selected sources and the associated note hashes; unchecked sources and their references remain unchanged. Import creates a new sibling named `<stem>.inkbook.svg`; if that path is occupied, it tries `<stem>.inkbook-1.svg`, then increasing numeric suffixes. It preserves the original source and replaces only recognized references for the selected sources in notes. Source files and original note contents receive separate verified backups, and a durable journal records each operation under `inkbook-imports/<run-id>/`. These backups use additional vault storage and may be included in vault-provider sync. This selection workflow does not change the Inkbook file schema.
 
 Before writing each note, import resolves its original references again and requires their destinations to match the selected source paths from the preview. If a newly created or moved file changes a destination, the note remains unchanged and the journal records a conflict; verified Inkbook copies and backups remain available.
 
@@ -306,7 +311,7 @@ The following functions are particularly relevant for the handwriting embed:
 - Erase all
 - Delete embed
 
-Erase all first displays a confirmation and then removes all canvas elements through an undoable command.
+Erase all first displays a confirmation and then removes the unlocked canvas elements through an undoable command. Locked elements remain in the drawing.
 
 Delete embed checks whether the same SVG file is still referenced in other notes.
 

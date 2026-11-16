@@ -5,6 +5,7 @@ import {
   type InkbookDeviceSettingsV2,
   type InkbookSettingsV4,
 } from "../../domain/settings";
+import { BUILT_IN_COLORS } from "../../domain/settings/defaults";
 import { InkbookSettingsStore } from "./storage";
 
 type VaultControlKey =
@@ -45,18 +46,9 @@ export type SettingsControlKey = VaultControlKey | DeviceControlKey;
 
 const COLOR_VALUES = new Map<string, ColorV1 | null>([
   ["none", null],
-  ["theme-text", { type: "theme-text" }],
-  ...[
-    "#EF4444FF",
-    "#F97316FF",
-    "#EAB308FF",
-    "#22C55EFF",
-    "#06B6D4FF",
-    "#3B82F6FF",
-    "#8B5CF6FF",
-    "#EC4899FF",
-    "#6B7280FF",
-  ].map((value) => [value, { type: "rgba", value } as ColorV1] as const),
+  ...BUILT_IN_COLORS.map(
+    (color) => [color.type === "theme-text" ? "theme-text" : color.value, color] as const,
+  ),
 ]);
 
 const NUMERIC_KEY_SUFFIXES = [

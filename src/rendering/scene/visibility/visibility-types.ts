@@ -4,6 +4,7 @@ export interface BandVisibility {
 }
 
 export interface VisibilityResult {
+  readonly image: BandVisibility;
   readonly content: BandVisibility;
   readonly highlight: BandVisibility;
 }

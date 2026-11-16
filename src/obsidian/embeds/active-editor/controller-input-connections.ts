@@ -115,6 +115,11 @@ export function dispatchControllerToolbarAction(
     return;
   if (isClipboardAction(action)) return bindings.actions.execute(action);
   if (!bindings.availability.acceptsInput) return;
+  if (action === "image") {
+    bindings.menus.closeToolbar();
+    bindings.actions.importImages();
+    return;
+  }
   if (isTool(action)) {
     bindings.configureTool(bindings.chromeState.activateTool(action));
     return;

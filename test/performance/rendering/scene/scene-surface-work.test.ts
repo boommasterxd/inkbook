@@ -107,6 +107,14 @@ it("bounds all host-token reads and changed writes independently of ten thousand
     expect(writes).toHaveBeenCalledExactlyOnceWith("--code-function", "#abcdef");
     expect(traversal).not.toHaveBeenCalled();
     expect(childNodes).not.toHaveBeenCalled();
+    const schemeWrites = vi.spyOn(fakeNode(scene.svg).style, "setProperty");
+    const attributes = vi.spyOn(FakeNode.prototype, "setAttribute");
+    for (const scheme of ["dark", "light"] as const) scene.setScheme(scheme);
+    expect(schemeWrites).toHaveBeenCalledTimes(6);
+    expect(attributes).not.toHaveBeenCalled();
+    expect(read).toHaveBeenCalledOnce();
+    expect(traversal).not.toHaveBeenCalled();
+    expect(childNodes).not.toHaveBeenCalled();
   } finally {
     scene.release();
   }

@@ -1,3 +1,4 @@
+import { readElementStyle } from "../../../../fixtures/domain/element-style";
 import { describe, expect, it, vi } from "vitest";
 
 import { calculateElementBounds } from "../../../../../src/domain/geometry/public";
@@ -205,11 +206,11 @@ describe("active editor timer and style sessions", () => {
     expect(selectionGeometryChanged).toHaveBeenCalledOnce();
     expect(stateChanged).not.toHaveBeenCalled();
     expect(storeChanged).toHaveBeenCalledTimes(1);
-    expect(store.get(element.id)?.element.style).toMatchObject({ outlineWidth: 8 });
+    expect(readElementStyle(store.get(element.id)?.element)).toMatchObject({ outlineWidth: 8 });
     expect(history.undo()).toBe(true);
     expect(stateChanged).not.toHaveBeenCalled();
     expect(storeChanged).toHaveBeenCalledTimes(2);
-    expect(store.get(element.id)?.element.style).toMatchObject({ outlineWidth: 4 });
+    expect(readElementStyle(store.get(element.id)?.element)).toMatchObject({ outlineWidth: 4 });
 
     selected.clear();
     session.apply("draw", "opacity", 0.6);

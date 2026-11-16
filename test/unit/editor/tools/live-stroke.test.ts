@@ -12,7 +12,7 @@ import {
 import { prepareExpectedStrokeSamples as prepareStrokeSamples } from "../../../fixtures/editor/stroke-sample-reference";
 
 const penStyle: StrokeStyleV1 = {
-  color: { type: "theme-text" },
+  color: { type: "rgba", value: "#000000FF" },
   width: 8,
   opacity: 1,
   pressureEnabled: true,
@@ -44,6 +44,7 @@ function expectBoundedPreview(preview: LiveStrokePreview): void {
   for (const chunk of [...preview.finalizedChunks, preview.tail]) {
     expect(chunk.geometry).toHaveLength(1);
     expect(chunk.geometry[0]!.d).not.toMatch(/NaN|Infinity/);
+    expect(Object.values(chunk.bounds!).every(Number.isFinite)).toBe(true);
   }
 }
 
@@ -104,6 +105,27 @@ describe("live stroke builder", () => {
 });
 
 describe("live stroke preview geometry", () => {
+  it.each([
+    ["pen", 4],
+    ["highlighter", 10],
+  ] as const)("bounds the actual round %s paint, including horizontal lines", (tool, radius) => {
+    const builder = new LiveStrokeBuilder({
+      input: { pressureSource: "pen", zoom: 1 },
+      style: { ...penStyle, pressureEnabled: false },
+      tool,
+    });
+    const preview = builder.appendBatch([
+      { x: 10, y: 20, pressure: 0.5, time: 0 },
+      { x: 30, y: 20, pressure: 0.5, time: 1 },
+    ]);
+    expect(preview.tail.bounds).toEqual({
+      minX: 10 - radius,
+      minY: 20 - radius,
+      maxX: 30 + radius,
+      maxY: 20 + radius,
+    });
+  });
+
   it("retains immutable windows and bounded smoothing context", () => {
     const builder = new LiveStrokeBuilder({
       input: { pressureSource: "pen", zoom: 1 },
@@ -113,6 +135,8 @@ describe("live stroke preview geometry", () => {
     // Simplified windows accumulate until 64 derived capsules can be finalized.
     expect(preview.finalizedChunks).toHaveLength(0);
     expect(preview.tail.firstSample).toBe(64);
+    expect(preview.tail.bounds!.minX).toBeLessThanOrEqual(-1.4);
+    expect(preview.tail.bounds!.maxX).toBeGreaterThanOrEqual(150.4);
     expectBoundedPreview(preview);
     const commit = builder.finish();
     expect(commit.geometry).toEqual(onePassPath(commit.points, penStyle));

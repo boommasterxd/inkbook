@@ -12,7 +12,7 @@ export function indexedStroke(index: number): StrokeElementV1 {
     points: [x, y, 0.5],
     rotation: 0,
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba", value: "#000000FF" },
       opacity: 1,
       pressureEnabled: true,
       smoothing: 0.5,

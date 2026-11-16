@@ -190,7 +190,7 @@ The command history in this flow belongs to the Inkbook canvas. Creating an embe
 
 ```mermaid
 flowchart TD
-  storeDelta["Domain-classified store delta with versions"] --> dirty["Set geometry, paint, order, connection, or visibility flags"]
+  storeDelta["Domain-classified store delta with versions"] --> dirty["Set geometry, paint, order, connection, visibility, or interaction flags"]
   dirty --> scheduler{"Scene frame already pending?"}
   gestureUpdate["Gesture, camera, scroll, or zoom update"] --> scheduler
   hostUpdate["Resize or host-layout invalidation"] --> scheduler
@@ -251,7 +251,7 @@ flowchart TD
   reuseBackground --> prepared
   rebuildBackground --> prepared
   prepared --> writes["Write phase: apply only prepared changed DOM state"]
-  writes --> bands["Preserve fixed highlight and content render bands"]
+  writes --> bands["Preserve fixed image, highlight and content render bands"]
   bands --> release["Release replaced entries and enforce DOM and cache caps"]
   release --> remaining{"Input-aware reconciliation work remains?"}
   remaining -->|Yes| nextFrame["Keep the last complete frame and queue one successor"]

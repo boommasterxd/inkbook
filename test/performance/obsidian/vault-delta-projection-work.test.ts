@@ -59,7 +59,7 @@ it("projects 10K history and direct removal deltas once without intermediate arr
   const store = await builder.finalize();
   if (store === null) throw new Error("Expected hydrated store.");
   const removed = await applyElementMutation(store, {
-    bands: { content: [], highlight: [] },
+    bands: { image: [], content: [], highlight: [] },
     removeIds: fixture.strokeIds,
   });
   const observer = observeDeltaProjection();
@@ -132,7 +132,7 @@ it("skips delta projection when autosave is unavailable", () => {
     get changes(): StoreDelta["changes"] {
       throw new Error("Unavailable autosave must not inspect the delta.");
     },
-    dirtyBands: { content: false, highlight: false },
+    dirtyBands: { image: false, content: false, highlight: false },
     geometryVersion: 0,
     paintVersion: 0,
   };

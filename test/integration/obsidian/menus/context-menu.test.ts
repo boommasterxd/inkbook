@@ -126,7 +126,11 @@ function titles(menu: FakeMenu): string[] {
     .map((entry) => entry.calls.find((call) => call.startsWith("title:"))?.slice(6) ?? "");
 }
 
-function openPositionedMenu(menu: FakeMenu): ReturnType<typeof openContextMenu> {
+function openPositionedMenu(
+  menu: FakeMenu,
+  overrides: Partial<ContextMenuState> = {},
+  handlers = createContextMenuHandlers(),
+): ReturnType<typeof openContextMenu> {
   return openContextMenu(
     { create: () => menu, forEvent: () => menu },
     {
@@ -135,10 +139,29 @@ function openPositionedMenu(menu: FakeMenu): ReturnType<typeof openContextMenu> 
       position: { x: 20, y: 30 },
       canvasInputSurface: createHtmlElement("button"),
     },
-    state({ hasSelection: false }),
-    createContextMenuHandlers(),
+    state({ hasSelection: false, ...overrides }),
+    handlers,
   );
 }
+
+it("offers crop only for an eligible image and hands focus off before image dialogs", () => {
+  const menu = new FakeMenu();
+  const cropImage = vi.fn(() => expect(menu.closed).toBe(true));
+  openPositionedMenu(
+    menu,
+    { hasSelection: true, canCropImage: true, canImportImages: true },
+    { ...createContextMenuHandlers(), cropImage, importImages: vi.fn() },
+  );
+  expect(titles(menu)).toContain("Crop image");
+  expect(titles(menu)).toContain("Insert image or PDF");
+  const crop = menu.entries.find(
+    (entry) => entry !== "separator" && entry.calls.includes("title:Crop image"),
+  );
+  if (crop === undefined || crop === "separator") throw new Error("Expected a crop action.");
+  crop.click?.();
+  expect(menu.closed).toBe(true);
+  expect(cropImage).toHaveBeenCalledOnce();
+});
 
 it.each(["en", "de"] as const)(
   "hands off the localized %s text-edit action after closing its menu",

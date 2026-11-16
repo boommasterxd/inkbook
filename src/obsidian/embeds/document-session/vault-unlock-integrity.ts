@@ -1,12 +1,18 @@
-import { renderBandOf } from "../../../domain/commands/render-bands";
-import type { InkSnapshotV1 } from "../../../domain/schema/public";
+import { renderBandOf, RENDER_BANDS } from "../../../domain/commands/render-bands";
+import type { InkSnapshotV1, TextElementV2 } from "../../../domain/schema/public";
 import type { ElementStore, StoreSliceScheduler } from "../../../domain/store/public";
+
+export interface VaultTextUnlockCandidate {
+  readonly element: TextElementV2;
+  readonly index: number;
+}
 
 /** Prove bounded batch adoption without serializing trusted worker elements again. */
 export async function verifyVaultUnlockIntegrity(options: {
   readonly snapshot: InkSnapshotV1;
   readonly store: ElementStore;
   readonly scheduler: StoreSliceScheduler;
+  readonly textCandidates?: VaultTextUnlockCandidate[];
 }): Promise<void> {
   const { snapshot, store, scheduler } = options;
   const checkpoint = async (): Promise<void> => {
@@ -15,7 +21,8 @@ export async function verifyVaultUnlockIntegrity(options: {
     if (scheduler.isCancelled?.()) throw new Error("Unlock integrity verification cancelled.");
   };
   if (store.size !== snapshot.elements.length) throw divergence();
-  const ranks = { content: 0, highlight: 0 };
+  const ranks = { image: 0, content: 0, highlight: 0 };
+  let previousBand = -1;
   for (let index = 0; index < snapshot.elements.length; index += 1) {
     if (scheduler.isCancelled?.()) throw new Error("Unlock integrity verification cancelled.");
     const element = snapshot.elements[index]!;
@@ -25,10 +32,12 @@ export async function verifyVaultUnlockIntegrity(options: {
       store.get(element.id)?.element !== element ||
       rank?.band !== band ||
       rank.rank !== ranks[band] ||
-      (band === "highlight" && ranks.content !== 0)
+      RENDER_BANDS.indexOf(band) < previousBand
     )
       throw divergence();
+    previousBand = RENDER_BANDS.indexOf(band);
     ranks[band] += 1;
+    if (element.kind === "text") options.textCandidates?.push({ element, index });
     if (scheduler.shouldYield()) await checkpoint();
   }
   if (scheduler.isCancelled?.()) throw new Error("Unlock integrity verification cancelled.");

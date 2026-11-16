@@ -63,6 +63,12 @@ export class CanvasTextMeasurer implements TextMeasurer {
     const result = {
       ...(fontResourceId === undefined ? {} : { fontResourceId }),
       width: metrics.width,
+      inkBounds: {
+        minX: -metrics.actualBoundingBoxLeft,
+        minY: -metrics.actualBoundingBoxAscent,
+        maxX: metrics.actualBoundingBoxRight,
+        maxY: metrics.actualBoundingBoxDescent,
+      },
       ...this.#lines.measure(font),
     };
     if (this.#cache.size >= MAX_MEASUREMENTS) this.#cache.delete(this.#cache.keys().next().value!);

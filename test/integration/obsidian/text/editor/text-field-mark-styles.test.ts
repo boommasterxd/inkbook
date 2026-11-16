@@ -15,6 +15,44 @@ async function selectWord(element: TextElementV2, start: number, end: number) {
   return state;
 }
 
+it("keeps Auto text theme-bound while an explicitly black word remains fixed", async () => {
+  const element = textElement();
+  element.source = "Auto fixed";
+  element.style = { ...element.style, color: { type: "theme-text" } };
+  const state = await selectWord(element, 5, 10);
+  const input = state.input();
+  expect(state.session.applyStyle("color", "#000000FF")).toBe(true);
+  await state.session.flush();
+  const saved = state.model.store.get(element.id)!.element as TextElementV2;
+  expect(saved.style.color).toEqual({ type: "theme-text" });
+  expect(saved.ranges).toEqual([
+    { start: 5, end: 10, style: { color: { type: "rgba", value: "#000000FF" } } },
+  ]);
+  const documentState = input.state;
+  for (const color of ["#DADADAFF", "#222222FF"]) {
+    state.container.style.setProperty("--inkbook-text", color);
+    expect(getComputedStyle(input.contentDOM).color).toBe(color);
+    const fixed = [...input.contentDOM.querySelectorAll<HTMLElement>(".inkbook-text-run")].find(
+      (node) => node.textContent === "fixed",
+    );
+    expect(fixed).toBeDefined();
+    expect(getComputedStyle(fixed!).color).toBe("#000000FF");
+    expect(input.state).toBe(documentState);
+  }
+  expect(state.session.applyStyle("color", "theme-text")).toBe(true);
+  await state.session.flush();
+  expect((state.model.store.get(element.id)!.element as TextElementV2).ranges).toEqual([
+    { start: 5, end: 10, style: { color: { type: "theme-text" } } },
+  ]);
+  state.container.style.setProperty("--inkbook-text", "#DADADAFF");
+  const restored = [...input.contentDOM.querySelectorAll<HTMLElement>(".inkbook-text-run")].find(
+    (node) => node.textContent?.includes("fixed"),
+  );
+  expect(restored).toBeDefined();
+  expect(getComputedStyle(restored!).color).toBe("#DADADAFF");
+  expect(state.error).not.toHaveBeenCalled();
+});
+
 it.each(["bold", "italic", "strikethrough"] as const)(
   "turns off a base %s style only inside the selected word",
   async (mark) => {

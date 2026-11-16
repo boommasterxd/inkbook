@@ -12,7 +12,7 @@ function draw(
   const builder = new LiveStrokeBuilder({
     input: { pressureSource: source, zoom },
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba", value: "#000000FF" },
       width,
       opacity: 1,
       pressureEnabled: true,

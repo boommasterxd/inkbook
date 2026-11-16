@@ -1,3 +1,4 @@
+import { RENDER_BANDS } from "../../commands/render-bands";
 import type { RenderBand } from "../../commands/render-bands";
 import type { UniformSpatialIndex } from "../../spatial/index";
 
@@ -135,7 +136,7 @@ function removeBandIds(
   removedIds: ReadonlySet<string>,
   delta: DeltaBuilder,
 ): void {
-  for (const band of ["highlight", "content"] as const) {
+  for (const band of RENDER_BANDS) {
     const ranks = [...removedIds]
       .map((id) => state.ranks.get(id))
       .filter((rank): rank is ElementRank => rank?.band === band)

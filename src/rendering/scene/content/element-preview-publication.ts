@@ -9,7 +9,7 @@ import { updateMountedElementPreview, type MountedSceneElement } from "./mounted
 import type { ScenePathCache } from "./path-cache";
 import { sameStrokeShape } from "./stroke-position";
 
-interface PreviewPublicationContext {
+export interface PreviewPublicationContext {
   readonly dom: SceneDom;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly selectionRuns: SceneSelectionRuns;
@@ -49,6 +49,7 @@ export function elementParts(
   entry: MountedSceneElement,
   element: InkElementV1,
 ): readonly SvgPathPart[] {
+  if (element.kind === "image") return [];
   return sameStrokeShape(entry.displayedElement, element)
     ? entry.displayedPathParts
     : buildElementPathParts(element.kind === "stroke" ? strokeLocalGeometry(element) : element);

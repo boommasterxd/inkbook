@@ -13,6 +13,7 @@ afterEach(() => vi.restoreAllMocks());
 function fixture(elements = [rectangle(), rectangle(IDS.other), highlighter()]) {
   const store = new ElementStore(elements);
   const bands = {
+    image: [],
     content: [...store.materializeBandOrder("content")],
     highlight: [...store.materializeBandOrder("highlight")],
   };
@@ -45,7 +46,11 @@ describe("private removal order preparation", () => {
       expect(prepared.mutation.removeIds).toEqual(ids);
       expect(prepared.order.bands.content).toEqual([IDS.other]);
       expect(prepared.order.ranks.get(IDS.other)).toEqual({ band: "content", rank: 0 });
-      expect(prepared.order.relativeOrderPreserved).toEqual({ content: true, highlight: true });
+      expect(prepared.order.relativeOrderPreserved).toEqual({
+        image: true,
+        content: true,
+        highlight: true,
+      });
       expect(prepared.order.dirtyBands.highlight).toBe(ids.includes(IDS.highlight));
       expect(prepared.order.bands.highlight === source.bands.highlight).toBe(
         !ids.includes(IDS.highlight),
@@ -118,6 +123,7 @@ describe("retained removal band ownership", () => {
         store.arrange(new Set([IDS.target]), "bring-to-front");
       } else if (operation === "reorder") {
         store.reorderBands({
+          image: [],
           content: [...retained].reverse(),
           highlight: transition.reverse.bands.highlight,
         });
@@ -174,7 +180,11 @@ describe("removal preparation cancellation", () => {
         },
       }),
     ).toBe("cancelled");
-    expect(source.bands).toEqual({ content: [IDS.target, IDS.other], highlight: [IDS.highlight] });
+    expect(source.bands).toEqual({
+      image: [],
+      content: [IDS.target, IDS.other],
+      highlight: [IDS.highlight],
+    });
     expect(source.records.size).toBe(3);
   });
 
@@ -226,7 +236,7 @@ describe("trusted removal lifecycle", () => {
   it("reuses unaffected authoritative bands in the trusted fallback", async () => {
     const { source } = fixture();
     const order = await trustedRemoval.validateTrustedRemovalOrder(
-      { bands: { content: [], highlight: [] }, removeIds: [IDS.highlight] },
+      { bands: { image: [], content: [], highlight: [] }, removeIds: [IDS.highlight] },
       source,
       source.ranks,
       new Set([IDS.highlight]),
@@ -235,7 +245,7 @@ describe("trusted removal lifecycle", () => {
     if (order === "cancelled") throw new Error("Expected removal order.");
     expect(order.bands.content).toBe(source.bands.content);
     expect(order.bands.highlight).toEqual([]);
-    expect(order.dirtyBands).toEqual({ content: false, highlight: true });
+    expect(order.dirtyBands).toEqual({ image: false, content: false, highlight: true });
   });
 
   it("uses the registered private order and cancels a stale prepared commit", async () => {
@@ -261,7 +271,7 @@ describe("trusted removal lifecycle", () => {
     if (prepared.token === null) throw new Error("Expected prepared token.");
     const committed = store.commitPreparedElementMutation(prepared.token);
     expect(committed.status).toBe("committed");
-    expect(committed.delta?.dirtyBands).toEqual({ content: true, highlight: false });
+    expect(committed.delta?.dirtyBands).toEqual({ image: false, content: true, highlight: false });
     expect(committed.transition?.reverse.bands.highlight).toBe(
       committed.transition?.forward.bands.highlight,
     );

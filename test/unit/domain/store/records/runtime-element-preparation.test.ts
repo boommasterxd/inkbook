@@ -21,6 +21,9 @@ describe("runtime element preparation synchronous completion", () => {
       if (prepared === "cancelled" || prepared instanceof Promise) {
         throw new Error("Expected synchronous preparation.");
       }
+      if (prepared.kind !== "stroke" && prepared.kind !== "rectangle") {
+        throw new Error("Expected prepared fixture kind.");
+      }
       expect(prepared).toEqual(source);
       expect(prepared).not.toBe(source);
       expect(prepared.style).not.toBe(source.style);

@@ -1,3 +1,12 @@
+import {
+  asElement,
+  FakeDocument,
+  FakeNode,
+  FakeSceneStore,
+  FakeScheduler,
+  fakeNode,
+  sceneBandNode,
+} from "../../../../unit/rendering/scene/fakes";
 import { selectionOverlayGeometry } from "../../../../../src/editor/selection/public";
 import { describe, expect, it } from "vitest";
 
@@ -6,6 +15,7 @@ import {
   calculateElementBounds,
 } from "../../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
+type PathElement = Exclude<InkElementV1, { kind: "image" }>;
 import { SelectionHandlePresentation } from "../../../../../src/obsidian/embeds/active-editor/previews/handle-presentation";
 import { SvgSceneRenderer } from "../../../../../src/rendering/scene";
 import {
@@ -16,26 +26,18 @@ import {
   createAllElementSnapshot,
   uuid,
 } from "../../../../unit/persistence/serialization/fixtures";
-import {
-  asElement,
-  FakeDocument,
-  FakeNode,
-  FakeSceneStore,
-  FakeScheduler,
-  fakeNode,
-} from "../../../../unit/rendering/scene/fakes";
 
 const cases = elementCases().map((element) => ({ element, name: caseName(element) }));
 
-describe("canonical presentation across every element type", () => {
+describe("canonical presentation across every path element type", () => {
   it.each(cases)(
     "preserves $name from preview through multi-selection transforms",
     ({ element }) => {
       const { renderer, scheduler, selected, band } = setup(element);
       scheduler.runAll();
       const camera = fakeNode(renderer.svg).nodes[1]!;
-      const paintedGroup = camera.nodes[band === "highlight" ? 3 : 4]!;
-      const liveGroup = camera.nodes[5]!;
+      const paintedGroup = sceneBandNode(camera, band);
+      const liveGroup = sceneBandNode(camera, "content").nextSibling!;
       const retainedNodes = [...paintedGroup.nodes];
       const committed = retainedNodes.flatMap(paintedPaths).map(paintedAttributes);
       const parts = buildElementPathParts(element);
@@ -92,7 +94,7 @@ function paintedAttributes(node: FakeNode): ReadonlyMap<string, string | null> {
   );
 }
 
-function setup(element: InkElementV1) {
+function setup(element: PathElement) {
   const snapshot = createAllElementSnapshot();
   const band =
     element.kind === "straight-highlighter" ||
@@ -126,8 +128,9 @@ function setup(element: InkElementV1) {
   return { band, renderer, scheduler, selected } as const;
 }
 
-function elementCases(): InkElementV1[] {
-  return createAllElementSnapshot().elements.flatMap((element): InkElementV1[] => {
+function elementCases(): PathElement[] {
+  return createAllElementSnapshot().elements.flatMap((element): PathElement[] => {
+    if (element.kind === "image") return [];
     if (element.kind === "stroke") {
       return [
         element,
@@ -145,14 +148,14 @@ function elementCases(): InkElementV1[] {
           ({
             ...element,
             style: { ...element.style, outlineStyle },
-          }) as InkElementV1,
+          }) as PathElement,
       );
     }
     return [element];
   });
 }
 
-function caseName(element: InkElementV1): string {
+function caseName(element: PathElement): string {
   if (element.kind === "stroke")
     return `${element.tool} (pressure ${String(element.style.pressureEnabled)})`;
   return "outlineStyle" in element.style

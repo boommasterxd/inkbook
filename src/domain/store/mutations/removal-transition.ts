@@ -41,6 +41,7 @@ function mutationFromDelta(
   }
   return Object.freeze({
     bands: Object.freeze({
+      image: Object.freeze([...bands.image]),
       content: Object.freeze([...bands.content]),
       highlight: Object.freeze([...bands.highlight]),
     }),

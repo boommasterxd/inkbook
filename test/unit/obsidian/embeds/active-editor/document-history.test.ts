@@ -10,6 +10,8 @@ import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-e
 import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/document-model-port";
 import { elementMutationPorts } from "../../../../fixtures/obsidian/element-mutation-ports";
 import { connectedLine, rectangle } from "../../../domain/store/fixtures";
+import { imageElement } from "../../../../fixtures/domain/images";
+import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 
 async function expectCanvasStep(
   adapter: PaneDocumentHistoryAdapter,
@@ -20,6 +22,29 @@ async function expectCanvasStep(
   if (result.status !== "canvas") throw new Error("Expected a Canvas history step.");
   await expect(result.completion).resolves.toEqual({ source: "canvas", status });
 }
+
+it("clears image and annotation bands together and restores both with one undo", async () => {
+  const elements = [imageElement(), rectangle()];
+  const store = new ElementStore(elements);
+  let revision = 0;
+  const model = {
+    store,
+    get revision() {
+      return revision;
+    },
+    ...elementMutationPorts(store, () => {
+      revision += 1;
+    }),
+  } as unknown as EditableDocumentModel;
+  const history = new ActiveEditorHistory(model);
+  const documentHistory = new ActiveDocumentHistory({ model, history });
+  expect(await documentHistory.removeAll(immediateWorkScheduler(), () => true)).toBe("applied");
+  expect(store.size).toBe(0);
+  expect(history.commandCount).toBe(1);
+  expect(await history.undoAsync()).toBe(true);
+  for (const element of elements) expect(store.get(element.id)?.element).toEqual(element);
+  documentHistory.dispose();
+});
 
 describe("active document element history", () => {
   it("restores removed targets and their connections after presentation disposal", async () => {

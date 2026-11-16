@@ -155,6 +155,11 @@ function* staticTokens(snapshot: InkSnapshotV1, lockedHeight: number): Iterable<
     yield { text: fragment };
   }
   yield { text: "</g>" };
+  if (snapshot.version >= 3) {
+    yield { allowLeadingWhitespace: true, text: '<g id="inkbook-images-band">' };
+    yield* elementTokens(bands.image);
+    yield { text: "</g>" };
+  }
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-highlights">' };
   yield* elementTokens(bands.highlight);
   yield { text: "</g>" };

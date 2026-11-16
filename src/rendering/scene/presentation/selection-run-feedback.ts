@@ -5,10 +5,16 @@ import type { SelectionRunGroups } from "./selection-run-groups";
 import type { SelectionRunTraces } from "./selection-run-traces";
 import type { SelectionRunTargets } from "./selection-run-targets";
 import type { SceneRunStrokeWidth } from "./selection-run-width";
-import { SelectionFeedbackTransforms } from "./selection-feedback-transforms";
+import {
+  SelectionFeedbackTransforms,
+  selectionWorldTransform,
+} from "./selection-feedback-transforms";
+import {
+  SelectionRunTranslationBasis,
+  type PublishedSelectionTranslation,
+} from "./selection-run-translation";
 import type { ProgressivePreviewTransform } from "./progressive-preview-request";
 import type { PreviewTransform } from "../reconciliation/scene-visibility-reconciler";
-import type { InkElementV1 } from "../../../domain/schema/public";
 import type { SceneDeltaEntry, MutableSceneInstrumentation, SceneStorePort } from "../types";
 import type { SceneDom } from "../scene-dom";
 import {
@@ -45,10 +51,10 @@ interface FeedbackContext {
   readonly finished: (hasSkipped: boolean) => void;
   readonly cleared: () => void;
 }
-
 /** Owns physical feedback bases and their canonical publication handoff. */
 export class SelectionRunFeedback {
   readonly #residuals = new SelectionRunResiduals();
+  readonly #translationBasis = new SelectionRunTranslationBasis();
   readonly #skipped = new Set<string>();
   readonly #basis = new Map<string, ProgressivePreviewTransform>();
   #canonical = new Set<string>();
@@ -83,6 +89,7 @@ export class SelectionRunFeedback {
   public memoryUsage(): number {
     return (
       this.#residuals.memoryUsage() +
+      this.#translationBasis.memoryUsage() +
       this.#hidden.memoryUsage() +
       this.#skipped.size * 40 +
       this.#basis.size * 40 +
@@ -94,6 +101,7 @@ export class SelectionRunFeedback {
     );
   }
   public release(): void {
+    this.#translationBasis.clear();
     this.cohortReleased();
     this.#hidden.discard();
     this.#skipped.clear();
@@ -164,36 +172,36 @@ export class SelectionRunFeedback {
   public snapshotIds(
     feedback: ProgressivePreviewTransform | undefined,
   ): readonly string[] | undefined {
-    if (this.#directFeedback && feedback?.selection === this.context.selection())
-      return this.#committing
-        ? this.context.plan()?.exceptions.map((entry) => entry.id)
-        : this.context.plan()?.snapshots;
-    return this.canUse(feedback)
-      ? this.#committing || feedback?.invertible !== true
-        ? this.context.plan()?.exceptions.map((entry) => entry.id)
-        : this.context.plan()?.snapshots
-      : undefined;
+    const direct = this.#directFeedback && feedback?.selection === this.context.selection();
+    if (!direct && !this.canUse(feedback)) return undefined;
+    return this.#committing || (!direct && feedback?.invertible !== true)
+      ? this.context.plan()?.exceptionIds
+      : this.context.plan()?.snapshots;
   }
   public publish(feedback: ProgressivePreviewTransform, version: number): boolean {
     if (!this.canUse(feedback)) return false;
-    this.#current = feedback;
+    const current = this.#translationBasis.resolve(feedback);
+    if (current === undefined) return false;
+    this.#current = current;
     this.#frameVersion = version;
     this.context.width.refreshZoom();
     this.publishParents();
     this.context.ports.dom.svg.setAttribute("data-inkbook-run-feedback", "true");
     return true;
   }
+  public adoptTranslationBasis(published: PublishedSelectionTranslation | undefined): void {
+    this.#translationBasis.adopt(published);
+  }
   public refreshZoom(): void {
     this.context.width.refreshZoom();
   }
   private publishParents(): void {
-    if (!this.#committing) {
-      this.context.groups.publish(this.#current?.transform ?? null);
-      this.context.traces.publish(this.#current?.transform ?? null);
-      return;
-    }
-    const prefix = joinTransforms(this.#current?.transform, this.#committed);
-    const suffix = joinTransforms(prefix, this.#frozen);
+    const prefix = this.#committing
+      ? joinTransforms(this.#current?.transform, this.#committed)
+      : null;
+    const suffix = this.#committing
+      ? joinTransforms(prefix, this.#frozen)
+      : (this.#current?.transform ?? null);
     this.context.groups.publishBases(prefix, suffix);
     this.context.traces.publishBases(prefix, suffix);
   }
@@ -292,13 +300,11 @@ export class SelectionRunFeedback {
       ? prefix
       : composeMatrices(prefix, this.#frozenMatrix);
   }
-  public canonicalPublished(entry: MountedSceneElement, record?: SceneElementRecord): void {
+  public canonicalPublished(entry: MountedSceneElement, record?: SceneElementRecord): boolean {
     if (
       record !== undefined &&
-      (!this.#committing ||
-        !this.context.groups.owns(entry) ||
-        this.context.groups.inPrefix(entry)) &&
-      this.#skipped.delete(entry.id)
+      this.canWriteVisibleGeometry(entry) &&
+      this.#skipped.has(entry.id)
     ) {
       this.#residuals.canonical(entry, entry.geometryVersion);
       const kept =
@@ -331,7 +337,9 @@ export class SelectionRunFeedback {
           );
       }
       this.#hidden.show(entry.id);
+      this.#skipped.delete(entry.id);
     }
+    return true;
   }
   public bindTrace(entry: MountedSceneElement): void {
     if (this.context.groups.owns(entry))
@@ -353,26 +361,23 @@ export class SelectionRunFeedback {
     const entry = this.context.ports.mounted.get(id);
     if (entry === undefined || (this.#current === undefined && !this.#committing)) return undefined;
     if (!this.context.exceptions().has(id) && !this.context.groups.owns(entry)) return undefined;
-    return {
-      transform: this.context.exceptions().has(id)
-        ? entry.appliedPreviewTransform
-        : (joinTransforms(
-            this.context.groups.parentTransform(entry),
-            entry.appliedPreviewTransform,
-          ) ?? (this.#committing ? "matrix(1 0 0 1 0 0)" : null)),
-      matrix: this.context.exceptions().has(id)
-        ? entry.appliedPreviewMatrix
-        : entry.appliedPreviewMatrix === undefined
-          ? undefined
-          : composeMatrices(this.parentMatrix(entry), entry.appliedPreviewMatrix),
-      version: this.#frameVersion,
-      strokeWidthScale: this.context.ports.zoom(),
-    };
+    return selectionWorldTransform(
+      entry,
+      this.context.groups.parentTransform(entry),
+      this.parentMatrix(entry),
+      {
+        exception: this.context.exceptions().has(id),
+        committing: this.#committing,
+        version: this.#frameVersion,
+        zoom: this.context.ports.zoom(),
+      },
+    );
   }
   public retainCommit(): boolean {
     if (this.#committing && this.#current === undefined) return true;
     if (!this.active || (!this.context.ready() && !this.#committing && !this.context.canRetain()))
       return false;
+    this.#translationBasis.clear();
     this.#directFeedback = false;
     if (this.#committing) {
       this.#committedMatrix = composeMatrices(this.#current!.matrix!, this.#committedMatrix);
@@ -390,26 +395,7 @@ export class SelectionRunFeedback {
     this.context.retaining();
     this.context.groups.beginCommit();
     this.context.targets.begin();
-
     return true;
-  }
-  public exceptionTransforms(): ReadonlyMap<string, PreviewTransform> {
-    const result = new Map<string, PreviewTransform>();
-    for (const id of this.context.exceptions()) {
-      const preview = this.worldTransform(id);
-      if (preview !== undefined) result.set(id, preview);
-    }
-    return result;
-  }
-  public exceptionElements(
-    elements: ReadonlyMap<string, InkElementV1>,
-  ): ReadonlyMap<string, InkElementV1> {
-    const result = new Map<string, InkElementV1>();
-    for (const id of this.context.exceptions()) {
-      const element = elements.get(id);
-      if (element !== undefined) result.set(id, element);
-    }
-    return result;
   }
   public normalize(
     deadline: number,
@@ -444,10 +430,8 @@ export class SelectionRunFeedback {
         // Its last active legacy feedback is already painted locally; the
         // ordinary preview writer resumes ownership of canonical geometry.
         this.#residuals.discard();
-
         if (this.#current === undefined)
           this.context.ports.dom.svg.removeAttribute("data-inkbook-run-feedback");
-
         return false;
       }
       stepped = true;
@@ -481,6 +465,13 @@ export class SelectionRunFeedback {
     return true;
   }
   public clear(): void {
+    const cancel = this.#translationBasis.takeInverse();
+    if (cancel !== undefined && !this.#committing) {
+      this.#current = cancel;
+      this.publishParents();
+      this.retainCommit();
+      return;
+    }
     this.#directFeedback = false;
     if (this.#committing) {
       this.#current = undefined;

@@ -133,7 +133,9 @@ export class SceneLiveStrokeRenderer {
       const chunk = preview.finalizedChunks[index];
       if (chunk === undefined) continue;
       const nodes = chunk.geometry.map((part) => this.createPath(part));
-      for (const node of nodes) this.#group.insertBefore(node, this.#tailNodes[0] ?? null);
+      for (const node of nodes) {
+        this.#group.insertBefore(node, this.#tailNodes[0] ?? null);
+      }
       this.#chunkNodes.push(nodes);
       this.#chunkPathCount += nodes.length;
       this.#lastChunk = chunk;

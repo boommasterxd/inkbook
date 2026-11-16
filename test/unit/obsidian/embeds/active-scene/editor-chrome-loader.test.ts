@@ -8,6 +8,7 @@ vi.mock("../../../../../src/rendering/ui/editor-chrome-source", () => ({
 import { createEditorChromeProps } from "../../../../fixtures/editor-chrome";
 import {
   beginEditorChromeMount,
+  prepareEditorChrome,
   EditorChromeModuleLoader,
   type EditorChromeWindow,
 } from "../../../../../src/obsidian/embeds/active-scene/editor-chrome-loader";
@@ -64,6 +65,10 @@ function createContainer(ownerDocument: Document): HTMLElement {
   return { ownerDocument } as HTMLElement;
 }
 
+function createMountedChrome() {
+  return { ready: Promise.resolve(true), unmount: vi.fn(), update: vi.fn() };
+}
+
 function deferred<T>() {
   let resolve = (_value: T): void => undefined;
   let reject = (_reason: unknown): void => undefined;
@@ -85,6 +90,56 @@ function startDeferredMount(fixture: WindowFixture) {
   );
   return { importer, module, pending };
 }
+
+describe("embedded editor chrome preparation", () => {
+  it("prepares a shared module on intent without mounting or duplicating activation work", async () => {
+    const fixture = createWindowFixture("intent");
+    const mounted = vi.fn(createMountedChrome);
+    const module = deferred<unknown>();
+    const importer = vi.fn(() => module.promise);
+    const loader = new EditorChromeModuleLoader(importer);
+    const intent = prepareEditorChrome(fixture.window, loader);
+    await vi.waitFor(() => expect(importer).toHaveBeenCalledOnce());
+    expect(mounted).not.toHaveBeenCalled();
+    const active = beginEditorChromeMount(
+      createContainer(fixture.document),
+      createProps(fixture.document),
+      loader,
+    );
+    intent.release();
+    module.resolve({ mountEditorChrome: mounted });
+    await expect(Promise.all([intent.ready, active.ready])).resolves.toEqual([true, true]);
+    expect(importer).toHaveBeenCalledOnce();
+    expect(mounted).toHaveBeenCalledOnce();
+    expect(fixture.revoked).toEqual(["blob:intent"]);
+  });
+
+  it("releases abandoned intent and recovers a rejected preparation without blocking activation", async () => {
+    const fixture = createWindowFixture("abandoned-intent");
+    const firstModule = deferred<unknown>();
+    const mounted = vi.fn(createMountedChrome);
+    const importer = vi
+      .fn()
+      .mockImplementationOnce(() => firstModule.promise)
+      .mockRejectedValueOnce(new Error("load failed"))
+      .mockResolvedValue({ mountEditorChrome: mounted });
+    const loader = new EditorChromeModuleLoader(importer);
+    const abandoned = prepareEditorChrome(fixture.window, loader);
+    await vi.waitFor(() => expect(importer).toHaveBeenCalledOnce());
+    abandoned.release();
+    await expect(abandoned.ready).resolves.toBe(false);
+    firstModule.resolve({ mountEditorChrome: mounted });
+    await expect(prepareEditorChrome(fixture.window, loader).ready).resolves.toBe(false);
+    const active = beginEditorChromeMount(
+      createContainer(fixture.document),
+      createProps(fixture.document),
+      loader,
+    );
+    await expect(active.ready).resolves.toBe(true);
+    expect(mounted).toHaveBeenCalledOnce();
+    expect(importer).toHaveBeenCalledTimes(3);
+  });
+});
 
 describe("embedded editor chrome loader", () => {
   it("deduplicates one module per owning Window and mounts each root with its latest props", async () => {

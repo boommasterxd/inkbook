@@ -1,4 +1,5 @@
 import { SVG_NAMESPACE } from "../constants";
+import { RENDER_BANDS } from "../../../domain/commands/render-bands";
 import {
   appendElementToFragment,
   createFragment,
@@ -62,10 +63,13 @@ export class SelectionRunGroups {
     );
   }
 
-  /** At most two descriptors; member registration and all DOM work are deferred. */
+  /** One descriptor per render band; member registration and all DOM work are deferred. */
   public begin(runs: readonly SelectionRankRun[]): void {
     if (this.#runs.length > 0) throw new Error("Clean up the previous selection runs first.");
-    if (runs.length > 2 || new Set(runs.map((run) => run.band)).size !== runs.length)
+    if (
+      runs.length > RENDER_BANDS.length ||
+      new Set(runs.map((run) => run.band)).size !== runs.length
+    )
       throw new Error("Selection runs require at most one interval per band.");
     this.#runs = runs
       .filter((run) => run.entries.length > 0)
@@ -166,6 +170,8 @@ export class SelectionRunGroups {
     if (run.canonical === run.plan.entries.length) this.#commitRun += 1;
   }
 
+  /** Baked geometry and its bounded roots are one already-admitted publication unit. */
+  /** Retained text descendants keep the old compensated source until their leases move. */
   /** Constant run-count work; the next prepare admits replacement empty prefixes. */
   public finishCommit(): void {
     if (!this.#committing || this.pendingCanonical !== undefined)
@@ -197,6 +203,7 @@ export class SelectionRunGroups {
       parent === run.prefix ||
       parent === run.suffix ||
       parent === this.options.dom.group("content") ||
+      parent === this.options.dom.group("image") ||
       parent === this.options.dom.group("highlight")
     )
       return parent as SVGGElement;

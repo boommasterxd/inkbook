@@ -6,6 +6,7 @@ import type { ExistingFilePort, MetadataGuardedFileRead, NewFilePort } from "../
 import type { VaultBase } from "../../worker/protocol";
 import type { ActiveSaveProof, ExportSuccess } from "../../worker/protocol";
 import type { PreparedPressurePathHint } from "../../serialization/output/prepared-pressure-hints";
+import type { RenderBand } from "../../../domain/commands/render-bands";
 
 export type AutosaveStatus =
   | "clean"
@@ -45,9 +46,7 @@ export interface AutosaveSessionBaseOptions {
 export interface AutosaveDocumentSource {
   currentRevision(): number;
   isGestureActive(): boolean;
-  orderByBand(
-    band: "content" | "highlight",
-  ): Readonly<Partial<Record<"content" | "highlight", readonly string[]>>>;
+  orderByBand(band: RenderBand): Readonly<Partial<Record<RenderBand, readonly string[]>>>;
   snapshot(): InkSnapshotV1;
   /** Read-only Store-owned identities for integrity hashing, never mutation or transport. */
   integritySnapshot?(): InkSnapshotV1;

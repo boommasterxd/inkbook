@@ -21,6 +21,7 @@ import { selectionSnapGuidePath } from "./snap-marker-path";
 import { selectionPreviewBounds } from "./selection-preview-bounds";
 
 export interface HandleInteractionRenderer {
+  setSelectedElements?(ids: ReadonlySet<string>): void;
   beginPreviewCommit?(): {
     arm(ids: readonly string[]): boolean;
     cancel(): void;
@@ -43,6 +44,7 @@ export interface HandleInteractionRenderer {
     handles?: string | null,
     retainedTextFeedback?: boolean,
   ): void;
+  setLockedSelectionOverlayPath?(d: string | null): void;
   setSnapMarkerPath(d: string | null): void;
   setPreviewTransform(
     ids: readonly string[],
@@ -89,6 +91,7 @@ export class SelectionHandlePresentation {
   public dispose(): void {
     this.clearPreviews();
     this.#renderer.setSelectionOverlayPath(null);
+    this.#renderer.setLockedSelectionOverlayPath?.(null);
     this.#renderer.setSnapMarkerPath(null);
   }
 

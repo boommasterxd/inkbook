@@ -23,6 +23,8 @@ export interface WorkspaceRuntimeSettings {
 }
 
 export interface WorkspaceActiveSceneOptions {
+  readonly onImportImages?: import("../active-scene/editor-chrome-openings").EditorChromeOpenings["onImportImages"];
+  readonly onCropImage?: import("../active-scene/editor-chrome-openings").EditorChromeOpenings["onCropImage"];
   readonly textFonts?: TextFontLibraryPort | undefined;
   readonly localization?: Localization | undefined;
   readonly onboardingPreference?: OnboardingPreferencePort | undefined;
@@ -44,6 +46,19 @@ export interface WorkspaceActiveSceneOptions {
   readonly showFeedback: (code: InkbookFeedbackCode) => void;
   readonly workScheduler: WorkScheduler;
   readonly vaultSettings: InkbookSettingsV4;
+}
+
+export function workspaceEditorOpenings(
+  openings: import("../active-scene/editor-chrome-openings").EditorChromeOpenings,
+): Omit<import("../active-scene/editor-chrome-openings").EditorChromeOpenings, "confirmEraseAll"> {
+  return {
+    onImportImages: openings.onImportImages,
+    onCropImage: openings.onCropImage,
+    onOpenSettings: openings.onOpenSettings,
+    onOpenFonts: openings.onOpenFonts,
+    onOpenShortcuts: openings.onOpenShortcuts,
+    onboardingPreference: openings.onboardingPreference,
+  };
 }
 
 export function createWorkspaceActiveScene(
@@ -84,10 +99,7 @@ export function createWorkspaceActiveScene(
       });
     },
     onFirstStrokeCommitted: options.markFirstStroke,
-    onOpenSettings: options.onOpenSettings,
-    onOpenFonts: options.onOpenFonts,
-    onOpenShortcuts: options.onOpenShortcuts,
-    onboardingPreference: options.onboardingPreference,
+    ...workspaceEditorOpenings(options),
     root: attachment.root,
     scheme: options.scheme,
     scrollOwner: attachment.scrollOwner,

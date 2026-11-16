@@ -82,6 +82,7 @@ function assertCanonicalTranslation(
     source.tool !== replacement.tool ||
     source.id !== replacement.id ||
     source.createdAt !== replacement.createdAt ||
+    source.locked !== replacement.locked ||
     !translatedPoint(source.pivot, replacement.pivot, translation) ||
     !translatedPoint(source.offset, replacement.offset, translation) ||
     !storedStrokeOffsetWithinRange(replacement)
@@ -107,7 +108,8 @@ export function inferStoredStrokeTranslation(
     current.points !== replacement.points ||
     current.style !== replacement.style ||
     current.rotation !== replacement.rotation ||
-    current.tool !== replacement.tool
+    current.tool !== replacement.tool ||
+    current.locked !== replacement.locked
   )
     return undefined;
   const translation = {

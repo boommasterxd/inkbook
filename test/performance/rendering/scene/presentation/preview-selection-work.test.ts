@@ -67,7 +67,7 @@ it("builds exact preview geometry only for mounted elements and adopts it on vie
   });
   const build = vi.spyOn(elementPath, "buildElementPathParts");
   const get = vi.spyOn(store, "get");
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   try {
     renderer.setElementPreviews(previews, 1);
     renderer.flushPointerFeedbackFrame();

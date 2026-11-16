@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
 import { createBuiltInSettings } from "../../../../../src/domain/settings/defaults";
-import { ElementStore } from "../../../../../src/domain/store/public";
+import { ElementStore, withElementLock } from "../../../../../src/domain/store/public";
 import * as styleControls from "../../../../../src/obsidian/embeds/active-editor/controller-styles";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
@@ -77,6 +77,27 @@ function cacheFixture(cache = true, localization = new Localization()) {
 function opacityControl(fixture: ReturnType<typeof cacheFixture>) {
   return fixture.styles.presentation("select").controls.find(({ id }) => id === "opacity");
 }
+
+it("keeps locked selections distinct from missing elements and restores controls after unlock", () => {
+  const fixture = cacheFixture();
+  fixture.setSelection([fixture.first.id]);
+  fixture.store.replace(
+    fixture.first.id,
+    withElementLock(fixture.store.get(fixture.first.id)!.element, true),
+  );
+  expect(fixture.styles.presentation("draw").controls).toEqual([]);
+  fixture.styles.apply("draw", "opacity", 0.25);
+  expect(fixture.styles.defaults.pen.opacity).toBe(1);
+  expect(fixture.store.get(fixture.first.id)?.element).toMatchObject({
+    locked: true,
+    style: { opacity: 1 },
+  });
+  fixture.store.replace(
+    fixture.first.id,
+    withElementLock(fixture.store.get(fixture.first.id)!.element, false),
+  );
+  expect(opacityControl(fixture)).toMatchObject({ value: 1 });
+});
 
 describe("style presentation demand", () => {
   it("keeps icon-only presentation lazy and each resolved control snapshot stable", () => {

@@ -1,3 +1,12 @@
+import {
+  FakeDocument,
+  FakeNode,
+  FakeSceneStore,
+  FakeScheduler,
+  asElement,
+  fakeNode,
+  sceneBandNode,
+} from "../../../../unit/rendering/scene/fakes";
 import { describe, expect, it } from "vitest";
 
 import { deriveRenderBands } from "../../../../../src/domain/commands/render-bands";
@@ -20,14 +29,6 @@ import {
   createAllElementSnapshot,
   uuid,
 } from "../../../../unit/persistence/serialization/fixtures";
-import {
-  FakeDocument,
-  FakeNode,
-  FakeSceneStore,
-  FakeScheduler,
-  asElement,
-  fakeNode,
-} from "../../../../unit/rendering/scene/fakes";
 
 type Attributes = ReadonlyMap<string, string>;
 
@@ -212,7 +213,7 @@ function representativeSnapshot(): InkSnapshotV1 {
   }
   snapshot.elements.splice(1, 0, freehandHighlighter(15));
   snapshot.elements.push(
-    arrow(13, 700, "arrow", "diamond", { type: "theme-text" }),
+    arrow(13, 700, "arrow", "diamond", { type: "rgba" as const, value: "#000000FF" as const }),
     arrow(14, 900, "none", "none", { type: "rgba", value: "#00AA66CC" }),
   );
   return snapshot;
@@ -223,8 +224,7 @@ function arrow(
   y: number,
   startNode: "arrow" | "none",
   endNode: "diamond" | "none",
-  outlineColor:
-    { readonly type: "theme-text" } | { readonly type: "rgba"; readonly value: `#${string}` },
+  outlineColor: { readonly type: "rgba"; readonly value: `#${string}` },
 ): InkElementV1 {
   return {
     bend: { x: 350, y: y - 40 },
@@ -318,8 +318,8 @@ function activeBandPaths(renderer: SvgSceneRenderer): {
 } {
   const camera = sceneCamera(renderer);
   return {
-    content: childAttributes(camera.nodes[4]),
-    highlight: childAttributes(camera.nodes[3]),
+    content: childAttributes(sceneBandNode(camera, "content")),
+    highlight: childAttributes(sceneBandNode(camera, "highlight")),
   };
 }
 
@@ -409,9 +409,6 @@ function resolvedPaint(
   }
   if (className === "inkbook-theme-guide" && paint === "stroke") {
     return PORTABLE_PALETTE_V1[scheme].guide;
-  }
-  if (className === `inkbook-theme-${paint}` || className === "inkbook-theme-stroke-fill") {
-    return PORTABLE_PALETTE_V1[scheme].text;
   }
   return fallback;
 }

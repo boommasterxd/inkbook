@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { CoalescedExportTarget } from "../../../../src/persistence/worker/coalesced-export";
+import { imageResource } from "../../../fixtures/domain/images";
 import { fontResource } from "../clipboard/fixtures";
 
 interface ElementRecord {
@@ -22,6 +23,22 @@ it("retains only the latest immutable font resources across coalesced deltas", (
   expect(target.materialize({})).toMatchObject({ fontResources: [] });
   target.requireFullSnapshot(3);
   expect(target.materialize({ snapshot: {} })).not.toHaveProperty("fontResources");
+});
+it("retains resource deltas until dispatch while geometry-only batches omit raster payloads", () => {
+  const first = imageResource();
+  const target = new CoalescedExportTarget<ElementRecord, never>(0, ({ id }) => id);
+  target.record({ modelRevision: 1, imageResources: [first] });
+  first.data = "changed";
+  target.record({ modelRevision: 2, changedElements: [{ id: "image", value: 2 }] });
+  const plan = target.materialize({});
+  expect(plan).toMatchObject({ imageResources: [imageResource()] });
+  if (plan.type !== "incremental") throw new Error("Expected an incremental plan.");
+  expect(Object.isFrozen(plan.imageResources?.[0])).toBe(true);
+  const next = new CoalescedExportTarget<ElementRecord, never>(2, ({ id }) => id);
+  next.record({ modelRevision: 3, changedElements: [{ id: "image", value: 3 }] });
+  expect(next.materialize({})).not.toHaveProperty("imageResources");
+  target.requireFullSnapshot(2);
+  expect(target.materialize({ snapshot: {} })).not.toHaveProperty("imageResources");
 });
 describe("coalesced export target", () => {
   it("keeps latest element and page values while removals win within a delta", () => {

@@ -64,6 +64,8 @@ export function createActiveSceneController(
     onDeleteEmbed: options.onDeleteEmbed,
     onOpenSettings: options.onOpenSettings,
     onOpenFonts: options.onOpenFonts,
+    onImportImages: options.onImportImages,
+    onCropImage: options.onCropImage,
     onOpenShortcuts: options.onOpenShortcuts,
     onboardingPreference: options.onboardingPreference,
     onPageChanged: () => layout().pageChanged(),

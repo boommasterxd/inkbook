@@ -7,6 +7,6 @@ export const presentation = {
   "presentation.operation.loading": "Zeichnung wird geladen",
   "presentation.erase.title": "Alle Elemente löschen?",
   "presentation.erase.description":
-    "Alle Elemente dieser Zeichnung werden entfernt. Du kannst dies rückgängig machen.",
+    "Alle ungesperrten Elemente dieser Zeichnung werden entfernt. Gesperrte Elemente bleiben erhalten. Du kannst dies rückgängig machen.",
   "presentation.erase.confirm": "Alles löschen",
 } as const;

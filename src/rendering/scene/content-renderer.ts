@@ -1,6 +1,7 @@
 import { SceneGeometryPublication } from "./content/geometry-publication";
 import { TextViewportPublication } from "./content/text-viewport-publication";
 import { SceneSelectionRuns } from "./presentation/selection-runs";
+import { RunTranslationAdmission } from "./presentation/selection-translation-admission";
 import type { ProgressivePreviewTransform } from "./presentation/progressive-preview-request";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
@@ -17,7 +18,7 @@ import type { MutableSceneInstrumentation, SceneStorePort, SceneDeltaEntry } fro
 import type { SceneVisibilityState } from "./visibility/visibility-state";
 import { SceneVisibilityReconciler } from "./reconciliation/scene-visibility-reconciler";
 import type { PreviewTransform } from "./reconciliation/scene-visibility-reconciler";
-import { markSceneOrderDirty } from "./content/dirty-set-work";
+import { markSceneOrderDirty, resetSceneBands } from "./content/dirty-set-work";
 import { commitVisibleBands, mountedVisibleIds } from "./visibility/visibility-order";
 import { mountedPreviewIds } from "./presentation/preview-transform-selection";
 import type { PreviewMembershipContext } from "./types";
@@ -26,19 +27,25 @@ type ContentOptions = ScenePreparationOptions & {
   readonly canPrepareGeometry?: () => boolean;
   readonly zoom?: () => number;
 };
+type CanonicalPreviewArguments = Parameters<
+  SceneGeometryPublication["applyCanonicalElementPreview"]
+>;
 import type { SceneVisibilityPriority } from "./visibility/scene-entrant-priority";
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
-
 export class SceneContentRenderer {
+  public readonly selectionTranslation: RunTranslationAdmission;
+  public readonly selectionFeedbackIds: SceneSelectionRuns["ids"];
   public onTextElementStateChanged: (id: string, state: "published" | "removed") => void = () =>
     undefined;
   #pinnedTextId: string | undefined;
   readonly #dom: SceneDom;
   readonly #committedIds: Record<RenderBand, readonly (string | undefined)[]> = {
+    image: [],
     content: [],
     highlight: [],
   };
   readonly #committedCounts: Record<RenderBand, number> = {
+    image: 0,
     content: 0,
     highlight: 0,
   };
@@ -53,6 +60,7 @@ export class SceneContentRenderer {
   );
   #newlyMountedIds: readonly string[] = EMPTY_IDS;
   readonly #orderDirty: Record<RenderBand, Set<string>> = {
+    image: new Set(),
     content: new Set(),
     highlight: new Set(),
   };
@@ -89,6 +97,7 @@ export class SceneContentRenderer {
       visible: (id) => this.#visibility.contains(id),
       syncTrace: (entry) => this.#selectionTraces.transform(entry.id, entry),
     });
+    this.selectionFeedbackIds = this.#selectionRuns.ids.bind(this.#selectionRuns);
     let waitingForGeometryAdmission = false;
     this.#publication = new SceneGeometryPublication({
       prepareGeometry: (record, deadline, now, preemptLocal) => {
@@ -119,6 +128,7 @@ export class SceneContentRenderer {
       selectionTraces: this.#selectionTraces,
       onTextPublished: (id) => this.onTextElementStateChanged(id, "published"),
     });
+    this.selectionTranslation = new RunTranslationAdmission(this.#selectionRuns, this.#publication);
     this.#store = store;
     this.#visibility = visibility;
     this.#reconciler = new SceneVisibilityReconciler({
@@ -179,7 +189,7 @@ export class SceneContentRenderer {
   public previewMemoryUsage(): number {
     return (
       // Reserve one six-coefficient preview matrix per mounted entry, including aliases.
-      this.#mounted.size * 6 * 8 +
+      this.#mounted.size * (6 * 8 + 40) +
       this.#selectionTraces.memoryUsage() +
       this.#selectionRuns.memoryUsage() +
       this.#publication.memoryUsage() +
@@ -194,12 +204,14 @@ export class SceneContentRenderer {
   public previewMountedIds(context?: PreviewMembershipContext): Iterable<string> {
     return mountedPreviewIds(this.#mounted, this.#visibility, context);
   }
-  public hasMounted(id: string): boolean {
-    return this.#mounted.has(id);
-  }
+  public readonly hasMounted = (id: string): boolean => this.#mounted.has(id);
   public mountedText(id: string) {
     return this.#mounted.get(id)?.text;
   }
+  public mountedImageRoot(id: string): SVGGElement | undefined {
+    return this.#mounted.get(id)?.image?.group;
+  }
+  public readonly mountedBounds = (id: string): Bounds | undefined => this.#mounted.get(id)?.bounds;
   public textMotionSnapshot(element: InkElementV1, maximumNodes: number, maximumBytes: number) {
     return element.kind === "text"
       ? this.#mounted.get(element.id)?.text?.motionSnapshot(element, maximumNodes, maximumBytes)
@@ -379,11 +391,8 @@ export class SceneContentRenderer {
   public readCanonicalStrokePath(element: InkElementV1): readonly SvgPathPart[] | undefined {
     return this.#publication.readCanonicalStrokePath(element);
   }
-  public applyCanonicalElementPreview(
-    element: InkElementV1,
-    parts: readonly SvgPathPart[],
-  ): boolean {
-    return this.#publication.applyCanonicalElementPreview(element, parts);
+  public applyCanonicalElementPreview(...args: CanonicalPreviewArguments): boolean {
+    return this.#publication.applyCanonicalElementPreview(...args);
   }
   public clearElementPreview(id: string): void {
     this.#publication.clearElementPreview(id);
@@ -445,20 +454,10 @@ export class SceneContentRenderer {
     this.#fades.release();
     this.#selectionTraces.release();
     this.#reconciler.release();
-    this.#orderDirty.content.clear();
-    this.#orderDirty.highlight.clear();
+    resetSceneBands(this.#orderDirty, this.#committedIds, this.#committedCounts);
     this.#mounted.clear();
     this.#detachedCache?.dispose();
     this.#newlyMountedIds = EMPTY_IDS;
-    this.#committedIds.content = [];
-    this.#committedIds.highlight = [];
-    this.#committedCounts.content = 0;
-    this.#committedCounts.highlight = 0;
-  }
-  public selectionFeedbackIds(
-    feedback: ProgressivePreviewTransform | undefined,
-  ): readonly string[] | undefined {
-    return this.#selectionRuns.ids(feedback);
   }
   public selectionFeedbackSnapshotIds(
     feedback: ProgressivePreviewTransform | undefined,
@@ -491,9 +490,6 @@ export class SceneContentRenderer {
     return this.#selectionRuns.transforms;
   }
   public get deferVisibilityForRunCommit(): boolean {
-    return (
-      this.#selectionRuns.structuralRetirement ||
-      (this.#selectionRuns.cleaning && !this.#selectionRuns.active)
-    );
+    return this.#selectionRuns.defersVisibility;
   }
 }

@@ -44,6 +44,11 @@ export const CANONICAL_THEME_STYLESHEET =
   ".inkbook-theme-fill{fill:var(--inkbook-text)}" +
   ".inkbook-theme-stroke-fill{stroke:var(--inkbook-text);fill:var(--inkbook-text)}";
 
+const FIXED_COLOR_THEME_STYLESHEET = CANONICAL_THEME_STYLESHEET.replaceAll(
+  /;--inkbook-text:#[0-9A-F]{8}/gu,
+  "",
+).replace(/\.inkbook-theme-(?:stroke|fill|stroke-fill)\{[^}]+\}/gu, "");
+
 const OPAQUE_THEME_STYLESHEET_V1 = replaceGuidePresentation(
   CANONICAL_THEME_STYLESHEET,
   "#DCDCDCFF",
@@ -62,6 +67,7 @@ const RECENT_THEME_STYLESHEET_V1 = legacyThemeStylesheet("#212121FF");
 export const LEGACY_THEME_STYLESHEET_V1 = legacyThemeStylesheet("#282828FF");
 const SUPPORTED_THEME_STYLESHEETS = new Set([
   CANONICAL_THEME_STYLESHEET,
+  FIXED_COLOR_THEME_STYLESHEET,
   PREVIOUS_THEME_STYLESHEET_V1,
   OPAQUE_THEME_STYLESHEET_V1,
   PREVIOUS_OPAQUE_THEME_STYLESHEET_V1,

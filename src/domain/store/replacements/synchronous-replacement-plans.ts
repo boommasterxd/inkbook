@@ -1,6 +1,7 @@
 import type { InkElementV1 } from "../../schema/public";
 import { prepareReplacementPlan, type ReplacementPlan } from "./replacement-plan";
 import type { ReplacementCandidate, ReplacementPlannerPorts } from "./replacement-planner";
+import type { StoreSliceScheduler } from "../types";
 
 interface OwnedReplacementPlan {
   readonly mutationVersion: number;
@@ -19,10 +20,13 @@ export class SynchronousReplacementPlans {
     this.#version = version;
   }
 
-  public plan(replacements: readonly InkElementV1[]): ReplacementPlan | null {
+  public plan(
+    replacements: readonly InkElementV1[],
+    options: Pick<StoreSliceScheduler, "protectLocked"> = {},
+  ): ReplacementPlan | null {
     if (replacements.length === 0) return null;
     const mutationVersion = this.#version();
-    const plan = prepareReplacementPlan(replacements, this.#ports());
+    const plan = prepareReplacementPlan(replacements, { ...this.#ports(), ...options });
     if (mutationVersion !== this.#version()) throw new RangeError("Replacement plan is stale.");
     if (plan.elements.length === 0) return null;
     const owned = {

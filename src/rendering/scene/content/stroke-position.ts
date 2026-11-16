@@ -2,6 +2,7 @@ import { sameStrokeLocalPivot } from "../../../domain/geometry/stroke-position";
 import type { InkElementV1, StrokeElementV1 } from "../../../domain/schema/public";
 import { isStoredStroke } from "../../../domain/elements/stroke-replacement-proof";
 import type { PreparedPressureGeometryPort } from "../../../domain/geometry/pressure/prepared-pressure-geometry";
+import type { Bounds } from "../../../domain/geometry/primitives";
 import type { SvgPathPart } from "../../../domain/geometry/element-path";
 
 export function readCanonicalStrokePath(
@@ -26,7 +27,7 @@ export function positionedTransform(
   element: InkElementV1 | undefined,
   preview: string | null,
 ): string | null {
-  if (element?.kind === "text" && element.rotation !== 0) {
+  if ((element?.kind === "text" || element?.kind === "image") && element.rotation !== 0) {
     const rotation = `rotate(${element.rotation} ${element.pivot.x} ${element.pivot.y})`;
     return preview === null ? rotation : `${preview} ${rotation}`;
   }
@@ -71,4 +72,16 @@ export function immutableLocalShape(element: StrokeElementV1): boolean {
       Object.isFrozen(element.pivot) &&
       (element.offset === undefined || Object.isFrozen(element.offset)))
   );
+}
+
+/** Convert a prepared world bound to the retained stroke path's local coordinates. */
+export function strokeShapeBounds(element: InkElementV1, bounds: Bounds): Bounds {
+  const offset = element.kind === "stroke" ? element.offset : undefined;
+  if (offset === undefined || (offset.x === 0 && offset.y === 0)) return bounds;
+  return {
+    minX: bounds.minX - offset.x,
+    minY: bounds.minY - offset.y,
+    maxX: bounds.maxX - offset.x,
+    maxY: bounds.maxY - offset.y,
+  };
 }

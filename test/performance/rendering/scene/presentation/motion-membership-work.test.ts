@@ -11,6 +11,7 @@ import { createMotionHarness } from "../../../../fixtures/rendering/scene-motion
 import { NAVIGATION_PAGE } from "../../../../fixtures/rendering/pressure-navigation";
 import { FakeNode, fakeNode, fakeRectangleRecord } from "../../../../unit/rendering/scene/fakes";
 import * as elementPath from "../../../../../src/domain/geometry/element-path";
+import { calculateElementBounds } from "../../../../../src/domain/geometry/bounds";
 import type { SceneContentRenderer } from "../../../../../src/rendering/scene/content-renderer";
 import { MAX_STROKE_POINTS, type BoxShapeElementV1 } from "../../../../../src/domain/schema/public";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
@@ -23,6 +24,7 @@ function crossfadeCapacity(limit: "paths" | "bytes") {
       paths: undefined,
       capacity: 256,
       pointReads: () => 0,
+      bounds: fakeRectangleRecord("paint", 0, 0).bounds,
     };
   const stroke = indexedStroke(1);
   stroke.style = { ...stroke.style, pressureEnabled: false, smoothing: 0.5 };
@@ -32,6 +34,7 @@ function crossfadeCapacity(limit: "paths" | "bytes") {
     0.5,
   ]).flat();
   const paths = elementPath.buildElementPathParts(stroke);
+  const bounds = calculateElementBounds(stroke);
   expect(paths).toHaveLength(1);
   const capacity = Math.floor((4 * 1024 * 1024) / (paths[0]!.d.length * 2));
   expect(capacity).toBeGreaterThan(1);
@@ -40,7 +43,7 @@ function crossfadeCapacity(limit: "paths" | "bytes") {
   stroke.points = observePointReads(stroke.points, () => {
     pointReads += 1;
   });
-  return { element: stroke, paths, capacity, pointReads: () => pointReads };
+  return { element: stroke, paths, capacity, pointReads: () => pointReads, bounds };
 }
 
 it.each(["paths", "bytes"] as const)(
@@ -48,6 +51,7 @@ it.each(["paths", "bytes"] as const)(
   (limit) => {
     const { motion, content, dom } = createMotionHarness(0, 0);
     const fixture = crossfadeCapacity(limit);
+    content.mountedBounds.mockReturnValue(fixture.bounds);
     let element = fixture.element;
     const capacity = fixture.capacity;
     const canonical = vi.spyOn(
@@ -90,7 +94,8 @@ it.each(["paths", "bytes"] as const)(
         paint();
         expect(builds.mock.calls.length - buildStart).toBe(limit === "paths" ? 1 : 0);
         expect(allocations.mock.calls.length - nodeStart).toBe(1);
-        expect(writes.mock.calls.length - writeStart).toBe(2);
+        // The new target owns one explicit world-sampling origin plus opacity and scale.
+        expect(writes.mock.calls.length - writeStart).toBe(3);
         const frameWrites = writes.mock.calls.length;
         motion.write(layer * 20, Infinity, () => 0);
         expect(writes.mock.calls.length - frameWrites).toBeLessThanOrEqual(512);
@@ -132,7 +137,7 @@ it("bounds real fade publication and replay interruption across 10,000 mounted m
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, indexed.store);
   scheduler.runAll(200);
   const startedAt = scheduler.time;
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
   const entries = [...records.records.values()];
   const fades = vi.spyOn(fadeStyle, "setElementFadeNode");
   const removals = vi.spyOn(FakeNode.prototype, "remove");
@@ -275,7 +280,7 @@ it.each(["queued", "running"] as const)(
     const indexed = createIndexedSceneStore(records);
     const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, indexed.store);
     scheduler.runAll(200);
-    const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+    const content = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
     const ids = [...records.records.keys()];
     const retainedBefore = renderer.memoryUsage().pathCacheBytes;
     const writeFade = fadeStyle.setElementFadeNode;

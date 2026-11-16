@@ -1,33 +1,17 @@
 import type { ColorV1, ShapeStyleV1 } from "../../domain/schema/public";
 import type { Translator } from "../../domain/localization";
-import { BUILT_IN_COLORS } from "../../domain/settings/defaults";
+import { BUILT_IN_COLOR_OPTIONS } from "../../domain/settings/color-palette";
 import type { StyleChoiceOption } from "./editor-menu-types";
 
-const COLOR_KEYS = [
-  "theme-text",
-  "red",
-  "orange",
-  "yellow",
-  "green",
-  "cyan",
-  "blue",
-  "violet",
-  "pink",
-  "gray",
-] as const;
-
 export function colorStyleOptions(t: Translator): readonly StyleChoiceOption[] {
-  return BUILT_IN_COLORS.map((color, index) => ({
-    label: t(`editor.option.${COLOR_KEYS[index]!}`),
+  return BUILT_IN_COLOR_OPTIONS.map(({ color, key }) => ({
+    label: t(`editor.option.${key}`),
     value: serializeStyleColor(color),
   }));
 }
 
 export function fillColorStyleOptions(t: Translator): readonly StyleChoiceOption[] {
-  return [
-    { label: t("editor.option.none"), value: "none" },
-    ...colorStyleOptions(t).filter((_, index) => COLOR_KEYS[index] !== "gray"),
-  ];
+  return [{ label: t("editor.option.none"), value: "none" }, ...colorStyleOptions(t)];
 }
 
 export function serializeStyleColor(color: ColorV1): string {

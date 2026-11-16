@@ -1,3 +1,13 @@
+import {
+  FakeDocument,
+  FakeNode,
+  FakeSceneStore,
+  FakeScheduler,
+  asElement,
+  fakeNode,
+  fakeRectangleRecord,
+  sceneBandNode,
+} from "../../../unit/rendering/scene/fakes";
 import { describe, expect, it, vi } from "vitest";
 import { cursorPointerEvent, toolCursorHarness } from "../../../fixtures/obsidian/tool-cursor";
 import { sceneNavigationFixture } from "../../../fixtures/obsidian/scene-navigation";
@@ -7,15 +17,6 @@ import { liveStrokePresentation } from "../../../../src/rendering/scene/content/
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { SVG_NAMESPACE } from "../../../../src/rendering/scene/constants";
 import type { SceneToolCursor } from "../../../../src/rendering/scene/tool-cursor";
-import {
-  FakeDocument,
-  FakeNode,
-  FakeSceneStore,
-  FakeScheduler,
-  asElement,
-  fakeNode,
-  fakeRectangleRecord,
-} from "../../../unit/rendering/scene/fakes";
 
 const CURSOR: Extract<SceneToolCursor, { kind: "tool" }> = {
   color: { type: "rgba", value: "#FFCC0080" },
@@ -109,10 +110,9 @@ describe("retained tool cursor", () => {
     expect(obsoleteRead).not.toHaveBeenCalled();
     expect(cursor.parent?.parent).toBe(renderer.inputSurface.ownerDocument.body);
     expect(svg.ownerDocument).not.toBe(renderer.inputSurface.ownerDocument);
-    expect(cursor.nodes.map((node) => node.tagName)).toEqual(["circle", "g"]);
     expect(cursor.attributes.get("transform")).toBe("translate(40 30)");
-    expect(cursor.nodes[1]!.attributes.get("color")).toBe("#FFCC0080");
-    expect(cursor.nodes[1]!.nodes[0]).toBe(fakeNode(CURSOR.icon!));
+    expect(cursor.nodes[2]!.attributes.get("color")).toBe("#FFCC0080");
+    expect(cursor.nodes[2]!.nodes[0]).toBe(fakeNode(CURSOR.icon!));
     writes.mockClear();
     renderer.requestToolCursorFrame(() => ({ ...FRAME, cursor: { ...CURSOR, x: 40 } }));
     scheduler.runAll();
@@ -126,8 +126,8 @@ describe("retained tool cursor", () => {
     renderer.destroy();
   });
 
-  it("keeps one exact eraser ring, theme paint and node identity across zoom and hide", () => {
-    const { renderer, scheduler, cursor, svg } = setup();
+  it("keeps both eraser layers at the hit radius across zoom, tool changes and hide", () => {
+    const { renderer, scheduler, cursor } = setup();
     renderer.requestToolCursorFrame(() => ({
       ...FRAME,
       cursor: { ...CURSOR, kind: "eraser", radius: 64 },
@@ -135,23 +135,24 @@ describe("retained tool cursor", () => {
     scheduler.runAll();
     renderer.setCamera({ x: 15, zoom: 4 });
     scheduler.runAll();
-    const ring = cursor.nodes[0]!;
-    expect(ring.attributes.get("r")).toBe("64");
-    expect(ring.attributes.get("fill")).toBe("none");
-    expect(ring.attributes.get("stroke")).toBe("var(--inkbook-text)");
-    expect(ring.attributes.get("stroke-dasharray")).toBe("4 3");
-    expect(cursor.nodes[1]!.attributes.get("visibility")).toBe("hidden");
+    const rings = cursor.nodes.slice(0, 2);
+    for (const ring of rings) {
+      expect(ring.attributes.get("r")).toBe("64");
+      expect(ring.attributes.get("visibility")).toBe("visible");
+    }
+    expect(cursor.nodes[2]!.attributes.get("visibility")).toBe("hidden");
     renderer.requestToolCursorFrame(() => ({ cursor: null, system: "crosshair" }));
     scheduler.runAll();
     renderer.requestToolCursorFrame(() => ({
       ...FRAME,
-      cursor: { ...CURSOR, color: { type: "theme-text" } },
+      cursor: { ...CURSOR, color: { type: "rgba" as const, value: "#000000FF" as const } },
     }));
     scheduler.runAll();
-    expect(cursor.parent?.parent).toBe(renderer.inputSurface.ownerDocument.body);
-    expect(svg.ownerDocument).not.toBe(renderer.inputSurface.ownerDocument);
-    expect(cursor.nodes[1]!.attributes.get("color")).toBe("var(--inkbook-text)");
-    expect(ring.attributes.get("visibility")).toBe("hidden");
+    expect(cursor.nodes[2]!.attributes.get("color")).toBe("#000000FF");
+    for (const ring of rings) {
+      expect(ring.attributes.get("visibility")).toBe("hidden");
+      expect(cursor.nodes).toContain(ring);
+    }
     renderer.requestToolCursorFrame(() => ({ cursor: null, system: "crosshair" }));
     renderer.destroy();
     expect(scheduler.pendingCount).toBe(0);
@@ -176,7 +177,11 @@ describe("persistent tool decoration and frame reads", () => {
       "pen",
     );
     expect(cursor.attributes.get("display")).toBe("inline");
-    expect(svg.nodes[1]!.nodes[6]!.nodes[0]!.nodes[0]!.attributes.get("d")).toBe("M20 30L21 30");
+    expect(
+      sceneBandNode(svg, "content").nextSibling!.nextSibling!.nodes[0]!.nodes[0]!.attributes.get(
+        "d",
+      ),
+    ).toBe("M20 30L21 30");
     renderer.commitLiveStroke("new");
     scheduler.runAll();
     expect(cursor.attributes.get("display")).toBe("inline");
@@ -193,7 +198,7 @@ describe("persistent tool decoration and frame reads", () => {
       ],
     });
     expect(cursor.attributes.get("display")).toBe("inline");
-    const path = svg.nodes[1]!.nodes[5]!.nodes[0]!;
+    const path = sceneBandNode(svg, "content").nextSibling!.nodes[0]!;
     expect(path.attributes.get("d") ?? "").toBe("");
     scheduler.runAll();
     expect(path.attributes.get("d")).toBe("M20 30L50 30");
@@ -246,7 +251,7 @@ describe("tool decoration swaps", () => {
     };
     renderer.requestToolCursorFrame(() => ({ cursor: state, system: "crosshair" }));
     scheduler.runAll();
-    const host = cursor.nodes[1]!;
+    const host = cursor.nodes[2]!;
     expect(host.attributes.get("opacity")).toBe("1");
     expect(host.attributes.get("stroke-opacity")).toBe("0.4");
     expect(host.attributes.get("color")).toBe("#FFCC0080");
@@ -277,7 +282,7 @@ describe("tool decoration swaps", () => {
 
   it("reuses a stable icon, swaps only changed identities and permits missing icons", () => {
     const { renderer, scheduler, cursor } = setup();
-    const iconHost = cursor.nodes[1]!;
+    const iconHost = cursor.nodes[2]!;
     const append = vi.spyOn(iconHost, "append");
     renderer.requestToolCursorFrame(() => FRAME);
     scheduler.runAll();
@@ -307,7 +312,7 @@ describe("tool decoration swaps", () => {
 describe("retained staged marker commits", () => {
   it("retains two fast commits until each mounts, including partial reconciliation", () => {
     const { renderer, scheduler, cursor, store, svg } = setup();
-    const group = svg.nodes[1]!.nodes[4]!;
+    const group = sceneBandNode(svg, "content");
     renderer.requestToolCursorFrame(() => FRAME);
     scheduler.runAll();
     const ids = ["first", "second"];
@@ -371,7 +376,7 @@ describe("retained staged marker commits", () => {
       ],
     });
     renderer.commitLivePath(record.id);
-    const retained = svg.nodes[1]!.nodes[4]!.nodes[0]!;
+    const retained = sceneBandNode(svg, "content").nodes[0]!;
     expect(() => renderer.commitLivePath(record.id)).toThrow("unique");
     store.records.delete(record.id);
     renderer.applyDelta({
@@ -403,7 +408,7 @@ it.each([
     };
     h.surface.dispatchEvent(cursorPointerEvent({ pointerType, pointerId: 2 }));
     flush();
-    const decoration = cursor.nodes[activeTool === "eraser" ? 0 : 1]!;
+    const decoration = cursor.nodes[activeTool === "eraser" ? 0 : 2]!;
     expect(decoration.attributes.get("visibility")).toBe("visible");
     expect(cursor.attributes.get("display")).toBe("inline");
     // Leaving the canvas and pen proximity loss both produce a pointerleave.
@@ -423,7 +428,7 @@ it.each([
     h.surface.dispatchEvent(cursorPointerEvent({ pointerType, pointerId: 2 }));
     flush();
     expect(cursor.attributes.get("display")).toBe("inline");
-    expect(cursor.nodes[activeTool === "eraser" ? 0 : 1]).toBe(decoration);
+    expect(cursor.nodes[activeTool === "eraser" ? 0 : 2]).toBe(decoration);
     h.controller.dispose();
     renderer.destroy();
   },

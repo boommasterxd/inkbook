@@ -1,22 +1,24 @@
+import { FakeNode, fakeNode, sceneBandNode } from "../../../../unit/rendering/scene/fakes";
 import { afterEach, expect, it, vi } from "vitest";
 import { buildElementPathParts } from "../../../../../src/domain/geometry/element-path";
 import { scaleElement } from "../../../../../src/editor/selection/transform/transforms";
 import * as mounted from "../../../../../src/rendering/scene/content/mounted-element";
 import { draining } from "../../../../fixtures/rendering/selection-run-drain";
+import { validImageFixture } from "../../../../fixtures/persistence/images";
+import * as StoreFixtures from "../../../../unit/domain/store/fixtures";
 import {
   contentPaths,
   paintedX,
   selectionPath,
 } from "../../../../fixtures/rendering/selection-runs";
-import { FakeNode, fakeNode } from "../../../../unit/rendering/scene/fakes";
 
 afterEach(() => vi.restoreAllMocks());
 
-function partialSkip() {
-  const f = draining([], 2, true);
+function partialSkip(f = draining([], 2, true)) {
   const element = f.selected[550]!;
   const svg = fakeNode(f.renderer.svg);
   const node = selectionPath(f, element);
+  const width = node.getAttribute("stroke-width");
   const dash = node.getAttribute("stroke-dasharray");
   const expectedD = buildElementPathParts(scaleElement(element, { x: 0, y: 0 }, { x: 2, y: 1 }))[0]!
     .d;
@@ -40,7 +42,29 @@ function partialSkip() {
   insertion.mockRestore();
   expect(svg.getAttribute("data-inkbook-run-feedback")).toBe("true");
   expect(f.scheduler.pendingCount).toBeGreaterThan(0);
-  return { ...f, element, node, svg, expectedD, dash };
+  return { ...f, element, node, svg, expectedD, width, dash };
+}
+
+async function imageDrain() {
+  const image = await validImageFixture();
+  const originalRectangle = StoreFixtures.rectangle;
+  const rectangles = vi.spyOn(StoreFixtures, "rectangle").mockImplementation((...args) => {
+    const element = originalRectangle(...args);
+    return {
+      ...element,
+      style: {
+        ...element.style,
+        outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
+      },
+    };
+  });
+  try {
+    return draining([image.element], 2, true, 8, {
+      imageResource: (id) => (id === image.asset.id ? image.asset : undefined),
+    });
+  } finally {
+    rectangles.mockRestore();
+  }
 }
 
 function beginBudgetedReturn(f: ReturnType<typeof partialSkip>): void {
@@ -85,14 +109,14 @@ function expectCanonicalPaint(f: ReturnType<typeof partialSkip>): void {
   }
   // Native SVG paint follows camera zoom: width 4 becomes 8 and dash lengths double.
   expect(f.svg.nodes[1]!.getAttribute("transform")).toContain("scale(2)");
-  expect(paintedX(node, f.svg.nodes[1]!.nodes[4]!)).toBeCloseTo(
+  expect(paintedX(node, sceneBandNode(fakeNode(f.renderer.svg), "content"))).toBeCloseTo(
     Number(/^M\s*([-\d.]+)/.exec(f.expectedD)![1]),
     6,
   );
 }
 
-it("does not paint a partly skipped old node at stale zoom width before canonical readmission", () => {
-  const f = partialSkip();
+it("does not reveal stale zoom before canonical readmission", async () => {
+  const f = partialSkip(await imageDrain());
   try {
     const before = f.writes.filter((id) => id === f.element.id).length;
     const mounts = vi.spyOn(mounted, "createMountedElement");
@@ -100,7 +124,17 @@ it("does not paint a partly skipped old node at stale zoom width before canonica
     expect(f.writes.filter((id) => id === f.element.id).length).toBe(before);
     expect(mounts.mock.calls.filter(([, record]) => record.id === f.element.id).length).toBe(0);
     expect(f.node.getAttribute("visibility")).toBe("hidden");
+    const remove = f.node.removeAttribute.bind(f.node);
+    let shown = 0;
+    vi.spyOn(f.node, "removeAttribute").mockImplementation((name) => {
+      remove(name);
+      if (name !== "visibility") return;
+      shown += 1;
+      expect(f.node.getAttribute("stroke-width")).toBe(f.width);
+      expect(f.node.getAttribute("stroke-dasharray")).toBe(f.dash);
+    });
     f.scheduler.runAll(1000);
+    expect(shown).toBe(1);
     expectCanonicalPaint(f);
     expect(
       f.writes.filter((id) => id === f.element.id).length -

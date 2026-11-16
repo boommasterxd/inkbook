@@ -1,3 +1,12 @@
+import {
+  FakeDocument,
+  FakeNode,
+  FakeSceneStore,
+  FakeScheduler,
+  asElement,
+  fakeNode,
+  sceneBandNode,
+} from "../../../../unit/rendering/scene/fakes";
 import { describe, expect, it } from "vitest";
 
 import { buildElementPathParts } from "../../../../../src/domain/geometry/public";
@@ -6,15 +15,6 @@ import { type StraightHighlighterElementV1 } from "../../../../../src/domain/sch
 import { LiveStrokeBuilder } from "../../../../../src/editor/tools/live-stroke";
 import { pathPresentation } from "../../../../../src/rendering/scene/content/element-presentation";
 import { SvgSceneRenderer } from "../../../../../src/rendering/scene";
-
-import {
-  FakeDocument,
-  FakeNode,
-  FakeSceneStore,
-  FakeScheduler,
-  asElement,
-  fakeNode,
-} from "../../../../unit/rendering/scene/fakes";
 
 const page: PageV1 = {
   activeBufferLines: 3,
@@ -65,10 +65,10 @@ function sceneGroups(renderer: SvgSceneRenderer) {
   const camera = fakeNode(renderer.svg).nodes[1]!;
   return {
     camera,
-    contentGroup: camera.nodes[4]!,
-    highlightGroup: camera.nodes[3]!,
-    liveGroup: camera.nodes[5]!,
-    liveStrokeGroup: camera.nodes[6]!,
+    contentGroup: sceneBandNode(camera, "content"),
+    highlightGroup: sceneBandNode(camera, "highlight"),
+    liveGroup: sceneBandNode(camera, "content").nextSibling!,
+    liveStrokeGroup: sceneBandNode(camera, "content").nextSibling!.nextSibling!,
   };
 }
 

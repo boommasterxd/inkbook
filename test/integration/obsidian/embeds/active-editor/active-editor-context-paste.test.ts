@@ -93,6 +93,7 @@ describe("active editor context Paste menu", () => {
       }),
       canPaste: false,
       canRequestPaste: true,
+      isAvailable: () => false,
       execute,
     } as unknown as ActiveEditorActions;
     const menus = createActiveEditorMenuController(actions, { create, forEvent: create }, 0);
@@ -117,6 +118,7 @@ describe("active editor context Paste menu", () => {
       }),
       canPaste: true,
       canRequestPaste: true,
+      isAvailable: () => false,
       execute,
     } as unknown as ActiveEditorActions;
     const menus = createActiveEditorMenuController(
@@ -170,8 +172,8 @@ function clickableMenu(callbacks: Map<string, () => void>): MenuPort {
 
 function appliedMutation(): import("../../../../../src/domain/store/public").AppliedElementMutation {
   return {
-    forward: { bands: { content: ["paste"], highlight: [] } },
+    forward: { bands: { image: [], content: ["paste"], highlight: [] } },
     payloadBytes: 1,
-    reverse: { bands: { content: [], highlight: ["paste"] } },
+    reverse: { bands: { image: [], content: [], highlight: ["paste"] } },
   };
 }

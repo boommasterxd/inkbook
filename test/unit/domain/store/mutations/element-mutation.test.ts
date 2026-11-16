@@ -75,7 +75,7 @@ describe("ElementStore atomic element mutation", () => {
     const store = new ElementStore([startTarget, endTarget, line]);
 
     const applied = await commit(store, {
-      bands: { content: [line.id], highlight: [] },
+      bands: { image: [], content: [line.id], highlight: [] },
       removeIds: [startTarget.id, endTarget.id],
     });
 
@@ -96,7 +96,7 @@ describe("ElementStore runtime stroke restoration", () => {
     const source = highlighter();
     const { store, points } = await hydrateRuntimeStroke(source);
     const applied = await commit(store, {
-      bands: { content: [], highlight: [] },
+      bands: { image: [], content: [], highlight: [] },
       removeIds: [source.id],
     });
     expect(store.size).toBe(0);
@@ -124,7 +124,7 @@ describe("ElementStore runtime stroke restoration", () => {
     await expect(
       store.prepareElementMutation(
         {
-          bands: { content: [], highlight: [source.id] },
+          bands: { image: [], content: [], highlight: [source.id] },
           elements: [{ ...source, points } as unknown as typeof source],
         },
         scheduler,
@@ -145,7 +145,7 @@ describe("ElementStore prepared mutation traversal", () => {
     store.subscribe(listener);
 
     const applied = await commit(store, {
-      bands: { content: [line.id], highlight: [IDS.highlight] },
+      bands: { image: [], content: [line.id], highlight: [IDS.highlight] },
       removeIds: [target.id],
     });
 
@@ -180,6 +180,7 @@ describe("ElementStore prepared mutation traversal", () => {
 
     const applied = await commit(store, {
       bands: {
+        image: [],
         content: [existing.id, pastedContent.id],
         highlight: [pastedHighlight.id],
       },
@@ -188,12 +189,13 @@ describe("ElementStore prepared mutation traversal", () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(bands(store)).toEqual({
+      image: [],
       content: [existing.id, pastedContent.id],
       highlight: [pastedHighlight.id],
     });
     await commit(store, applied.reverse);
     expect(listener).toHaveBeenCalledTimes(2);
-    expect(bands(store)).toEqual({ content: [existing.id], highlight: [] });
+    expect(bands(store)).toEqual({ image: [], content: [existing.id], highlight: [] });
     await commit(store, applied.forward);
     expect(listener).toHaveBeenCalledTimes(3);
     expect(bands(store).content).toEqual([existing.id, pastedContent.id]);
@@ -203,7 +205,7 @@ describe("ElementStore prepared mutation traversal", () => {
     const target = rectangle();
     const store = new ElementStore([target]);
     const prepared = await store.prepareElementMutation(
-      { bands: { content: [], highlight: [] }, removeIds: [target.id] },
+      { bands: { image: [], content: [], highlight: [] }, removeIds: [target.id] },
       scheduler,
     );
     if (prepared.token === null) throw new Error("Expected prepared mutation token.");
@@ -230,6 +232,7 @@ describe("ElementStore time-sliced element mutation", () => {
     const prepared = await store.prepareElementMutation(
       {
         bands: {
+          image: [],
           content: store.materializeBandOrder("content").filter((id) => !removed.has(id)),
           highlight: store.materializeBandOrder("highlight").filter((id) => !removed.has(id)),
         },
@@ -268,6 +271,7 @@ const scheduler = {
 
 function bands(store: ElementStore) {
   return {
+    image: [],
     content: store.materializeBandOrder("content"),
     highlight: store.materializeBandOrder("highlight"),
   };

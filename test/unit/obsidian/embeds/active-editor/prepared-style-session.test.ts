@@ -1,3 +1,4 @@
+import { readElementStyle } from "../../../../fixtures/domain/element-style";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
@@ -180,7 +181,9 @@ describe("prepared style session routing", () => {
       expect(fixture.history.commandCount).toBe(1);
       expect(fixture.release).toHaveBeenCalledOnce();
       for (const element of elements) {
-        expect(fixture.store.get(element.id)?.element.style).toMatchObject({ opacity: 0.5 });
+        expect(readElementStyle(fixture.store.get(element.id)?.element)).toMatchObject({
+          opacity: 0.5,
+        });
       }
       fixture.styles.apply("select", "opacity", 0.3);
       await vi.waitFor(() => expect(fixture.geometryChanged).toHaveBeenCalledTimes(2));
@@ -212,12 +215,12 @@ describe("prepared style session routing", () => {
     expect(fixture.framesChanged).toHaveBeenCalledOnce();
     expect(fixture.history.commandCount).toBe(1);
     for (const element of elements) {
-      expect(fixture.store.get(element.id)?.element.style).toMatchObject({ width: 4 });
+      expect(readElementStyle(fixture.store.get(element.id)?.element)).toMatchObject({ width: 4 });
     }
     await expect(fixture.history.undoAsync()).resolves.toBe(true);
     expect(fixture.frames.current(geometry)).toBe(frame);
     for (const element of elements) {
-      expect(fixture.store.get(element.id)?.element.style).toMatchObject({ width: 2 });
+      expect(readElementStyle(fixture.store.get(element.id)?.element)).toMatchObject({ width: 2 });
     }
     await expect(fixture.history.redoAsync()).resolves.toBe(true);
     expect(fixture.frames.current(geometry)).toBe(applied);
@@ -256,7 +259,9 @@ describe("prepared style session cancellation", () => {
       expect(fixture.frames.current(geometry)).toBe(frame);
       expect(fixture.pending).toBe(false);
       for (const element of elements) {
-        expect(fixture.store.get(element.id)?.element.style).toMatchObject({ width: 2 });
+        expect(readElementStyle(fixture.store.get(element.id)?.element)).toMatchObject({
+          width: 2,
+        });
       }
     },
   );
@@ -299,7 +304,7 @@ describe("prepared style session cancellation", () => {
       const current = fixture.store.get(stroke.id)!.element;
       expect(current).toBe(replay === "undoAsync" ? points : committedElement);
       expect(current.kind === "stroke" && current.points).toBe(ownedSamples);
-      expect(current.style).toMatchObject({ width: replay === "undoAsync" ? 8 : 4 });
+      expect(readElementStyle(current)).toMatchObject({ width: replay === "undoAsync" ? 8 : 4 });
     }
   });
 });

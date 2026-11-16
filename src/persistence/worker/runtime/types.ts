@@ -2,6 +2,7 @@ import type { ObsidianInkWarningCode } from "../../import/obsidian-ink/warnings"
 import type {
   ElementValidationDerivation,
   FontResourceV2,
+  ImageResourceV3,
   InkElementV1,
   InkSnapshotV1,
   PageV1,
@@ -44,7 +45,10 @@ export interface IncrementalModelSyncRuntimeRequest extends ModelSyncIdentity {
   readonly changedElementDerivations?: readonly ElementValidationDerivation[];
   readonly changedElements?: readonly InkElementV1[];
   readonly fontResources?: readonly FontResourceV2[];
-  readonly orderChanges?: Readonly<Partial<Record<"content" | "highlight", readonly string[]>>>;
+  readonly imageResources?: readonly ImageResourceV3[];
+  readonly orderChanges?: Readonly<
+    Partial<Record<"image" | "content" | "highlight", readonly string[]>>
+  >;
   readonly page?: PageV1;
   readonly removedIds?: readonly string[];
   readonly type: "model-sync-incremental";

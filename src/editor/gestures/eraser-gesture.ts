@@ -308,7 +308,7 @@ export class EraserSweep {
   #ensureCheck(sweep: ActiveSweep, id: string): SweptCapsuleCheck | null {
     if (sweep.check !== null) return sweep.check;
     const element = this.#query.getElement(id);
-    if (element === undefined) return null;
+    if (element === undefined || element.locked === true) return null;
     sweep.check = createSweptCapsuleCheck(
       sweep.start,
       sweep.end,

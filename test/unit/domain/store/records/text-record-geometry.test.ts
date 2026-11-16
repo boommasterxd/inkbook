@@ -66,14 +66,21 @@ describe("record-owned text paint geometry", () => {
     );
     expect(painted.textPaintGeometry).toBe(initial.textPaintGeometry);
     expect(painted.textPaintGeometry?.regions).toHaveLength(1);
+    const themed = createReplacementRecord(
+      { ...text, style: { ...text.style, color: { type: "theme-text" } } },
+      painted,
+      0,
+      2,
+    );
+    expect(themed.textPaintGeometry).toBe(initial.textPaintGeometry);
     const transparent = createReplacementRecord(
       {
         ...text,
         style: { ...text.style, color: { type: "rgba", value: "#ff000000" } },
       },
-      painted,
+      themed,
       0,
-      2,
+      3,
     );
     expect(transparent.textPaintGeometry).not.toBe(painted.textPaintGeometry);
     expect(transparent.textPaintGeometry?.regions).toHaveLength(0);

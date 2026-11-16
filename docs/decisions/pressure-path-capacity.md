@@ -12,7 +12,7 @@ Represent each pressure stroke with one filled path of compact continuous-pressu
 
 Retain the 60,004-path document allowance: three paths for each of 20,000 possible elements plus four background-path slots. Pressure groups each contain exactly one direct path, with at most 20,000 groups across the two paint bands. Allow 16 MiB and 400,000 commands per path for 16,384-point strokes. Preserve aggregate path-byte, command, file, snapshot, and element limits. Reject nested, empty, or multi-path opacity groups and unlisted group attributes.
 
-Apply the product of style opacity and RGBA alpha once at the group, rounded to four decimal places. The child path uses opaque fill; Theme text uses the canonical fill class. The active scene and export share this paint normalization.
+Apply the product of style opacity and RGBA alpha once at the group, rounded to four decimal places. The child path uses opaque RGB fill. The active scene and export share this paint normalization.
 
 There are no deployed pressure files requiring compatibility. Discarded pre-release pressure representations have no reconstruction or migration fallback; validated snapshots produce only the current continuous-pressure path and group.
 

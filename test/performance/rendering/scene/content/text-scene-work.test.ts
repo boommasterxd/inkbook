@@ -347,8 +347,8 @@ it("bounds actual native DOM preparation for ten thousand runs and reuses retain
     const beforeAttributes = attributes.mock.calls.length;
     done = preparation.prepare(record, new MountSlice(time + 16, () => time));
     expect(created.mock.calls.length - before).toBeLessThanOrEqual(16);
-    // Twelve canonical tspan attributes plus five fixed text/root/background writes.
-    expect(attributes.mock.calls.length - beforeAttributes).toBeLessThanOrEqual(16 * 12 + 5);
+    // Eleven fixed-color tspan attributes plus five text/root/background writes.
+    expect(attributes.mock.calls.length - beforeAttributes).toBeLessThanOrEqual(16 * 11 + 5);
     expect(owner.body.nodes).toHaveLength(0);
     batches += 1;
   }
@@ -357,7 +357,7 @@ it("bounds actual native DOM preparation for ten thousand runs and reuses retain
   expect(presentation.content.textContent).toBe(element.source);
   expect(created.mock.calls.filter(([, tag]) => tag === "tspan")).toHaveLength(10_000);
   expect(created).toHaveBeenCalledTimes(10_005);
-  expect(attributes).toHaveBeenCalledTimes(120_005);
+  expect(attributes).toHaveBeenCalledTimes(110_005);
   const count = created.mock.calls.length;
   const entry = createMountedElement(document, record, [], instrumentation, presentation);
   const constrained = new DetachedSceneElementCache();
@@ -368,7 +368,7 @@ it("bounds actual native DOM preparation for ten thousand runs and reuses retain
   expect(cache.memoryUsage()).toBeGreaterThan(10_000 * 512);
   expect(cache.take(record, instrumentation)).toBe(entry);
   expect(created.mock.calls.length).toBe(count);
-  expect(attributes).toHaveBeenCalledTimes(120_005);
+  expect(attributes).toHaveBeenCalledTimes(110_005);
   cache.dispose();
   preparation.cancel();
   expect(preparation.memoryUsage()).toBe(0);

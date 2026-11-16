@@ -95,7 +95,7 @@ function connectedElements(): [BoxShapeElementV1, BoxShapeElementV1, LineElement
     startConnection: { anchor: { kind: "box", position: "middle-right" }, targetId: first.id },
     startNode: "none",
     style: {
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba", value: "#000000FF" },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 4,
