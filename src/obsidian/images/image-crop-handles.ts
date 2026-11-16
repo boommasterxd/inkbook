@@ -136,6 +136,7 @@ export class ImageCropHandles {
     if (this.#drag?.pointer !== event.pointerId) return;
     event.preventDefault();
     event.stopPropagation();
+    if (!cancelled) this.#move(event);
     this.#end(cancelled);
   }
 

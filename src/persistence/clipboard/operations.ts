@@ -27,6 +27,7 @@ import type {
   PasteRepeatState,
 } from "./types";
 import { getValidatedClipboardBounds } from "./validation";
+import { usedImageResourcesSteps } from "../images/used-image-resources";
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -317,14 +318,16 @@ function* planPasteInternalSteps(
         );
   if (!documentLimits.ok) return documentLimits;
   const grouped = yield* groupPlannedElementsSteps(translated);
+  const imageResources = yield* planImageResourcesSteps(
+    translated,
+    options.decoded.payload.imageResources,
+  );
   return {
     ok: true,
     value: {
       ...grouped,
       elements: translated,
-      ...(options.decoded.payload.imageResources === undefined
-        ? {}
-        : { imageResources: options.decoded.payload.imageResources }),
+      ...imageResources,
       ...(options.decoded.payload.fontResources === undefined
         ? {}
         : { fontResources: options.decoded.payload.fontResources }),
@@ -335,6 +338,15 @@ function* planPasteInternalSteps(
       repeatState: repeat.state,
     },
   };
+}
+
+function* planImageResourcesSteps(
+  elements: readonly InkElementV1[],
+  resources: PastePlan["imageResources"],
+): Generator<void, Pick<PastePlan, "imageResources">> {
+  if (resources === undefined || resources.length === 0) return {};
+  const imageResources = yield* usedImageResourcesSteps(elements, resources);
+  return imageResources.length === 0 ? {} : { imageResources };
 }
 
 function* groupPlannedElementsSteps(

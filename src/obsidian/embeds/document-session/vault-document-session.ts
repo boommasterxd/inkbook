@@ -322,12 +322,12 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     const clipboard = modelPorts.createVaultClipboardCoordinator({
       ...runtime,
       ensureFontResources: (resources) => model.ensureFontResources!(resources),
-      addImageResources: (resources) => model.addImageResources!(resources),
       now: () => this.runtimes.now(this.#identity.documentId),
     });
     const mutations = new VaultDocumentSessionMutations({
       imageResources: () => images.changes,
       acknowledgeImageResources: () => images.acknowledge(),
+      prepareImageCommit: (token) => images.prepareCommit(token),
       autosave: () => this.#autosave,
       commitState: (committed) => ({ page: this.#page, revision: this.#revision } = committed),
       revision: () => this.#revision,
@@ -373,7 +373,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
           scheduler,
           store,
         }),
-        commitPreparedElementMutation: (token) => mutations.commitPreparedElementMutation(token),
+        commitPreparedElementMutation: mutations.commitPreparedElementMutation.bind(mutations),
         commitPage: (page) => mutations.commitPage(page),
         encodeClipboard: (selectedIds) => clipboard.encode(selectedIds),
         planClipboardPaste: (candidates, invocation, previousRepeat) =>

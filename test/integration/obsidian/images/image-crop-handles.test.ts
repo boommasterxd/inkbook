@@ -50,7 +50,7 @@ describe("image crop handles", () => {
     outline.addEventListener("pointerdown", bubbled);
     expect(pointer(handle, "pointerdown", 1, 0, 0).defaultPrevented).toBe(true);
     pointer(handle, "pointermove", 1, -100, 100);
-    pointer(handle, "pointerup", 1);
+    pointer(handle, "pointerup", 1, -100, 100);
     expect(draft.crop).toEqual({ x: 179, y: 89, width: 1, height: 1 });
     expect(bubbled).not.toHaveBeenCalled();
     handles.dispose();
@@ -62,7 +62,7 @@ describe("image crop handles", () => {
     const move = button("move");
     pointer(move, "pointerdown", 1);
     pointer(move, "pointermove", 1, -100, 100);
-    pointer(move, "pointerup", 1);
+    pointer(move, "pointerup", 1, -100, 100);
     expect(draft.crop).toEqual({ x: 40, y: 20, width: 160, height: 80 });
     const key = new KeyboardEvent("keydown", {
       key: "ArrowLeft",
@@ -104,4 +104,16 @@ describe("image crop handles", () => {
     expect(outline.querySelectorAll("button")).toHaveLength(0);
     outline.remove();
   });
+});
+
+it("uses the release position when it differs from the last crop movement", () => {
+  const { draft, handles, button, outline } = setup();
+  const handle = button("left");
+  pointer(handle, "pointerdown", 1);
+  pointer(handle, "pointermove", 1, 0, 5);
+  expect(draft.crop.x).toBe(30);
+  pointer(handle, "pointerup", 1, 0, 15);
+  expect(draft.crop).toEqual({ x: 50, y: 10, width: 130, height: 80 });
+  handles.dispose();
+  outline.remove();
 });

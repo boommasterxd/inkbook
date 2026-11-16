@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { SessionImageResources } from "../../../../../src/obsidian/embeds/document-session/session-image-resources";
+import {
+  ImageResourceCapacityError,
+  SessionImageResources,
+  type PreparedImageResources,
+} from "../../../../../src/obsidian/embeds/document-session/session-image-resources";
 import { IMAGE_LIMITS } from "../../../../../src/domain/images/image-limits";
 import { TestWorkScheduler } from "../../../../fixtures/persistence/work-scheduler";
 import { capacityImageResource, validImageResource } from "../../../../fixtures/persistence/images";
@@ -70,7 +74,7 @@ it("counts retained unique assets against the pixel budget and rejects an overfl
   expect(images.resources).toBe(retained);
   const small = await validImageResource();
   await expect(images.add([small, assets[8]!], context)).rejects.toThrow(
-    "including retained history",
+    ImageResourceCapacityError,
   );
   expect(images.resources).toBe(retained);
   expect(images.resource(small.id)).toBeUndefined();
@@ -95,4 +99,62 @@ it("admits two Ultra resources without increasing the retained session pixel cap
     "including retained history",
   );
   expect(images.resources).toBe(retained);
+});
+
+it("keeps preparations private and consumes only tokens owned by this session", async () => {
+  const asset = await validImageResource();
+  const images = new SessionImageResources(snapshot([]));
+  const foreign = new SessionImageResources(snapshot([]));
+  const token = await images.prepare([asset], {
+    active: () => true,
+    scheduler: new TestWorkScheduler(),
+  });
+  expect(token).not.toBeNull();
+  expect(images.resources).toEqual([]);
+  expect(images.resource(asset.id)).toBeUndefined();
+  expect(images.changes).toBeUndefined();
+  expect(() => foreign.prepareCommit(token!)).toThrow("not owned");
+  expect(() => images.prepareCommit({} as PreparedImageResources)).toThrow("not owned");
+  const publish = images.prepareCommit(token!);
+  expect(images.resources).toEqual([]);
+  publish();
+  expect(images.resource(asset.id)).toBe(asset);
+  expect(images.changes).toEqual([asset]);
+  expect(() => images.prepareCommit(token!)).toThrow("was used");
+});
+
+it("discards cancelled cooperative preparation while the document remains active", async () => {
+  const asset = await validImageResource();
+  const images = new SessionImageResources(snapshot([]));
+  let cancelled = false;
+  const scheduler = new TestWorkScheduler({
+    checkpoint: () => {
+      cancelled = true;
+      return Promise.resolve();
+    },
+  });
+  expect(
+    await images.prepare([asset], { active: () => true, scheduler, isCancelled: () => cancelled }),
+  ).toBeNull();
+  expect(images.resources).toEqual([]);
+  expect(images.changes).toBeUndefined();
+});
+
+it("rechecks current capacity at commit and preserves another admission when a prepared batch no longer fits", async () => {
+  const assets = await Promise.all([
+    capacityImageResource(0, 4000),
+    capacityImageResource(1, 4000),
+  ]);
+  const images = new SessionImageResources(snapshot([]));
+  const context = { active: () => true, scheduler: new TestWorkScheduler() };
+  const token = await images.prepare(assets, context);
+  const small = await validImageResource();
+  await images.add([small], context);
+  images.acknowledge();
+  const retained = images.resources;
+  expect(() => images.prepareCommit(token!)).toThrow("including retained history");
+  expect(images.resources).toBe(retained);
+  expect(images.resources).toEqual([small]);
+  expect(images.changes).toBeUndefined();
+  expect(() => images.prepareCommit(token!)).toThrow("was used");
 });

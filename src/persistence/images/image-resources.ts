@@ -114,18 +114,6 @@ export function* validateImageResourceSteps(
   if (Object.isFrozen(resource)) validated.add(resource);
 }
 
-export async function validateImageResource(
-  resource: ImageResourceV3,
-  scheduler: WorkScheduler,
-  signal?: AbortSignal,
-): Promise<void> {
-  const steps = validateImageResourceSteps(resource, signal);
-  while (!steps.next().done) {
-    const pending = scheduler.checkpoint(signal, "background");
-    if (pending !== undefined) await pending;
-  }
-}
-
 export function canonicalImageResource(resource: ImageResourceV3): ImageResourceV3 {
   if (validated.has(resource)) return resource;
   const copy = Object.freeze({

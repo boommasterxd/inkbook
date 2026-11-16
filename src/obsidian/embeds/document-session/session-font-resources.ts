@@ -163,10 +163,18 @@ export function createSessionResourceActions(
   options: Omit<Parameters<typeof ensureSessionFontResources>[0], "resources"> & {
     readonly images: SessionImageResources;
   },
-): Pick<EditableDocumentModel, "ensureFontResources" | "imageResource" | "addImageResources"> {
+): Pick<
+  EditableDocumentModel,
+  "ensureFontResources" | "imageResource" | "addImageResources" | "prepareImageResources"
+> {
   return {
     imageResource: (id) => options.images.resource(id),
     addImageResources: (resources) => options.images.add(resources, options),
+    prepareImageResources: (resources, cancellation) =>
+      options.images.prepare(resources, {
+        ...options,
+        isCancelled: () => cancellation.isCancelled(),
+      }),
     ensureFontResources: (resources) => ensureSessionFontResources({ ...options, resources }),
   };
 }

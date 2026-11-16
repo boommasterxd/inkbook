@@ -7,6 +7,7 @@ import {
 } from "../../../src/obsidian/embeds/active-editor/image-session";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-session/document-model-port";
+import type { PreparedImageResources } from "../../../src/obsidian/embeds/document-session/session-image-resources";
 import { elementMutationPorts, elementReplacementPorts } from "./element-mutation-ports";
 import { imageElement, imageResource } from "../domain/images";
 import { PAGE } from "../../unit/domain/store/fixtures";
@@ -46,6 +47,9 @@ export function imageSessionFixture(
   };
   let selection: ReadonlySet<string> = new Set(initial.map(({ id }) => id));
   const addImageResources = vi.fn(async () => undefined);
+  const prepareImageResources = vi.fn<NonNullable<EditableDocumentModel["prepareImageResources"]>>(
+    async () => Object.freeze({}) as PreparedImageResources,
+  );
   const model = {
     store,
     page: PAGE,
@@ -54,6 +58,7 @@ export function imageSessionFixture(
     },
     imageResource: () => sessionImageResource,
     addImageResources,
+    prepareImageResources,
     ...elementMutationPorts(store, committed),
     ...elementReplacementPorts(store, committed),
   } as unknown as EditableDocumentModel;
@@ -90,6 +95,7 @@ export function imageSessionFixture(
     history,
     model,
     addImageResources,
+    prepareImageResources,
     options,
     onCommitted,
     onFailed,

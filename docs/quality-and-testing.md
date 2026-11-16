@@ -1,13 +1,5 @@
 # Quality, Performance, Animation, and Testing
 
-## Cache Lifecycle Tooling
-
-`typecheck:cache-lifecycle` applies strict CheckJS to the portable cache runtime through
-`scripts/cache-lifecycle/tsconfig.json` and remains part of the native CI quality gate.
-Native Vitest adapters execute replacement, metadata, transport and recovery regressions;
-workflow tests exercise the actual receipt writer and verify the privileged cleanup
-boundary. Runtime source and shared fixtures retain the canonical GitHub plugin bytes.
-
 ## Quality Priorities
 
 No animation, abstraction, or background task may degrade live ink input. When requirements compete, use this order:
@@ -432,6 +424,8 @@ All performance tests follow the [Unified Verification Model](performance-ci.md#
 The deterministic suite covers JavaScript work that can be measured without browser rendering. Actual style, paint, compositing, native host scrolling, and high-refresh input behavior are verified manually in Obsidian using the reference profiles because a simulated DOM does not provide trustworthy rendering timings.
 
 ## Coverage and CI Gates
+
+`typecheck:cache-lifecycle` applies strict CheckJS to the portable cache runtime through `scripts/cache-lifecycle/tsconfig.json` and remains part of the native CI quality gate. Native Vitest adapters execute replacement, metadata, transport and recovery regressions; workflow tests exercise the actual receipt writer and verify the privileged cleanup boundary. Runtime source and shared fixtures retain the canonical GitHub plugin bytes.
 
 Local and GitHub CI enforce the same [deterministic work/resource and scheduling contracts](performance-ci.md). Real-time comparisons, baselines, tolerance percentages, timing warnings, and statistical sampling are removed. A computation can become slower while its observed work remains unchanged; CI no longer detects that class of regression or establishes p99 latency.
 

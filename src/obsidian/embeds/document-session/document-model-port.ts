@@ -27,6 +27,7 @@ import type {
   PasteRepeatState,
 } from "../../../persistence/clipboard/public";
 import type { AutosaveClock } from "../../../persistence/saving/autosave/public";
+import type { PreparedImageResources } from "./session-image-resources";
 import type { DocumentRuntimePort } from "../../../persistence/worker/runtime/public";
 
 export interface DocumentRuntimeFactories {
@@ -70,6 +71,10 @@ export interface EditableDocumentModel {
   readonly imageResources?: readonly ImageResourceV3[];
   imageResource?(id: string): ImageResourceV3 | undefined;
   addImageResources?(resources: readonly ImageResourceV3[]): Promise<void>;
+  prepareImageResources?(
+    resources: readonly ImageResourceV3[],
+    cancellation: { isCancelled(): boolean },
+  ): Promise<PreparedImageResources | null>;
   readonly formatVersion?: InkSnapshotV1["version"];
   ensureFontResources?(resources: readonly FontResourceV2[]): void | Promise<void>;
   readonly page: InkSnapshotV1["page"];
@@ -101,7 +106,10 @@ export interface EditableDocumentModel {
     elements: readonly InkElementV1[],
     cancellation: { isCancelled(): boolean; readonly protectLocked?: boolean },
   ): Promise<PreparedElementMutationResult>;
-  commitPreparedElementMutation(token: PreparedElementMutation): AppliedElementMutation | null;
+  commitPreparedElementMutation(
+    token: PreparedElementMutation,
+    resources?: PreparedImageResources,
+  ): AppliedElementMutation | null;
   encodeClipboard(selectedIds: ReadonlySet<string>): Promise<ClipboardWritePayload | null>;
   planClipboardPaste(
     candidates: ClipboardCandidates,

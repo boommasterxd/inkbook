@@ -193,10 +193,12 @@ function* rootFragments(
   metadataHash: string,
   snapshot?: InkSnapshotV1,
 ): Iterable<string> {
-  yield `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048.6 ${serializeSvgNumber(lockedHeight)}" ` +
+  yield (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048.6 ${serializeSvgNumber(lockedHeight)}" ` +
     `data-inkbook-format="inkbook" data-inkbook-version="${snapshot?.version ?? 1}" data-inkbook-revision="${revision}" ` +
     `data-inkbook-snapshot-sha256="${metadataHash}">` +
-    `<style id="inkbook-theme">${CANONICAL_THEME_STYLESHEET}</style>`;
+    `<style id="inkbook-theme">${CANONICAL_THEME_STYLESHEET}</style>`
+  );
   yield* fontStylesheetMarkupFragments(snapshot?.fontResources ?? []);
   yield* imageDefinitionsFragments(snapshot?.imageResources ?? []);
   yield `<metadata id="inkbook-snapshot" data-encoding="${COMPACT_METADATA_ENCODING}">`;

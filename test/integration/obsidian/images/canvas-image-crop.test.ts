@@ -171,7 +171,7 @@ describe("inline canvas image crop", () => {
     handle.hasPointerCapture = () => false;
     handle.dispatchEvent(new PointerEvent("pointerdown", { button: 0, pointerId: 1 }));
     handle.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientY: 20 }));
-    handle.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 }));
+    handle.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1, clientY: 20 }));
     key(handle, "Enter");
     expect(await crop.promise).toEqual({ x: 28, y: 10, width: 152, height: 80 });
   });

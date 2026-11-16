@@ -69,6 +69,11 @@ export const host = {
   "host.feedback.text-preparation-failed.detail":
     "Check the selected font and formula source, then try again.",
   "host.feedback.history-change-failed.title": "The history change couldn't be applied.",
+  "host.feedback.image-capacity-exceeded.title": "The drawing's image capacity has been reached.",
+  "host.feedback.image-capacity-exceeded.detail":
+    "Images retained for Undo also count. Choose fewer pages or a lower resolution.",
+  "host.feedback.image-change-failed.title": "The image change couldn't be applied.",
+  "host.feedback.image-change-failed.detail": "No image was inserted or changed. Try again.",
   "host.feedback.history-lock-required.title": "Lock the drawing to continue undoing note changes.",
   "host.feedback.insertion-cleanup-failed.detail":
     "A created drawing file may need to be removed manually.",

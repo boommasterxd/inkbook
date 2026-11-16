@@ -8,10 +8,45 @@ import {
   validImageResource,
 } from "../../../fixtures/persistence/images";
 import { installImageRasterBoundary } from "../../../fixtures/obsidian/image-raster";
+import { SessionImageResources } from "../../../../src/obsidian/embeds/document-session/session-image-resources";
+import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
+import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it("stages the full session pixel budget once per unique trusted raster and publishes without payload work", async () => {
+  const assets = await Promise.all([
+    capacityImageResource(2, 4000),
+    capacityImageResource(3, 4000),
+  ]);
+  const images = new SessionImageResources(createWorkerSnapshot([]));
+  const hash = vi.spyOn(ChunkedSha256.prototype, "update");
+  let scanned = 0;
+  vi.spyOn(RegExp.prototype, "test").mockImplementation(function (this: RegExp, input: string) {
+    if (input.length > 64) scanned += input.length;
+    return this.exec(input) !== null;
+  });
+  const repeated = assets.flatMap((asset) => Array.from({ length: 10 }, () => asset));
+  const token = await images.prepare(repeated, {
+    active: () => true,
+    scheduler: new TestWorkScheduler(),
+  });
+  expect(images.resources).toEqual([]);
+  expect(scanned).toBe(assets.reduce((sum, asset) => sum + asset.data.length, 0));
+  expect(hash).not.toHaveBeenCalled();
+  const admittedWork = scanned;
+  const publish = images.prepareCommit(token!);
+  expect(images.resources).toEqual([]);
+  publish();
+  expect(images.resources).toEqual(assets);
+  expect(images.resources.reduce((sum, asset) => sum + asset.width * asset.height, 0)).toBe(
+    32_000_000,
+  );
+  expect(scanned).toBe(admittedWork);
+  expect(hash).not.toHaveBeenCalled();
 });
 
 function rasterOptions(signal = new AbortController().signal) {

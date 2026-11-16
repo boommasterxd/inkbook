@@ -18,11 +18,42 @@ import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { applyImageCrop } from "../../../../../src/domain/images/image-crop";
 import { SvgSceneRenderer } from "../../../../../src/rendering/scene/scene-renderer";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
+import { ImageResourceCapacityError } from "../../../../../src/obsidian/embeds/document-session/session-image-resources";
 import { FakeScheduler } from "../../../../unit/rendering/scene/fakes";
 import { sceneDeltaEntries } from "../../../../fixtures/rendering/scene";
 import { useImageSceneCleanup } from "../../../../fixtures/rendering/image-scene";
 
 const ownScene = useImageSceneCleanup();
+
+it.each([
+  {
+    reason: "unexpected",
+    error: new Error("Image admission failed."),
+    code: "image-change-failed",
+  },
+  { reason: "capacity", error: new ImageResourceCapacityError(), code: "image-capacity-exceeded" },
+])("reports an $reason image failure instead of an Undo failure", async ({ error, code }) => {
+  installObsidianDomHelpers();
+  const onFeedback = vi.fn();
+  const model = {
+    ...createActiveEditorModel(new ElementStore()),
+    prepareImageResources: vi.fn(async () => {
+      throw error;
+    }),
+  };
+  const editor = createHarness({
+    model,
+    onFeedback,
+    onImportImages: async () => ({ resources: [resource], source: "image" }),
+  });
+  try {
+    editor.controller.handleToolbarAction("image");
+    await vi.waitFor(() => expect(onFeedback).toHaveBeenCalledExactlyOnceWith(code));
+    expect(model.store.size).toBe(0);
+  } finally {
+    editor.dispose();
+  }
+});
 
 async function assertReversibleImport(
   owner: ReturnType<typeof harness>,
@@ -45,8 +76,8 @@ it("cancels a toolbar import when the active editor is disabled", async () => {
     signal = current;
     return imported.promise;
   });
-  const addImageResources = vi.fn(async () => undefined);
-  const model = { ...createActiveEditorModel(new ElementStore()), addImageResources };
+  const prepareImageResources = vi.fn(async () => null);
+  const model = { ...createActiveEditorModel(new ElementStore()), prepareImageResources };
   const editor = createHarness({ model, onImportImages });
   try {
     editor.controller.handleToolbarAction("image");
@@ -56,7 +87,7 @@ it("cancels a toolbar import when the active editor is disabled", async () => {
     imported.resolve({ resources: [resource], source: "image" });
     await imported.promise;
     await Promise.resolve();
-    expect(addImageResources).not.toHaveBeenCalled();
+    expect(prepareImageResources).not.toHaveBeenCalled();
     expect(model.store.size).toBe(0);
   } finally {
     editor.dispose();
@@ -72,7 +103,7 @@ it("imports PDF pages as a bounded vertical sequence and one reversible command"
   expect(elements).toHaveLength(2);
   expect(elements[0]).toMatchObject({ x: 24.3, y: 50, width: 2000, height: 500 });
   expect(elements[1]).toMatchObject({ x: 1924.3, y: 574.3, width: 100, height: 100 });
-  expect(owner.addImageResources).toHaveBeenCalledOnce();
+  expect(owner.prepareImageResources).toHaveBeenCalledOnce();
   await assertReversibleImport(owner, elements);
   owner.session.dispose();
 });
@@ -94,7 +125,10 @@ it("imports an image compactly with its full crop and preserves placement throug
     pivot: { x: 1624.3, y: 300 },
     crop: { x: 0, y: 0, width: 4000, height: 1000 },
   });
-  expect(owner.addImageResources).toHaveBeenCalledExactlyOnceWith([resource]);
+  expect(owner.prepareImageResources).toHaveBeenCalledExactlyOnceWith(
+    [resource],
+    expect.any(Object),
+  );
   await assertReversibleImport(owner, [inserted]);
   owner.session.dispose();
 });
@@ -148,7 +182,10 @@ it.each(["image", "pdf"] as const)(
         );
     }
     expect(owner.selection().size).toBe(0);
-    expect(owner.addImageResources).toHaveBeenCalledExactlyOnceWith(resources);
+    expect(owner.prepareImageResources).toHaveBeenCalledExactlyOnceWith(
+      resources,
+      expect.any(Object),
+    );
     await assertReversibleImport(owner, elements);
     owner.session.dispose();
   },
@@ -216,7 +253,7 @@ it("commits a crop through prepared replacement with one undo and reusable origi
   expect(owner.store.get(image.id)?.element).toEqual(image);
   expect(await owner.history.redoAsync()).toBe(true);
   expect(owner.store.get(image.id)?.element).toMatchObject({ width: 200, height: 50 });
-  expect(owner.addImageResources).not.toHaveBeenCalled();
+  expect(owner.prepareImageResources).not.toHaveBeenCalled();
   owner.session.dispose();
 });
 
@@ -386,7 +423,7 @@ it("aborts the owning dialog on disable/dispose and admits no late resource resu
   imported.resolve({ resources: [resource], source: "image" });
   await imported.promise;
   await Promise.resolve();
-  expect(owner.addImageResources).not.toHaveBeenCalled();
+  expect(owner.prepareImageResources).not.toHaveBeenCalled();
   expect(owner.history.commandCount).toBe(0);
   owner.session.dispose();
 });

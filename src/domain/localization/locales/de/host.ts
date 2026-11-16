@@ -83,6 +83,12 @@ export const host = {
     "Die Änderung am Verlauf konnte nicht angewendet werden.",
   "host.feedback.history-change-failed.detail":
     "Die Zeichnung ist unverändert. Versuche es erneut.",
+  "host.feedback.image-capacity-exceeded.title": "Die Bildkapazität der Zeichnung ist erreicht.",
+  "host.feedback.image-capacity-exceeded.detail":
+    "Auch Bilder im Rückgängig-Verlauf zählen zur Grenze. Wähle weniger Seiten oder eine niedrigere Auflösung.",
+  "host.feedback.image-change-failed.title": "Die Bildänderung konnte nicht übernommen werden.",
+  "host.feedback.image-change-failed.detail":
+    "Es wurde kein Bild eingefügt oder geändert. Versuche es erneut.",
   "host.feedback.text-preparation-failed.title": "Der Text konnte nicht verarbeitet werden.",
   "host.feedback.text-preparation-failed.detail":
     "Prüfe die gewählte Schriftart und den Formelquelltext und versuche es erneut.",

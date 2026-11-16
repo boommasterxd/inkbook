@@ -39,7 +39,10 @@ interface VersionedMutationSource extends MutationSource {
 }
 
 export class PreparedElementMutations {
-  readonly #adopt: (plan: ElementMutationPlan) => ElementMutationCommitResult;
+  readonly #adopt: (
+    plan: ElementMutationPlan,
+    beforeNotify?: () => void,
+  ) => ElementMutationCommitResult;
   readonly #prepared = new WeakMap<
     PreparedElementMutation,
     { readonly mutationVersion: number; readonly plan: ElementMutationPlan }
@@ -61,7 +64,7 @@ export class PreparedElementMutations {
   public constructor(
     readSource: () => VersionedMutationSource,
     readVersion: () => number,
-    adopt: (plan: ElementMutationPlan) => ElementMutationCommitResult,
+    adopt: (plan: ElementMutationPlan, beforeNotify?: () => void) => ElementMutationCommitResult,
   ) {
     this.#readSource = readSource;
     this.#readVersion = readVersion;
@@ -251,13 +254,16 @@ export class PreparedElementMutations {
     return { status: "prepared", token };
   }
 
-  public commit(token: PreparedElementMutation): ElementMutationCommitResult {
+  public commit(
+    token: PreparedElementMutation,
+    beforeNotify?: () => void,
+  ): ElementMutationCommitResult {
     const prepared = this.#prepared.get(token);
     this.#prepared.delete(token);
     if (prepared === undefined || prepared.mutationVersion !== this.#readVersion()) {
       return { delta: null, status: "cancelled", transition: null };
     }
-    return this.#adopt(prepared.plan);
+    return this.#adopt(prepared.plan, beforeNotify);
   }
 
   public removeWithHistory(

@@ -3,16 +3,16 @@ import { rasterResource } from "../../../fixtures/persistence/image-svg";
 import {
   createImageResource,
   decodeImageResourceSteps,
-  validateImageResource,
+  validateImageResourceSteps,
 } from "../../../../src/persistence/images/image-resources";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { imageHeaderBytes, progressiveJpegBytes } from "../../../fixtures/persistence/images";
 import { webpBytes } from "../../../fixtures/persistence/webp-images";
+import { exhaustValidation } from "../../../fixtures/persistence/safe-svg";
 
-it("rejects forged raster identities, dimensions, MIME types and noncanonical payloads", async () => {
+it("rejects forged raster identities, dimensions, MIME types and noncanonical payloads", () => {
   const resource = rasterResource();
-  const scheduler = new TestWorkScheduler();
-  await expect(validateImageResource(resource, scheduler)).resolves.toBeUndefined();
+  expect(exhaustValidation(validateImageResourceSteps(resource)).result).toBeUndefined();
   for (const forged of [
     { ...resource, id: "0".repeat(64) },
     { ...resource, width: 2 },
@@ -21,7 +21,7 @@ it("rejects forged raster identities, dimensions, MIME types and noncanonical pa
     { ...resource, data: resource.data.replace("V", " ") },
     { ...resource, data: resource.data.replace("V", "_") },
   ])
-    await expect(validateImageResource(forged, scheduler)).rejects.toThrow();
+    expect(() => exhaustValidation(validateImageResourceSteps(forged))).toThrow();
 });
 
 it("decodes identical canonical bytes with the native and legacy image paths", () => {
@@ -81,13 +81,13 @@ it.each([
     expect(Uint8Array.from(atob(resource.data), (character) => character.charCodeAt(0))).toEqual(
       bytes,
     );
-    await expect(validateImageResource({ ...resource }, scheduler)).resolves.toBeUndefined();
+    expect(exhaustValidation(validateImageResourceSteps({ ...resource })).result).toBeUndefined();
     for (const forged of [
       { ...resource, id: "0".repeat(64) },
       { ...resource, width: width + 1 },
       { ...resource, mimeType: "image/png" as const },
     ])
-      await expect(validateImageResource(forged, scheduler)).rejects.toThrow();
+      expect(() => exhaustValidation(validateImageResourceSteps(forged))).toThrow();
     await expect(createImageResource(bytes, "image/png", scheduler)).rejects.toThrow(
       "MIME type does not match content",
     );

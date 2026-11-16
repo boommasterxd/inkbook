@@ -123,7 +123,6 @@ export function createVaultAutosaveSession(
 }
 
 export function createVaultClipboardCoordinator(options: {
-  readonly addImageResources?: (resources: readonly ImageResourceV3[]) => Promise<void>;
   readonly ensureFontResources?: (resources: readonly FontResourceV2[]) => void | Promise<void>;
   readonly autosave: () => AutosaveCoordinator | undefined;
   readonly disposed: () => boolean;
@@ -134,9 +133,6 @@ export function createVaultClipboardCoordinator(options: {
   readonly workerEpoch: () => number;
 }): SessionClipboardCoordinator {
   return new SessionClipboardCoordinator({
-    ...(options.addImageResources === undefined
-      ? {}
-      : { addImageResources: options.addImageResources }),
     ...(options.ensureFontResources === undefined
       ? {}
       : { ensureFontResources: options.ensureFontResources }),

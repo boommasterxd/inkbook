@@ -98,7 +98,10 @@ export class ActiveEditorActions {
         if (preserveTool !== true) options.onPasteCommitted();
         options.onStateChanged();
       },
-      onFailed: () => options.onFeedback?.("history-change-failed"),
+      onFailed: (reason) =>
+        options.onFeedback?.(
+          reason === "capacity" ? "image-capacity-exceeded" : "image-change-failed",
+        ),
     });
     this.#copyTextFieldsAsText = options.copyTextFieldsAsText ?? false;
     this.#renderer = options.renderer;

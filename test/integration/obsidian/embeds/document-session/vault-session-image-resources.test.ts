@@ -2,10 +2,11 @@ import { DocumentWorkerRuntime } from "../../../../../src/persistence/worker/run
 import { withElementLock } from "../../../../../src/domain/store/public";
 import { expect, it, vi } from "vitest";
 import { validImageFixture } from "../../../../fixtures/persistence/images";
+import { createTestStroke } from "../../../../fixtures/persistence/worker-snapshot";
 import { parseInkbookDocumentForTest } from "../../../../fixtures/persistence/parse-document";
 import { operation, persistenceHarness } from "./vault-session-fixtures";
 
-it("admits before mutation and persists/reopens only referenced image resources", async () => {
+it("publishes prepared image resources before Store listeners and persists/reopens only referenced assets", async () => {
   const { asset, element } = await validImageFixture();
   const execute = vi.spyOn(DocumentWorkerRuntime.prototype, "execute");
   const harness = persistenceHarness();
@@ -14,11 +15,19 @@ it("admits before mutation and persists/reopens only referenced image resources"
     expect((await harness.session.unlock(operation())).status).toBe("active");
     const model = harness.session.documentModel!;
     const snapshot = vi.spyOn(model.store, "materializeSnapshot");
-    await model.addImageResources!([asset]);
+    const resources = await model.prepareImageResources!([asset], { isCancelled: () => false });
+    expect(resources).not.toBeNull();
+    expect(model.imageResource!(asset.id)).toBeUndefined();
     expect(model.revision).toBe(7);
     expect(model.store.size).toBe(0);
     expect(snapshot).not.toHaveBeenCalled();
-    model.commitElement(element);
+    const observed = vi.fn(() => expect(model.imageResource!(asset.id)).toBe(asset));
+    const unsubscribe = model.store.subscribe(observed);
+    const prepared = await model.prepareElementAppend([element], { isCancelled: () => false });
+    expect(prepared.token).not.toBeNull();
+    expect(model.commitPreparedElementMutation(prepared.token!, resources!)).not.toBeNull();
+    unsubscribe();
+    expect(observed).toHaveBeenCalledOnce();
     expect(model.revision).toBe(8);
     expect((await harness.session.lockLatest(operation())).status).toBe("confirmed");
     const initialExports = execute.mock.calls
@@ -89,11 +98,17 @@ it("adopts pasted resources without a separate revision and rejects collisions b
     expect(plan?.imageResources).toEqual([asset]);
     expect(targetModel.revision).toBe(7);
     expect(targetModel.store.size).toBe(0);
+    expect(targetModel.imageResource!(asset.id)).toBeUndefined();
+    const resources = await targetModel.prepareImageResources!(plan!.imageResources!, {
+      isCancelled: () => false,
+    });
+    const prepared = await targetModel.prepareElementAppend(plan!.elements, {
+      isCancelled: () => false,
+    });
+    expect(targetModel.commitPreparedElementMutation(prepared.token!, resources!)).not.toBeNull();
     await expect(targetModel.addImageResources!([{ ...asset, width: 2 }])).rejects.toThrow(
       "Conflicting image resource identity",
     );
-    expect(targetModel.store.size).toBe(0);
-    targetModel.commitElements(plan!.elements);
     expect((await target.session.lockLatest(operation())).status).toBe("confirmed");
     const persisted = await parseInkbookDocumentForTest(target.content());
     if (!persisted.ok) throw new Error(persisted.error.message);
@@ -102,6 +117,29 @@ it("adopts pasted resources without a separate revision and rejects collisions b
   } finally {
     source.session.dispose();
     target.session.dispose();
+  }
+});
+
+it("does not publish prepared assets or notifications when the Store token is stale", async () => {
+  const { asset, element } = await validImageFixture();
+  const harness = persistenceHarness();
+  try {
+    await harness.session.unlock(operation());
+    const model = harness.session.documentModel!;
+    const resources = await model.prepareImageResources!([asset], { isCancelled: () => false });
+    const prepared = await model.prepareElementAppend([element], { isCancelled: () => false });
+    model.commitElement(createTestStroke());
+    const observed = vi.fn();
+    const unsubscribe = model.store.subscribe(observed);
+    expect(model.commitPreparedElementMutation(prepared.token!, resources!)).toBeNull();
+    unsubscribe();
+    expect(observed).not.toHaveBeenCalled();
+    expect(model.imageResource!(asset.id)).toBeUndefined();
+    expect(model.revision).toBe(8);
+    expect(model.store.size).toBe(1);
+    expect(model.store.get(element.id)).toBeUndefined();
+  } finally {
+    harness.session.dispose();
   }
 });
 

@@ -27,7 +27,7 @@ import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { capturePastePlan } from "../../../persistence/clipboard/paste-plan-snapshot";
 import { copyTextSelection } from "./clipboard-text-copy";
 import { editableSelection } from "./controller-elements";
-import { prepareClipboardTextInkBounds } from "./clipboard-text-preparation";
+import { commitClipboardPaste } from "./clipboard-paste-commit";
 
 export type ClipboardControllerResult =
   | { readonly action: "copy" | "cut"; readonly kind: "copied" }
@@ -395,34 +395,16 @@ export class ActiveEditorClipboardController {
     expectedRevision: number,
     operationGeneration: number,
   ): Promise<import("../../../domain/store/public").AppliedElementMutation | null> {
-    const basis = captureClipboardDocumentBasis(this.#model);
-    const cancelled = () =>
-      this.#model.revision !== expectedRevision ||
-      !clipboardDocumentBasisCurrent(this.#model, basis) ||
-      !this.#isPresentationAttached() ||
-      !this.#isOperationCurrent(operationGeneration);
-    const preparedPlan = await prepareClipboardTextInkBounds(plan, {
-      cancelled,
+    return commitClipboardPaste({
+      plan,
+      expectedRevision,
       ownerWindow: this.#ownerWindow,
       model: this.#model,
       scheduler: this.#workScheduler,
+      adoption: this.#adoptionGuard,
+      isCurrent: () =>
+        this.#isPresentationAttached() && this.#isOperationCurrent(operationGeneration),
     });
-    if (preparedPlan === null || cancelled()) return null;
-    const preparedAdoption = await this.#adoptionGuard.prepare(preparedPlan, {
-      isCancelled: cancelled,
-      shouldYield: () => this.#workScheduler.shouldYield(),
-      yieldControl: () => this.#workScheduler.checkpoint(undefined, "frame") ?? Promise.resolve(),
-    });
-    if (preparedAdoption === null) return null;
-    const validatesCurrentDocument = () =>
-      this.#adoptionGuard.accepts(preparedAdoption, this.#model.page);
-    if (!validatesCurrentDocument()) return null;
-    if (cancelled()) return null;
-    const prepared = await this.#model.prepareElementAppend(preparedAdoption.elements, {
-      isCancelled: cancelled,
-    });
-    if (prepared.token === null || cancelled() || !validatesCurrentDocument()) return null;
-    return this.#model.commitPreparedElementMutation(prepared.token);
   }
 
   #beginOperation(): number {

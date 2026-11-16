@@ -100,7 +100,7 @@ export class ElementStore {
       reverseConnections: this.#reverseConnections,
     }),
     () => this.#mutationVersion,
-    (plan) => this.#adoptElementMutation(plan),
+    (plan, beforeNotify) => this.#adoptElementMutation(plan, beforeNotify),
   );
 
   public constructor(elements: readonly InkElementV1[] = []) {
@@ -309,7 +309,10 @@ export class ElementStore {
   public readonly commitPreparedElementMutation = this.#preparedElementMutations.commit.bind(
     this.#preparedElementMutations,
   );
-  #adoptElementMutation(plan: ElementMutationPlan): Store.ElementMutationCommitResult {
+  #adoptElementMutation(
+    plan: ElementMutationPlan,
+    beforeNotify?: () => void,
+  ): Store.ElementMutationCommitResult {
     commitMutationDerivedState(this.#capacity, this.#reverseConnections, plan);
     this.#ranks = applyMutationRecordPatches(this.#records, this.#ranks, plan);
     this.#overflowCount = this.#spatialIndex.overflowCount;
@@ -317,7 +320,7 @@ export class ElementStore {
     this.#paintVersion = plan.delta.paintVersion;
     this.#bands = plan.bands;
     return {
-      delta: this.#publish(plan.delta, plan),
+      delta: this.#publish(plan.delta, plan, beforeNotify),
       status: "committed",
       transition: plan.applied,
     };
@@ -329,7 +332,6 @@ export class ElementStore {
     replacement.style = style;
     return this.replace(id, replacement);
   }
-
   public remove(ids: ReadonlySet<string> | readonly string[]): Store.StoreDelta | null {
     return this.#remove(ids);
   }
@@ -357,7 +359,6 @@ export class ElementStore {
     this.#overflowCount += result.overflowDelta;
     return this.#publish(result.delta, undefined, beforeNotify);
   }
-
   public removeWithHistory(
     ids: ReadonlySet<string> | readonly string[],
   ): Store.AppliedRemovalResult | null {
@@ -365,7 +366,6 @@ export class ElementStore {
       this.#remove(ids, beforeNotify),
     );
   }
-
   public arrange(selectedIds: ReadonlySet<string>, action: ArrangeAction): Store.StoreDelta | null {
     const delta = new DeltaBuilder();
     for (const band of RENDER_BANDS) {

@@ -11,6 +11,7 @@ import type {
   ImportedImageBatch,
 } from "../active-scene/editor-chrome-openings";
 import type { EditableDocumentModel } from "../document-session/document-model-port";
+import { ImageResourceCapacityError } from "../document-session/session-image-resources";
 import { registerAppliedDocumentMutation } from "./document-history";
 import { captureElementReplacementHistory, type ActiveEditorHistory } from "./history";
 import type { SvgSceneRenderer } from "../../../rendering/scene/scene-renderer";
@@ -29,7 +30,7 @@ export interface ActiveImageSessionOptions extends Pick<
   readonly select: (selection: ReadonlySet<string>) => void;
   readonly visibleCenter: () => PointV1;
   readonly onCommitted: (preserveTool?: boolean) => void;
-  readonly onFailed: () => void;
+  readonly onFailed: (reason?: "capacity") => void;
   readonly renderer?: Partial<
     Pick<SvgSceneRenderer, "beginPreviewCommit" | "clearElementPreviews">
   >;
@@ -58,7 +59,7 @@ export class ActiveImageSession {
   public get canImport(): boolean {
     return (
       this.#options.onImportImages !== undefined &&
-      this.#options.model.addImageResources !== undefined
+      this.#options.model.prepareImageResources !== undefined
     );
   }
 
@@ -97,12 +98,17 @@ export class ActiveImageSession {
         options.model.page,
         options.ownerWindow.crypto,
       );
-      await options.model.addImageResources!(resources);
-      if (!this.#current(signal, revision)) return;
       const isCancelled = () => !this.#current(signal, revision);
+      const preparedResources = await options.model.prepareImageResources!(resources, {
+        isCancelled,
+      });
+      if (preparedResources === null || isCancelled()) return;
       const prepared = await options.model.prepareElementAppend(elements, { isCancelled });
       if (prepared.status !== "prepared" || prepared.token === null || isCancelled()) return;
-      const applied = options.model.commitPreparedElementMutation(prepared.token);
+      const applied = options.model.commitPreparedElementMutation(
+        prepared.token,
+        preparedResources,
+      );
       if (applied === null) return;
       registerAppliedDocumentMutation(options.history, options.model, applied);
       options.select(
@@ -199,8 +205,9 @@ export class ActiveImageSession {
       )
         return;
       await operation(controller.signal);
-    } catch {
-      if (!controller.signal.aborted && !this.#disposed) options.onFailed();
+    } catch (error) {
+      if (!controller.signal.aborted && !this.#disposed)
+        options.onFailed(error instanceof ImageResourceCapacityError ? "capacity" : undefined);
     } finally {
       if (this.#operation === controller) this.#operation = undefined;
     }

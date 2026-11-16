@@ -3,7 +3,7 @@ import { rasterImage, rasterResource } from "../../fixtures/persistence/image-sv
 import { TestWorkScheduler } from "../../fixtures/persistence/work-scheduler";
 import {
   createImageResource,
-  validateImageResource,
+  validateImageResourceSteps,
 } from "../../../src/persistence/images/image-resources";
 import {
   SampleBase64Reader,
@@ -184,7 +184,7 @@ it("bounds real WebP chunk visits between shared scheduler checkpoints and abort
   expect(hashes).not.toHaveBeenCalled();
 });
 
-it("retains one verified raster payload through moves and aborts untrusted decoding at scheduler checkpoints", async () => {
+it("retains one verified raster payload through moves and aborts untrusted decoding before its next chunk", async () => {
   const source = rasterResource();
   const bytes = new Uint8Array(1024 * 1024);
   bytes.set(Uint8Array.from(atob(source.data), (value) => value.charCodeAt(0)));
@@ -221,15 +221,11 @@ it("retains one verified raster payload through moves and aborts untrusted decod
   expect(native.mock.calls.every(([input]) => input.length <= 64 * 1024)).toBe(true);
   native.mockClear();
   const controller = new AbortController();
-  const scheduler = new TestWorkScheduler({
-    checkpoint: () => {
-      controller.abort();
-      return undefined;
-    },
-  });
-  await expect(
-    validateImageResource({ ...resource }, scheduler, controller.signal),
-  ).rejects.toThrow();
+  const steps = validateImageResourceSteps({ ...resource }, controller.signal);
+  expect(steps.next()).toEqual({ done: false, value: undefined });
+  expect(native).toHaveBeenCalledOnce();
+  controller.abort();
+  expect(() => steps.next()).toThrow();
   expect(reads).not.toHaveBeenCalled();
   expect(native).toHaveBeenCalledOnce();
   serializer.clear();

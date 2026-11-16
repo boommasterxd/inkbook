@@ -9,7 +9,7 @@ import { encodeRuntimeSelectionChunked } from "../../../../src/persistence/worke
 import { validateClipboardPayload } from "../../../../src/persistence/clipboard/validation";
 import { planPaste } from "../../../../src/persistence/clipboard/operations";
 import { capturePastePlan } from "../../../../src/persistence/clipboard/paste-plan-snapshot";
-import { page, RECTANGLE_ID } from "./fixtures";
+import { page, RECTANGLE_ID, selectedElements } from "./fixtures";
 
 it("copies only selected resources and preserves canonical image bytes through sliced paste", async () => {
   const asset = await capacityImageResource(0, 4000);
@@ -48,6 +48,42 @@ it("copies only selected resources and preserves canonical image bytes through s
     crop: element.crop,
   });
 });
+
+it.each([false, true])(
+  "plans only referenced rasters from a validated clipboard with images=%s",
+  async (includeImage) => {
+    const { asset, element } = await validImageFixture();
+    const unused = await capacityImageResource(9);
+    const elements = [...(includeImage ? [element] : []), selectedElements()[0]!];
+    const encoded = encodeRuntimeSelection(
+      elements,
+      new Set(elements.map(({ id }) => id)),
+      [],
+      [asset],
+    );
+    if (!encoded.ok) throw new Error(encoded.error.message);
+    const payload = {
+      ...encoded.value.payload,
+      version: 5,
+      imageResources: [unused, ...(includeImage ? [asset] : [])],
+    };
+    const decoded = resolveClipboardPayload({ customText: JSON.stringify(payload) });
+    if (!decoded.ok) throw new Error(decoded.error.message);
+    expect(decoded.value.payload.imageResources).toHaveLength(includeImage ? 2 : 1);
+    let next = 0;
+    const planned = planPaste({
+      decoded: decoded.value,
+      existingElements: [],
+      page: page(),
+      target: { x: 300, y: 300 },
+      commandTimestamp: 1,
+      createId: () => `aaaaaaaa-aaaa-4aaa-8aaa-${String(++next).padStart(12, "0")}`,
+    });
+    if (!planned.ok) throw new Error(planned.error.message);
+    expect(planned.value.elements).toHaveLength(elements.length);
+    expect(planned.value.imageResources).toEqual(includeImage ? [asset] : undefined);
+  },
+);
 
 it("rejects forged, missing and out-of-source image resources before paste adoption", async () => {
   const { asset, element } = await validImageFixture();
