@@ -10,7 +10,11 @@ import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler"
 
 installDialogTestLifecycle();
 
-function setup(rotation = 0, camera = { x: 0, zoom: 1 }) {
+function setup(
+  rotation = 0,
+  camera = { x: 0, zoom: 1 },
+  overrides: { image?: Partial<ImageElementV3>; resource?: Partial<ImageResourceV3> } = {},
+) {
   const container = document.createElement("div");
   const inputSurface = document.createElement("div");
   inputSurface.tabIndex = 0;
@@ -22,6 +26,7 @@ function setup(rotation = 0, camera = { x: 0, zoom: 1 }) {
     width: 200,
     height: 100,
     data: "AAAA",
+    ...overrides.resource,
   };
   const image: ImageElementV3 = {
     id: "image",
@@ -35,6 +40,7 @@ function setup(rotation = 0, camera = { x: 0, zoom: 1 }) {
     height: 100,
     assetId: resource.id,
     crop: { x: 20, y: 10, width: 160, height: 80 },
+    ...overrides.image,
   };
   const update = vi.fn();
   const dispose = vi.fn();
@@ -196,4 +202,70 @@ describe("inline canvas image crop", () => {
       expect(crop.dispose).toHaveBeenCalledOnce();
     },
   );
+});
+
+it.each([
+  { edges: "left top", start: 0, end: 1, origin: 3996 },
+  { edges: "right bottom", start: 1, end: 0, origin: 0 },
+])(
+  "keeps a tiny image's $edges crop representable through confirmation",
+  async ({ edges, start, end, origin }) => {
+    const crop = setup(
+      0,
+      { x: 0, zoom: 1 },
+      {
+        resource: { width: 4000, height: 4000 },
+        image: {
+          width: 1,
+          height: 1,
+          pivot: { x: 0.5, y: 0.5 },
+          crop: { x: 0, y: 0, width: 4000, height: 4000 },
+        },
+      },
+    );
+    const handle = crop.container.querySelector<HTMLButtonElement>(`[data-edges="${edges}"]`)!;
+    handle.setPointerCapture = vi.fn();
+    handle.hasPointerCapture = () => false;
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        button: 0,
+        pointerId: 1,
+        clientX: start,
+        clientY: start,
+      }),
+    );
+    handle.dispatchEvent(
+      new PointerEvent("pointerup", { pointerId: 1, clientX: end, clientY: end }),
+    );
+    expect(crop.update).toHaveBeenLastCalledWith({ x: origin, y: origin, width: 4, height: 4 });
+    crop.button("Apply crop").click();
+    expect(await crop.promise).toEqual({ x: origin, y: origin, width: 4, height: 4 });
+    expect(crop.setElementPreviews).toHaveBeenCalledWith(
+      [expect.objectContaining({ width: 0.001, height: 0.001 })],
+      1,
+    );
+    expect(crop.dispose).toHaveBeenCalledOnce();
+    expect(crop.active.mock.calls).toEqual([[true], [false]]);
+    expect(document.activeElement).toBe(crop.inputSurface);
+  },
+);
+
+it("rejects failed preview preparation after releasing the crop and restoring editor access", async () => {
+  const crop = setup();
+  const failure = new RangeError("Preview geometry was rejected.");
+  crop.setElementPreviews.mockImplementation(() => {
+    throw failure;
+  });
+  const rejected = expect(crop.promise).rejects.toBe(failure);
+  crop.button("Apply crop").click();
+  await rejected;
+  expect(crop.dispose).toHaveBeenCalledOnce();
+  expect(crop.unsubscribe).toHaveBeenCalledOnce();
+  expect(crop.keymap.popScope).toHaveBeenCalledOnce();
+  expect(crop.active.mock.calls).toEqual([[true], [false]]);
+  expect(crop.container.querySelector('[role="group"]')).toBeNull();
+  expect(document.activeElement).toBe(crop.inputSurface);
+  crop.signal.abort();
+  crop.cancelChange();
+  expect(crop.dispose).toHaveBeenCalledOnce();
 });

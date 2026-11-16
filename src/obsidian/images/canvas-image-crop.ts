@@ -40,9 +40,13 @@ export function openCanvasImageCrop(
   if (options.signal.aborted) return Promise.resolve(undefined);
   return new Promise((resolve, reject) => {
     let failed = false;
-    const crop = new CanvasImageCrop(options, (result) => {
-      if (!failed) resolve(result);
-    });
+    const crop = new CanvasImageCrop(
+      options,
+      (result) => {
+        if (!failed) resolve(result);
+      },
+      reject,
+    );
     try {
       crop.open();
     } catch (error) {
@@ -70,8 +74,9 @@ class CanvasImageCrop {
   public constructor(
     private readonly options: CanvasImageCropOptions,
     private readonly resolve: (result: ImageCropV3 | undefined) => void,
+    private readonly reject: (error: Error) => void,
   ) {
-    this.#draft = new ImageCropDraft(options.resource, options.image.crop);
+    this.#draft = new ImageCropDraft(options.resource, options.image.crop, options.image);
     const host = options.chromeHost ?? options.container;
     this.#root = host.createDiv({ cls: "inkbook-image-crop" });
     this.#layout = new ImageCropLayout(options.container, options.image, this.#root);
@@ -224,19 +229,27 @@ class CanvasImageCrop {
     if (this.#frame !== undefined) this.options.scheduler.cancelFrame(this.#frame);
     this.#animation?.stop();
     this.#handles?.dispose();
-    if (result !== undefined) {
-      this.options.renderer.setElementPreviews([applyImageCrop(this.options.image, result)], 1);
-      this.options.renderer.flushPointerFeedbackFrame();
+    let failure: Error | undefined;
+    try {
+      if (result !== undefined) {
+        this.options.renderer.setElementPreviews([applyImageCrop(this.options.image, result)], 1);
+        this.options.renderer.flushPointerFeedbackFrame();
+      }
+    } catch (error) {
+      failure =
+        error instanceof Error ? error : new Error("Image crop preview could not be prepared.");
+    } finally {
+      this.#presentation?.dispose();
+      this.#root.remove();
+      for (const release of this.#release.reverse()) release();
+      if (
+        restoreFocus &&
+        this.options.renderer.inputSurface.isConnected &&
+        !this.options.renderer.inputSurface.inert
+      )
+        this.options.renderer.inputSurface.focus({ preventScroll: true });
     }
-    this.#presentation?.dispose();
-    this.#root.remove();
-    for (const release of this.#release.reverse()) release();
-    if (
-      restoreFocus &&
-      this.options.renderer.inputSurface.isConnected &&
-      !this.options.renderer.inputSurface.inert
-    )
-      this.options.renderer.inputSurface.focus({ preventScroll: true });
-    this.resolve(result);
+    if (failure !== undefined) this.reject(failure);
+    else this.resolve(result);
   }
 }
