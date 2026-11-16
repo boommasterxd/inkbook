@@ -137,6 +137,7 @@ function closedPullRequests(caches, api, base, active) {
 function codeqlProofs(caches, options, head, base) {
   const ids = new Set(
     caches
+      .filter((c) => c.ref === `refs/heads/${options.policy.defaultBranch}` && c.size_in_bytes > 0)
       .map(codeqlIdentity)
       .filter((c) => c?.sha === head)
       .map((c) => c?.runId),

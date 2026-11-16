@@ -191,11 +191,13 @@ function codeql(caches, runs, rules, head) {
         r.head_branch === rules.defaultBranch,
     );
     if (!proof || !trustedRun(proof, rules.codeqlWorkflows)) continue;
-    const previous = latest.get(current.family);
+    const identity = JSON.stringify([current.family, replacement.version]);
+    const previous = latest.get(identity);
     if (!previous || Date.parse(previous.created_at) < Date.parse(replacement.created_at))
-      latest.set(current.family, replacement);
+      latest.set(identity, replacement);
   }
-  for (const [family, replacement] of latest) {
+  for (const replacement of latest.values()) {
+    const family = codeqlIdentity(replacement)?.family;
     for (const c of caches) {
       const previous = codeqlIdentity(c);
       if (

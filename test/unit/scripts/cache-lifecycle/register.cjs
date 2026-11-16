@@ -398,12 +398,43 @@ function registerTransportTests(test, assert, directory) {
 }
 
 /** @param {(name:string,fn:()=>void)=>unknown} test @param {typeof import('node:assert/strict')} assert @param {string} directory */
+function registerCodeqlIsolationTests(test, assert, directory) {
+  const { runLifecycle } = require(path.join(directory, "core.cjs"));
+  test("untrusted PR keys cannot request CodeQL proofs or exhaust their budget", () => {
+    const { state, options } = fixture();
+    state.caches = [...Array(26).keys()].map((i) =>
+      cache(100 + i, `codeql-overlay-base-database-1-fake-${HEAD}-${1000 + i}-1`, {
+        ref: "refs/pull/7/merge",
+      }),
+    );
+    state.prs[7] = { state: "closed", head: { sha: OLD, ref: "feature" } };
+    runLifecycle(options);
+    assert.equal(state.removed.length, 26);
+  });
+  test("each CodeQL cache version retains its own verified replacement", () => {
+    const { state, options } = codeqlFixture({});
+    const [old, replacement] = state.caches;
+    state.caches.push(
+      { ...old, id: 3, version: "format-2" },
+      { ...replacement, id: 4, version: "format-2" },
+    );
+    runLifecycle(options);
+    assert.deepEqual(state.removed, [1, 3]);
+    assert.deepEqual(
+      state.caches.map((c) => c.id),
+      [2, 4],
+    );
+  });
+}
+
+/** @param {(name:string,fn:()=>void)=>unknown} test @param {typeof import('node:assert/strict')} assert @param {string} directory */
 function registerTests(test, assert, directory) {
   for (const register of [
     registerProducerTests,
     registerPrTests,
     registerRotationTests,
     registerCodeqlTests,
+    registerCodeqlIsolationTests,
     registerSafetyTests,
   ])
     register(test, assert, directory);
