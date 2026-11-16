@@ -12,18 +12,20 @@ import { appendOwnedIframe } from "../../../../fixtures/obsidian/owned-iframe";
 
 beforeAll(installObsidianDomHelpers);
 
-it("activates a selected text field without visiting 10000 unrelated strokes", () => {
-  const text = textElement();
+it("activates the empty interior of selected text without visiting 10000 unrelated strokes or paint", () => {
+  const text = textElement({ backgroundColor: null, backgroundOpacity: 0 });
   const state = selectedTextActivation([
     text,
     ...Array.from({ length: 10_000 }, (_, index) => indexedStroke(index + 100)),
   ]);
   state.input.focus();
   state.key("Home");
+  const paint = vi.spyOn(state.model.store.get(text.id)!.textPaintGeometry!, "query");
   state.model.store.resetInstrumentation();
   const reads = vi.spyOn(state.model.store, "get");
   tapSelectedText(state.controller);
   expect(state.edit).toHaveBeenCalledExactlyOnceWith(text.id, text.source.length);
+  expect(paint).not.toHaveBeenCalled();
   expect(reads.mock.calls.every(([id]) => id === text.id)).toBe(true);
   // Warm selection geometry needs one host lookup, with fixed target/cursor refresh headroom.
   expect(reads.mock.calls.length).toBeLessThanOrEqual(4);

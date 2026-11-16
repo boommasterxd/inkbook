@@ -63,6 +63,11 @@ const tasks = {
     "-p",
     "tsconfig.worker.json",
   ),
+  "typecheck:cache-lifecycle": nodeTask(
+    "node_modules/typescript/bin/tsc",
+    "--project",
+    "scripts/cache-lifecycle/tsconfig.json",
+  ),
 };
 
 const groups = {
@@ -85,7 +90,7 @@ const groups = {
     "build",
     "package:verify",
   ],
-  typecheck: ["typecheck:runtime", "typecheck:test"],
+  typecheck: ["typecheck:runtime", "typecheck:test", "typecheck:cache-lifecycle"],
 };
 
 export function createCheckCommandPlan(

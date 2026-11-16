@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "repository": "boommasterxd/inkbook",
+  "defaultBranch": "main",
+  "producerInputs": [
+    "package.json",
+    "package-lock.json",
+    ".npmrc",
+    ".nvmrc",
+    ".github/actions/",
+    ".github/workflows/dependency-cache.yml",
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml"
+  ],
+  "producerWorkflows": [
+    {
+      "name": "Warm dependency cache",
+      "path": ".github/workflows/dependency-cache.yml",
+      "job": "warm"
+    }
+  ],
+  "families": { "npm": "npm-v1-" },
+  "codeqlWorkflows": [
+    {
+      "name": "Push on main",
+      "path": "dynamic/github-code-scanning/codeql"
+    }
+  ],
+  "retiredPrefixes": []
+}

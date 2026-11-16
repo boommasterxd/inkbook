@@ -44,8 +44,10 @@ const toolingFiles = [
   ".dependency-cruiser.mjs",
   "eslint.config.mjs",
   "scripts/**/*.mjs",
+  "scripts/cache-lifecycle/**/*.cjs",
   "stylelint.config.mjs",
   "test/unit/scripts/**/*.mjs",
+  "test/unit/scripts/cache-lifecycle/**/*.cjs",
   "vitest.config.ts",
 ];
 

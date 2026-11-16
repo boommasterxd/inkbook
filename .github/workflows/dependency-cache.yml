@@ -1,0 +1,104 @@
+name: Warm dependency cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - package-lock.json
+      - .npmrc
+      - .nvmrc
+      - .github/actions/**
+      - .github/workflows/dependency-cache.yml
+      - .github/workflows/ci.yml
+      - .github/workflows/release.yml
+      - scripts/cache-lifecycle/**
+  workflow_dispatch:
+
+concurrency:
+  group: dependency-cache-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      replacements: ${{ steps.receipt.outputs.replacements }}
+    steps:
+      - name: Require the trusted default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: test "$GITHUB_REF" = refs/heads/main && test "$DEFAULT_BRANCH" = main
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.x"
+          check-latest: true
+          package-manager-cache: false
+      - name: Warm the shared dependency cache
+        id: install
+        uses: ./.github/actions/install-dependencies
+        with:
+          save-cache: "true"
+      - name: Publish native replacement identity
+        id: receipt
+        env:
+          CACHE_PRIMARY_KEY: ${{ steps.install.outputs.cache-primary-key }}
+          CACHE_PREFIX: ${{ steps.install.outputs.cache-prefix }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const replacements = [{ family: 'npm', key: process.env.CACHE_PRIMARY_KEY, prefix: process.env.CACHE_PREFIX }];
+          writeFileSync(join(process.env.RUNNER_TEMP, 'replacements.json'), JSON.stringify(replacements));
+          appendFileSync(process.env.GITHUB_OUTPUT, `replacements=${JSON.stringify(replacements)}\n`);
+          NODE
+      - name: Preserve replacement identity for deferred cleanup
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cache-lifecycle-receipts-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/replacements.json
+          retention-days: 7
+          if-no-files-found: error
+
+  cleanup:
+    name: Retire replaced dependency caches
+    needs: warm
+    if: >-
+      needs.warm.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      github.event.repository.default_branch == 'main'
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+    concurrency:
+      group: cache-lifecycle
+      cancel-in-progress: false
+    steps:
+      - name: Check out trusted default-branch code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - name: Set up Node.js without a dependency cache
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.x"
+          check-latest: true
+          package-manager-cache: false
+      - name: Retire caches with a verified replacement
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CACHE_REPLACEMENTS: ${{ needs.warm.outputs.replacements }}
+        run: node scripts/cache-lifecycle/run.cjs scripts/cache-lifecycle/policy.json

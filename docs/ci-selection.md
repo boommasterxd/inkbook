@@ -26,6 +26,42 @@ Every active quality run also executes native `npm ls --all`, including when sel
 
 The project has no E2E or Playwright suite. Pull request selection adds no browser, container, or external-service test infrastructure. Existing accessibility checks remain within the selected Unit and Integration coverage.
 
+## Shared dependency cache
+
+CI selection, quality, both performance shards, and releases use the same [dependency installation action](../.github/actions/install-dependencies/action.yml). Automatic `setup-node` caching is disabled. Only the npm content store at `~/.npm/_cacache` is transferred; credentials, npm logs, installed modules, and build output are excluded. Its versioned key binds runner OS/architecture, Node and npm major versions, `.npmrc`, and `package-lock.json`. A fallback can reuse another lockfile's downloads only within the same platform, tool, and install-configuration boundary. Runtime patch updates and unrelated source changes do not split the store.
+
+Every consumer runs `npm ci --include=dev --prefer-offline --no-audit` with the same npm cache directory, regardless of restoration. Missing packages can still download normally. Cache transfers are best effort; installation and required checks remain blocking. The separate production audit remains required before CI fan-out. Documentation-only and intentional no-work paths do not restore or install packages.
+
+The [cache warmup](../.github/workflows/dependency-cache.yml) is the sole cache writer. It accepts only the verified default branch `main`, installs the complete root lockfile including development dependencies, and saves the content store after a successful install. Main-branch pushes affecting dependency manifests, runtime selectors, or cache/setup workflows refresh the store; ordinary source changes do not. There is no periodic refresh or duplicate quality/test/build pipeline. Consumers never save PR or tag caches into the shared store. Install hooks must remain reviewed and public packages must remain safe for fork PRs to read.
+
+To seed or recover an evicted store after this workflow is available on `main`, explicitly dispatch `dependency-cache.yml` on `main`. Manual runs on other refs fail. Cache entries are immutable; a format or completeness correction requires a cache-schema version change. A successful restore proves neither package completeness nor faster installation.
+
+The operational target is at least 95% confirmed successful restores for unchanged compatible PR inputs after a successful trusted seed. Use the first 30 days after that seed as the observation window and count one opportunity for every active CI selection, quality, or performance install. Report the sample count, exact restores, confirmed compatible fallback restores, misses, service failures, and unknown outcomes from the native restore step outputs/logs. Exact and confirmed fallback restores form the numerator; all eligible opportunities, including unknown outcomes, form the denominator. Report initial seeding and dependency/setup-changing runs separately. Missing samples leave the target unverified; it is not a merge gate. Compare restore/install durations and total warmup overhead separately from wall time, summed runner time, and billed usage, without duplicate measurement installs.
+
+The producer's follow-up cleanup runs after successful installation and cache post-save.
+It retires only older compatible main generations with a uniquely identified nonempty
+replacement. The metadata-only `cache-lifecycle.yml` also removes closed-PR caches once
+associated runs finish, and retires replaced CodeQL snapshots per configuration and tool version. Current keys, open PRs, active consumers,
+unknown families and unproven replacements remain protected. The project-owned policy
+and portable GitHub plugin runtime in `scripts/cache-lifecycle` recheck main, cache versions,
+PR state and active runs before deleting numeric cache IDs, cap each run at 100 deletions
+and verify the remaining inventory. API failures preserve uncertain caches.
+
+Deferred main rotation resumes on completion events using only a verified successful
+main producer and its exact run attempt. An earlier main revision is accepted only
+after a complete bounded ancestor comparison proves that all declared native key,
+setup and install-hook inputs remain unchanged, including rename sources. Producer
+input paths also trigger the warmup; completion triggers cover all existing non-cleanup
+workflows. Recovery considers at most 20 successful main runs, 100 commits and fewer
+than 300 changed files. Missing or expired proof preserves caches until another
+authorized warmup establishes a replacement. Its tiny
+`cache-lifecycle-receipts-<attempt>` artifact contains only `replacements.json`, retained
+for seven days and bounded to 64 KiB/20 identities. PR artifacts are never used.
+Cleanup installs no dependencies and repeats no quality pipeline. Existing required gates,
+cache retention/storage limits and the measurable 95% restore target remain independent.
+Native regression checks cover replacement proof, protected caches, PR/run races,
+CodeQL attempts where applicable, bounded metadata and recovery after concurrent runs.
+
 ## Coverage semantics
 
 Selected tests run with V8 coverage. The existing thresholds remain 85% for lines, statements, and functions and 80% for branches. Coverage includes the selected tests' forward runtime dependency closure and runtime modules transitively affected by changed source, including affected modules without a selected direct test. This result is explicitly **partial coverage** and does not represent whole-project coverage. Tooling-only tests with no reachable product source do not claim product coverage.

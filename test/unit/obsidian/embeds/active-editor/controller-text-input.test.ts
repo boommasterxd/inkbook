@@ -19,6 +19,10 @@ import {
   textActivationPointer,
 } from "../../../../fixtures/obsidian/selected-text-activation";
 import { rectangle } from "../../../domain/geometry/fixtures";
+import {
+  elementMutationPorts,
+  elementReplacementPorts,
+} from "../../../../fixtures/obsidian/element-mutation-ports";
 
 beforeAll(installObsidianDomHelpers);
 afterEach(() => {
@@ -93,6 +97,72 @@ it("opens the first tap after area selection without requiring another selection
   expect(state.edit).not.toHaveBeenCalled();
   tapSelectedText(state.controller, "touch");
   expect(state.edit).toHaveBeenCalledExactlyOnceWith(element.id, element.source.length);
+});
+
+it.each(["mouse", "pen", "touch"] as const)(
+  "moves a lasso-selected text field from its empty interior with %s and preserves Undo",
+  async (pointerType) => {
+    const element = textElement({ backgroundColor: null, backgroundOpacity: 0 });
+    const state = selectedTextActivation([element]);
+    let revision = 0;
+    const advance = () => {
+      revision += 1;
+    };
+    Object.assign(
+      state.model,
+      elementMutationPorts(state.model.store, advance),
+      elementReplacementPorts(state.model.store, advance),
+    );
+    Object.defineProperty(state.model, "revision", { get: () => revision });
+    lassoTextSelection(state.controller);
+    await vi.waitFor(() =>
+      expect(state.renderer.setSelectedElements).toHaveBeenLastCalledWith(new Set([element.id])),
+    );
+    const start = { clientX: 175, clientY: 85 };
+    const end = { clientX: 215, clientY: 110 };
+    state.controller.handlePointerDown(textActivationPointer("pointerdown", pointerType, start));
+    expect(state.edit).not.toHaveBeenCalled();
+    state.controller.handlePointerMove(textActivationPointer("pointermove", pointerType, end));
+    state.controller.handlePointerUp(textActivationPointer("pointerup", pointerType, end));
+    await vi.waitFor(() =>
+      expect(state.model.store.get(element.id)?.element).toMatchObject({
+        x: element.x + 40,
+        y: element.y + 25,
+        width: element.width,
+        height: element.height,
+      }),
+    );
+    expect(state.edit).not.toHaveBeenCalled();
+    state.input.focus();
+    state.key("z", { ctrlKey: true });
+    await vi.waitFor(() => expect(state.model.store.get(element.id)?.element).toEqual(element));
+  },
+);
+
+it("keeps the text selection when opening a menu over an underlying shape in its empty interior", () => {
+  const element = textElement({ backgroundColor: null, backgroundOpacity: 0 });
+  const underneath = {
+    ...rectangle(),
+    id: "00000000-0000-4000-8000-000000000002",
+    x: 150,
+    y: 80,
+    width: 40,
+    height: 20,
+    pivot: { x: 170, y: 90 },
+  };
+  underneath.style.fillColor = { type: "theme-text" };
+  underneath.style.fillOpacity = 1;
+  const state = selectedTextActivation([element, underneath]);
+  state.input.focus();
+  state.key("Home");
+  state.controller.handleContextMenu(new MouseEvent("contextmenu", { clientX: 175, clientY: 85 }));
+  expect(state.renderer.setSelectedElements).toHaveBeenLastCalledWith(new Set([element.id]));
+  state.menu.close();
+  state.input.focus();
+  state.key("F10", { shiftKey: true });
+  expect(state.menu.positions[state.menu.positions.length - 1]?.position).toMatchObject(
+    element.pivot,
+  );
 });
 
 it("keeps a group selected when tapping one of its text fields", () => {

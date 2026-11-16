@@ -40,13 +40,13 @@ jobs:
         with:
           node-version: "26.x"
           check-latest: true
-          cache: npm
+          package-manager-cache: false
       - name: Detect documentation-only changes
         id: preflight
         run: node scripts/ci-plan.mjs --preflight
       - name: Install dependencies
         if: steps.preflight.outputs.docs != 'true'
-        run: npm ci
+        uses: ./.github/actions/install-dependencies
       - name: Check dependency vulnerabilities before fan-out
         id: audit
         if: steps.preflight.outputs.docs != 'true'
@@ -79,10 +79,10 @@ jobs:
         with:
           node-version: "26.x"
           check-latest: true
-          cache: npm
+          package-manager-cache: false
       - name: Install dependencies
         if: needs.select.outputs.mode != 'docs'
-        run: npm ci
+        uses: ./.github/actions/install-dependencies
       - name: Run quality gate
         if: needs.select.outputs.mode != 'docs'
         run: node scripts/run-ci.mjs quality
@@ -127,10 +127,10 @@ jobs:
         with:
           node-version: "26.x"
           check-latest: true
-          cache: npm
+          package-manager-cache: false
       - name: Install dependencies
         if: needs.select.outputs[matrix.suite] == 'true'
-        run: npm ci
+        uses: ./.github/actions/install-dependencies
       - name: Run performance gate
         if: needs.select.outputs[matrix.suite] == 'true'
         run: node scripts/run-ci.mjs "${INKBOOK_PERFORMANCE_SUITE}"

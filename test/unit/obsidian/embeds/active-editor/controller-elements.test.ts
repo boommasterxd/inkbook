@@ -13,6 +13,7 @@ import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-edi
 import { connectedLine, highlighter, IDS, rectangle } from "../../../domain/store/fixtures";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { textElement } from "../../../domain/schema/fixtures";
+import { rotatePointClockwise } from "../../../../../src/domain/geometry/public";
 
 describe("active editor arrange availability", () => {
   it("uses only selected ranks within each render band, ignoring missing IDs", () => {
@@ -185,31 +186,36 @@ describe("selected pressure target preparation", () => {
 
 describe("active editor text selection targets", () => {
   it.each(["mouse", "pen", "touch"] as const)(
-    "targets visible selected text and leaves its empty field to the underlying object with %s",
+    "uses the complete rotated selected text frame without querying underlying paint with %s",
     (pointerType) => {
-      const text = { ...textElement(), createdAt: 2 };
+      const text = { ...textElement(), createdAt: 2, rotation: 30 };
       const underneath = rectangle();
       underneath.style.fillColor = { type: "rgba", value: "#000000FF" };
       underneath.style.fillOpacity = 1;
       const fixture = scene([underneath, text]);
       const selection = new Set([text.id]);
       const selected = [{ element: text, bounds: fixture.store.get(text.id)!.bounds }];
-      const blank = { x: 190, y: 140 };
-      const ink = { x: 120, y: 110 };
+      const blank = rotatePointClockwise({ x: 190, y: 140 }, text.pivot, text.rotation);
+      const ink = rotatePointClockwise({ x: 120, y: 110 }, text.pivot, text.rotation);
       const target = { elementId: text.id, isSelected: true };
       const prepareTextGeometry = vi.fn((id: string) => fixture.store.get(id)?.textPaintGeometry);
       const context = { tolerance: 8, prepareTextGeometry };
+      const hit = vi.spyOn(fixture.store, "hit");
       try {
-        expect(selectedTargetAt(selected, blank, null, context)).toBeUndefined();
-        expect(selectionTargetAt(fixture.store, selection, blank, pointerType, 1)).toEqual({
+        expect(selectedTargetAt(selected, blank, null, context)).toEqual(target);
+        expect(selectionTargetAt(fixture.store, selection, blank, pointerType, 1)).toEqual(target);
+        expect(selectedTargetAt(selected, ink, null, context)).toEqual(target);
+        expect(selectionTargetAt(fixture.store, selection, ink, pointerType, 1)).toEqual(target);
+        expect(prepareTextGeometry).not.toHaveBeenCalled();
+        expect(hit).not.toHaveBeenCalled();
+        const corner = { x: selected[0]!.bounds.minX + 1, y: selected[0]!.bounds.minY + 1 };
+        expect(selectedTargetAt(selected, corner, null, context)).toBeUndefined();
+        expect(selectionTargetAt(fixture.store, new Set(), blank, pointerType, 1)).toEqual({
           elementId: underneath.id,
           isSelected: false,
         });
-        expect(selectedTargetAt(selected, ink, null, context)).toEqual(target);
-        expect(selectionTargetAt(fixture.store, selection, ink, pointerType, 1)).toEqual(target);
-        expect(prepareTextGeometry).toHaveBeenCalledTimes(2);
-        expect(prepareTextGeometry).toHaveBeenLastCalledWith(text.id);
       } finally {
+        hit.mockRestore();
         fixture.release();
       }
     },

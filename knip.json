@@ -6,11 +6,22 @@
     "src/obsidian/plugin-runtime-entry.ts!",
     "src/persistence/worker/runtime/document-worker-entry.ts!",
     "src/rendering/ui/editor-chrome-entry.ts!",
-    "scripts/*.mjs"
+    "scripts/*.mjs",
+    "scripts/cache-lifecycle/run.cjs"
   ],
-  "project": ["src/**/*.{ts,tsx}!", "test/**/*.{ts,tsx}", "scripts/*.mjs"],
+  "project": [
+    "src/**/*.{ts,tsx}!",
+    "test/**/*.{ts,tsx}",
+    "scripts/*.mjs",
+    "scripts/cache-lifecycle/*.{cjs,d.ts}",
+    "test/unit/scripts/cache-lifecycle*.test.mjs",
+    "test/unit/scripts/cache-lifecycle/*.cjs"
+  ],
   "vitest": {
     "config": ["vitest.config.ts"],
-    "entry": ["test/{unit,integration,performance}/**/*.test.{ts,tsx}"]
+    "entry": [
+      "test/{unit,integration,performance}/**/*.test.{ts,tsx}",
+      "test/unit/scripts/cache-lifecycle*.test.mjs"
+    ]
   }
 }

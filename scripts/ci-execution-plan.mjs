@@ -9,6 +9,7 @@ const NON_PRODUCTION = [
   /^\.github\//,
   /^\.gitignore$/,
   /^scripts\/(?:ci-[\w-]+|run-ci|check-command-plan|check-execution|run-checks|run-dead-code-checks|run-validated-tests|verify-source-layout|verify-work-scheduling|performance-[\w-]+|run-performance-tests)\.mjs$/,
+  /^scripts\/cache-lifecycle\/[^/]+\.(?:cjs|d\.ts|json)$/,
   /^(?:vitest\.config\.ts|tsconfig\.(?:test|tooling)\.json|knip\.json|eslint\.config\.mjs|stylelint\.config\.mjs|\.jscpd\.json|\.gitleaks(?:\.toml|-version)|\.prettierignore|\.prettierrc(?:\.json)?|\.dependency-cruiser\.mjs)$/,
 ];
 

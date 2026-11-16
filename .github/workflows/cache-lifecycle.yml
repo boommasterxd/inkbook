@@ -1,0 +1,48 @@
+name: Cache lifecycle
+
+on:
+  pull_request_target:
+    types: [closed]
+  workflow_run:
+    workflows:
+      - CI
+      - Commit Style Check
+      - Dependabot auto-merge
+      - Push on main
+      - Release
+      - Secret scan
+      - Update gitleaks
+      - Warm dependency cache
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: Retire inactive caches
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+    concurrency:
+      group: cache-lifecycle
+      cancel-in-progress: false
+    steps:
+      - name: Check out trusted default-branch code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - name: Set up Node.js without a dependency cache
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.x"
+          check-latest: true
+          package-manager-cache: false
+      - name: Retire inactive caches from verified metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/cache-lifecycle/run.cjs scripts/cache-lifecycle/policy.json

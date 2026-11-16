@@ -134,7 +134,6 @@ export function selectionTargetAt(
       ? selectionContext.geometry()
       : selectedGeometry(store, selection);
   if (
-    allowsSelectionOverlay(selected) &&
     selectionOverlayContainsPoint(
       selected,
       point,
@@ -176,7 +175,7 @@ export function selectedTargetAt(
 ): { readonly elementId: string; readonly isSelected: true } | undefined {
   const first = selected[0];
   if (first === undefined || first.element.locked === true) return undefined;
-  if (allowsSelectionOverlay(selected) && selectionOverlayContainsPoint(selected, point, frame)) {
+  if (selectionOverlayContainsPoint(selected, point, frame)) {
     return { elementId: first.element.id, isSelected: true };
   }
   const bounds = first.bounds;
@@ -200,8 +199,4 @@ export function selectedTargetAt(
     return { elementId: first.element.id, isSelected: true };
   }
   return undefined;
-}
-
-function allowsSelectionOverlay(selected: readonly SelectedElementGeometry[]): boolean {
-  return selected.length !== 1 || selected[0]?.element.kind !== "text";
 }
