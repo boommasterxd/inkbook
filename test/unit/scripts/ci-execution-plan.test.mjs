@@ -52,6 +52,21 @@ it("omits the repeated audit only when the caller supplies verified selection ev
 });
 
 describe("selected CI execution", () => {
+  it("does not rebuild the product for cache lifecycle tooling", () => {
+    const selected = plan({
+      changes: [
+        "scripts/cache-lifecycle/run.cjs",
+        "scripts/cache-lifecycle/policy.json",
+        "scripts/cache-lifecycle/types.d.ts",
+        ".github/workflows/cache-lifecycle.yml",
+      ],
+      tests: ["test/unit/scripts/cache-lifecycle-workflow.test.mjs"],
+      coverage: [],
+    });
+    expect(selectionOutputs(selected).build).toBe("false");
+    expect(selectionOutputs(selected, true).build).toBe("true");
+  });
+
   it("retains all static gates and production builds while narrowing test and coverage inputs", async () => {
     const commands = await qualityCommands(plan(), root, npmEntry);
     const test = commands.find(({ label }) => label.startsWith("test:coverage"));
@@ -65,6 +80,7 @@ describe("selected CI execution", () => {
       "architecture",
       "typecheck:runtime",
       "typecheck:test",
+      "typecheck:cache-lifecycle",
       "typecheck:worker",
       "test:coverage (partial)",
       "duplication",

@@ -34,6 +34,7 @@ describe("check command plan", () => {
       "architecture",
       "typecheck:runtime",
       "typecheck:test",
+      "typecheck:cache-lifecycle",
       "typecheck:worker",
       "test:coverage",
       "duplication",

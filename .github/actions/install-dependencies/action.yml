@@ -7,6 +7,12 @@ inputs:
     default: "false"
 
 outputs:
+  cache-primary-key:
+    description: The exact native key used for the trusted replacement cache.
+    value: ${{ steps.restore.outputs.cache-primary-key }}
+  cache-prefix:
+    description: The compatible OS, architecture, runtime, npm and installation configuration family.
+    value: ${{ steps.identity.outputs.prefix }}
   cache-hit:
     description: Whether the exact dependency cache was restored.
     value: ${{ steps.restore.outputs.cache-hit }}
@@ -20,18 +26,21 @@ runs:
     - name: Identify compatible npm store
       id: identity
       shell: bash
+      env:
+        INSTALL_CONFIG_HASH: ${{ hashFiles('.npmrc') }}
       run: |
         node_major=$(node --print 'process.versions.node.split(".")[0]')
         npm_version=$(npm --version)
-        echo "compatibility=node${node_major}-npm${npm_version%%.*}" >> "$GITHUB_OUTPUT"
+        printf 'prefix=npm-v1-%s-%s-node%s-npm%s-%s-\n' \
+          "$RUNNER_OS" "$RUNNER_ARCH" "$node_major" "${npm_version%%.*}" "$INSTALL_CONFIG_HASH" >> "$GITHUB_OUTPUT"
     - name: Restore npm downloads
       id: restore
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       continue-on-error: true
       with:
         path: ~/.npm/_cacache
-        key: npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.identity.outputs.compatibility }}-${{ hashFiles('.npmrc') }}-${{ hashFiles('package-lock.json') }}
-        restore-keys: npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.identity.outputs.compatibility }}-${{ hashFiles('.npmrc') }}-
+        key: ${{ steps.identity.outputs.prefix }}${{ hashFiles('package-lock.json') }}
+        restore-keys: ${{ steps.identity.outputs.prefix }}
     - name: Install the complete locked dependency tree
       shell: bash
       run: npm ci --include=dev --prefer-offline --no-audit --cache "$HOME/.npm"
