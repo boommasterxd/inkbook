@@ -21,6 +21,7 @@ const save = actionSteps.find((step) => step.startsWith("Save trusted npm downlo
 describe("shared dependency installation", () => {
   it("routes every npm consumer through the shared installer without overlapping automatic caches", () => {
     const consumers = [];
+    const metadataOnly = [];
     for (const filename of readdirSync(workflowDirectory).filter((file) => file.endsWith(".yml"))) {
       const workflow = readFileSync(new URL(filename, workflowDirectory), "utf8");
       expect(workflow, filename).not.toMatch(/\brun:.*npm (?:ci|install)\b/);
@@ -31,9 +32,18 @@ describe("shared dependency installation", () => {
         const installers = job.match(/uses: \.\/\.github\/actions\/install-dependencies/g) ?? [];
         if (!setups.length && !installers.length) continue;
         expect(setups, filename).toHaveLength(1);
-        expect(installers, filename).toHaveLength(1);
         expect(setups[0][1]).toContain("package-manager-cache: false");
         expect(setups[0][1]).not.toMatch(/^\s+cache:/m);
+        if (!installers.length) {
+          expect(job).toContain(
+            "run: node scripts/cache-lifecycle/run.cjs scripts/cache-lifecycle/policy.json",
+          );
+          expect(job).toContain("ref: refs/heads/main");
+          expect(job).toContain("contents: read\n      actions: write\n      pull-requests: read");
+          metadataOnly.push(filename);
+          continue;
+        }
+        expect(installers, filename).toHaveLength(1);
         if (filename !== "dependency-cache.yml") expect(job).not.toContain('save-cache: "true"');
         consumers.push(filename);
       }
@@ -45,6 +55,7 @@ describe("shared dependency installation", () => {
       "dependency-cache.yml",
       "release.yml",
     ]);
+    expect(metadataOnly.sort()).toEqual(["cache-lifecycle.yml", "dependency-cache.yml"]);
   });
 
   it("restores and saves the same compatible download store while always enforcing the lockfile", () => {
@@ -54,17 +65,16 @@ describe("shared dependency installation", () => {
     expect(path).toBe("~/.npm/_cacache");
     expect(save.match(/^ {8}path: (.+)$/m)?.[1]).toBe(path);
     const key = restore.match(/^ {8}key: (.+)$/m)?.[1];
-    expect(key).toContain("runner.os");
-    expect(key).toContain("runner.arch");
-    expect(key).toContain("steps.identity.outputs.compatibility");
-    expect(key).toContain("hashFiles('.npmrc')");
-    expect(key).toContain("hashFiles('package-lock.json')");
+    expect(key).toBe("${{ steps.identity.outputs.prefix }}${{ hashFiles('package-lock.json') }}");
+    expect(actionSteps[0]).toContain("INSTALL_CONFIG_HASH: ${{ hashFiles('.npmrc') }}");
+    expect(actionSteps[0]).toContain('"$RUNNER_OS" "$RUNNER_ARCH"');
     expect(key).not.toMatch(/github\.(?:sha|ref)|pull_request/);
     expect(restore.match(/^ {8}restore-keys: (.+)$/m)?.[1]).toBe(
       key.replace("${{ hashFiles('package-lock.json') }}", ""),
     );
     expect(save).toContain("key: ${{ steps.restore.outputs.cache-primary-key }}");
-    expect(actionSteps[0]).toContain("compatibility=node${node_major}-npm${npm_version%%.*}");
+    expect(actionSteps[0]).toContain("prefix=npm-v1-%s-%s-node%s-npm%s-%s-");
+    expect(actionSteps[0]).toContain('"$node_major" "${npm_version%%.*}" "$INSTALL_CONFIG_HASH"');
     expect(restore).toContain("continue-on-error: true");
     expect(save).toContain("continue-on-error: true");
     expect(install).toContain(
@@ -133,7 +143,7 @@ describe("trusted default-branch cache writer", () => {
     expect(triggers).toContain("workflow_dispatch:");
     const paths = [...triggers.matchAll(/^ {6}- (.+)$/gm)].map((match) => match[1]);
     expect(paths.sort()).toEqual([
-      ".github/actions/install-dependencies/action.yml",
+      ".github/actions/**",
       ".github/workflows/ci.yml",
       ".github/workflows/dependency-cache.yml",
       ".github/workflows/release.yml",
@@ -141,11 +151,13 @@ describe("trusted default-branch cache writer", () => {
       ".nvmrc",
       "package-lock.json",
       "package.json",
+      "scripts/cache-lifecycle/**",
     ]);
     expect(warmup).toContain("permissions:\n  contents: read");
     expect(warmup).toContain("persist-credentials: false");
     expect(warmup).toContain('save-cache: "true"');
-    expect(warmup).not.toMatch(
+    const producer = warmup.split("\n  cleanup:\n")[0];
+    expect(producer).not.toMatch(
       /secrets\.|pull_request_target|workflow_run|schedule:|npm run|gh release|gitleaks/,
     );
   });
