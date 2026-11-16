@@ -63,7 +63,9 @@ export function mountFeedbackActionMotion(
     render();
   };
   const setPress = (value: boolean): void => {
-    pressing = value && !button.disabled;
+    const next = value && !button.disabled;
+    if (pressing === next) return;
+    pressing = next;
     render();
   };
   const stopGestures =
@@ -120,11 +122,15 @@ function mountMotionGestures(
     setPress(true);
     return () => setPress(false);
   });
-  const stopKeyboard = registerKeyboardPress(button, () => {
-    if (button.disabled) return undefined;
-    setPress(true);
-    return () => setPress(false);
-  });
+  const stopKeyboard = registerKeyboardPress(
+    button,
+    () => {
+      if (button.disabled) return undefined;
+      setPress(true);
+      return () => setPress(false);
+    },
+    true,
+  );
   return () => {
     stopKeyboard();
     stopHover();
