@@ -1,0 +1,46 @@
+name: Warm dependency cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - package-lock.json
+      - .npmrc
+      - .nvmrc
+      - .github/actions/install-dependencies/action.yml
+      - .github/workflows/dependency-cache.yml
+      - .github/workflows/ci.yml
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+concurrency:
+  group: dependency-cache-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require the trusted default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: test "$GITHUB_REF" = refs/heads/main && test "$DEFAULT_BRANCH" = main
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.x"
+          check-latest: true
+          package-manager-cache: false
+      - name: Warm the shared dependency cache
+        uses: ./.github/actions/install-dependencies
+        with:
+          save-cache: "true"
