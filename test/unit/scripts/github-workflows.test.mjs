@@ -172,8 +172,8 @@ describe("affected CI selection", () => {
       const section = jobSection(workflow, id);
       expect(section).toContain("ref: ${{ github.sha }}\n          fetch-depth: 0");
       expect(section).toContain('node-version: "26.x"\n          check-latest: true');
-      expect(section).toContain("cache: npm");
-      expect(section).toContain("run: npm ci");
+      expect(section).toContain("package-manager-cache: false");
+      expect(section).toContain("uses: ./.github/actions/install-dependencies");
       expect(section.includes("run: node scripts/ci-plan.mjs")).toBe(id === "select");
     }
   });
@@ -238,7 +238,7 @@ describe("CI admission and no-work runner routing", () => {
 
   it("runs the blocking audit in selection before any substantive job can start", () => {
     const selection = jobSection(workflow, "select");
-    const install = selection.indexOf("run: npm ci");
+    const install = selection.indexOf("uses: ./.github/actions/install-dependencies");
     const audit = selection.indexOf("run: npm run audit");
     const plan = selection.indexOf("id: plan");
     expect(install).toBeGreaterThan(-1);
