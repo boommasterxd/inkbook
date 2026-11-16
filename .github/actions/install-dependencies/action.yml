@@ -7,6 +7,12 @@ inputs:
     default: "false"
 
 outputs:
+  cache-primary-key:
+    description: The exact native key used for the trusted replacement cache.
+    value: ${{ steps.restore.outputs.cache-primary-key }}
+  cache-prefix:
+    description: The compatible OS, architecture, runtime, npm and installation configuration family.
+    value: npm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.identity.outputs.compatibility }}-${{ hashFiles('.npmrc') }}-
   cache-hit:
     description: Whether the exact dependency cache was restored.
     value: ${{ steps.restore.outputs.cache-hit }}

@@ -1,5 +1,13 @@
 # Quality, Performance, Animation, and Testing
 
+## Cache Lifecycle Tooling
+
+`typecheck:cache-lifecycle` applies strict CheckJS to the portable cache runtime through
+`scripts/cache-lifecycle/tsconfig.json` and remains part of the native CI quality gate.
+Native Vitest adapters execute replacement, metadata, transport and recovery regressions;
+workflow tests exercise the actual receipt writer and verify the privileged cleanup
+boundary. Runtime source and shared fixtures retain the canonical GitHub plugin bytes.
+
 ## Quality Priorities
 
 No animation, abstraction, or background task may degrade live ink input. When requirements compete, use this order:
