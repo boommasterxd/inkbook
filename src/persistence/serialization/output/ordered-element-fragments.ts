@@ -4,7 +4,6 @@ import type { ElementFragments, RenderBand } from "./element-fragments";
 import type { EncodedByteBudget } from "./encoded-byte-budget";
 import type { ElementAssembly, FragmentAssembly } from "./incremental-document-serializer-types";
 import type { DocumentCodecResult } from "../types";
-import type { AutoPaintServerRegistry } from "./auto-contrast-servers";
 
 /** Collects ordered export fragments while charging complete document byte limits. */
 function collectOrderedElementFragments(options: {
@@ -13,7 +12,6 @@ function collectOrderedElementFragments(options: {
   readonly fragment: (element: InkElementV1) => ElementFragments;
   readonly outputBudget: EncodedByteBudget;
   readonly metadataBudget: EncodedByteBudget;
-  readonly autoPaints?: AutoPaintServerRegistry;
 }): DocumentCodecResult<FragmentAssembly> {
   const elements: InkElementV1[] = [];
   const metadata: string[] = [];
@@ -24,25 +22,20 @@ function collectOrderedElementFragments(options: {
     highlight: [],
   };
   let maximumBottom: number | null = null;
-  let serverBytes = 0;
   for (const band of ["image", "highlight", "content"] as const) {
     for (const id of options.orders[band]) {
       const element = options.element(id);
       const fragment = options.fragment(element);
       const separatorBytes = metadata.length === 0 ? 0 : 1;
-      const currentServerBytes = options.autoPaints?.contentByteLength ?? 0;
       if (
         !options.metadataBudget.tryReserve(fragment.metadataBytes + separatorBytes) ||
-        !options.outputBudget.tryReserve(
-          fragment.bytes + separatorBytes + currentServerBytes - serverBytes,
-        )
+        !options.outputBudget.tryReserve(fragment.bytes + separatorBytes)
       ) {
         return codecFailure(
           "static-output-limit-exceeded",
           "Generated document exceeds file limits.",
         );
       }
-      serverBytes = currentServerBytes;
       elements.push(element);
       metadata.push(fragment.metadata);
       canonicalMetadata.push(fragment.canonicalMetadata);

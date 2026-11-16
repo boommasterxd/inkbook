@@ -12,7 +12,7 @@ describe("vault settings loading", () => {
   it("adds star defaults to old shape settings without resetting existing custom styles", () => {
     const current = createBuiltInSettings();
     current.toolDefaults.shapes.rectangle.outlineWidth = 14;
-    current.toolDefaults.shapes.triangle.fillColor = { type: "theme-text" };
+    current.toolDefaults.shapes.triangle.fillColor = { type: "rgba", value: "#FFFFFFFF" };
     const { star: _star, ...legacyShapes } = current.toolDefaults.shapes;
     const input = { ...current, toolDefaults: { ...current.toolDefaults, shapes: legacyShapes } };
 
@@ -152,7 +152,8 @@ describe("vault settings field loading", () => {
   it.each([
     ["unlisted color", { type: "rgba", value: "#123456FF" }],
     ["malformed color", { type: "rgba", value: "#EF4444" }],
-    ["color with an unknown property", { type: "theme-text", extra: true }],
+    ["color with an unknown property", { type: "rgba", value: "#000000FF", extra: true }],
+    ["theme color with an unknown property", { type: "theme-text", extra: true }],
   ])("rejects an %s", (_label, color) => {
     const input = createBuiltInSettings() as unknown as Record<string, unknown>;
     const toolDefaults = input.toolDefaults as Record<string, unknown>;

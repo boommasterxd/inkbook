@@ -6,6 +6,7 @@ import type { PreviewTransform } from "../reconciliation/scene-visibility-reconc
 import type { SceneElementRecord } from "../types";
 import type { InkElementV1 } from "../../../domain/schema/public";
 import type { MountedSceneElement } from "../content/mounted-element";
+import type { SceneSelectionRuns } from "./selection-runs";
 
 interface RetainedTransform {
   readonly base: string | null;
@@ -20,6 +21,37 @@ export class CommittedPreviewGeometry {
   readonly #transforms = new Map<string, RetainedTransform>();
   #transformBytes = 0;
   #job: { id: string; version: number; path: ProgressivePreviewPath } | undefined;
+
+  public previewEntry(
+    id: string,
+    mounted: ReadonlyMap<string, MountedSceneElement>,
+    runs: SceneSelectionRuns,
+    deferred: Set<string>,
+  ): MountedSceneElement | undefined {
+    if (this.has(id) || (runs.committing && runs.grouped(id))) {
+      deferred.add(id);
+      return undefined;
+    }
+    return mounted.get(id);
+  }
+
+  public retainer(
+    runs: SceneSelectionRuns,
+    dirty: ReadonlySet<string>,
+    mounted: ReadonlyMap<string, MountedSceneElement>,
+  ) {
+    return (
+      previews: ReadonlyMap<string, PreviewTransform>,
+      elements: ReadonlyMap<string, InkElementV1>,
+    ): void => {
+      const grouped = runs.retainCommit();
+      this.retainPreviews(
+        grouped ? runs.exceptionTransforms() : previews,
+        grouped ? runs.exceptionElements(elements) : elements,
+        { dirty, mounted },
+      );
+    };
+  }
 
   public retainPreviews(
     previews: ReadonlyMap<string, PreviewTransform>,

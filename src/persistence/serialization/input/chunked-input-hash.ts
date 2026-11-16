@@ -6,7 +6,7 @@ import { SafeStaticProof } from "./safe-static-proof";
 import type { DocumentHashPort } from "../sha256";
 import type { ChunkedInputCheckpoint } from "./chunked-input-types";
 
-/** Owns the bytes decoded by one parser; export may retain one bounded terminal-digest buffer. */
+/** Owns decoded bytes; bounded runtime and export inputs may retain a terminal-digest buffer. */
 export class ChunkedInputHash {
   readonly #hasher: DocumentHashPort | undefined;
   readonly #signal: AbortSignal | undefined;
@@ -22,13 +22,22 @@ export class ChunkedInputHash {
     this.#signal = options.signal;
     this.#checkpoint = options.checkpoint;
     const proof = options.safeStaticProof;
-    const totalBytes = SafeStaticProof.isAuthentic(proof) ? proof.totalBytes : undefined;
-    if (
+    const inputBytes = options.nativeInputBytes;
+    const runtimeInput =
+      inputBytes !== undefined && Number.isSafeInteger(inputBytes) && inputBytes >= 0;
+    const totalBytes = runtimeInput
+      ? inputBytes
+      : SafeStaticProof.isAuthentic(proof)
+        ? proof.totalBytes
+        : undefined;
+    const exportInput =
       options.nativeExportHash === true &&
+      options.onValidatedSnapshot === undefined &&
+      options.sampleEncodingCache === undefined;
+    if (
+      (runtimeInput || exportInput) &&
       options.staticValidation === "safe" &&
       this.#hasher === undefined &&
-      options.onValidatedSnapshot === undefined &&
-      options.sampleEncodingCache === undefined &&
       totalBytes !== undefined &&
       totalBytes <= MAX_NATIVE_HASH_BYTES &&
       typeof crypto !== "undefined" &&

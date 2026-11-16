@@ -5,7 +5,12 @@ import {
   createImageResource,
   validateImageResource,
 } from "../../../src/persistence/images/image-resources";
-import { SampleBase64Reader } from "../../../src/persistence/serialization/metadata/sample-base64";
+import {
+  SampleBase64Reader,
+  SampleBase64Writer,
+} from "../../../src/persistence/serialization/metadata/sample-base64";
+import { IMAGE_LIMITS } from "../../../src/domain/images/image-limits";
+import { sha256Hex } from "../../../src/persistence/serialization/sha256";
 import { IncrementalDocumentSerializer } from "../../../src/persistence/serialization/output/incremental-document-serializer";
 import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
 import { ChunkedInkbookInputParser } from "../../../src/persistence/serialization/input/chunked-input-codec";
@@ -16,24 +21,50 @@ import {
   webpContainer,
 } from "../../fixtures/persistence/webp-images";
 import { ChunkedSha256 } from "../../../src/persistence/serialization/chunked-output-sha256";
-import * as autoExport from "../../../src/persistence/serialization/output/auto-contrast-export";
-import { createTestStroke } from "../../fixtures/persistence/worker-snapshot";
+import {
+  createTestStroke,
+  createCapacityStrokes,
+} from "../../fixtures/persistence/worker-snapshot";
+import { SvgInputPrelude } from "../../../src/persistence/serialization/input/svg-input-prelude";
 
 afterEach(() => vi.restoreAllMocks());
 
-it("shares bounded underlay source trees across ten thousand small Auto strokes", async () => {
+it("encodes a capacity raster through bounded native chunks and one private native digest", async () => {
+  const source = rasterResource();
+  const bytes = new Uint8Array(IMAGE_LIMITS.resourceBytes);
+  bytes.set(Uint8Array.from(atob(source.data), (character) => character.charCodeAt(0)));
+  const expected = {
+    id: sha256Hex(bytes),
+    data: (bytes as Uint8Array & { toBase64: () => string }).toBase64(),
+  };
+  const base64 = vi.spyOn(
+    Uint8Array.prototype as Uint8Array & { toBase64: () => string },
+    "toBase64",
+  );
+  const append = vi.spyOn(SampleBase64Writer.prototype, "append");
+  const hash = vi.spyOn(ChunkedSha256.prototype, "update");
+  const digest = vi.spyOn(crypto.subtle, "digest");
+  const result = await createImageResource(bytes, "image/png", new TestWorkScheduler());
+  expect(result).toMatchObject(expected);
+  expect(append).not.toHaveBeenCalled();
+  expect(hash).not.toHaveBeenCalled();
+  expect(base64).toHaveBeenCalledTimes(Math.ceil(bytes.length / (48 * 1024)));
+  expect(base64.mock.contexts.every((chunk) => (chunk as Uint8Array).byteLength <= 48 * 1024)).toBe(
+    true,
+  );
+  expect(
+    base64.mock.contexts.reduce<number>((sum, chunk) => sum + (chunk as Uint8Array).byteLength, 0),
+  ).toBe(bytes.length);
+  expect(digest).toHaveBeenCalledExactlyOnceWith("SHA-256", expect.any(Uint8Array));
+  expect(digest.mock.calls[0]![1].byteLength).toBe(bytes.length);
+  expect(digest.mock.calls[0]![1]).not.toBe(bytes);
+});
+
+it("retains one raster payload beside ten thousand theme and fixed-color strokes without regional paint", async () => {
   const resource = rasterResource();
-  const original = createTestStroke();
-  const strokes = Array.from({ length: 10_000 }, (_, index) => {
-    const x = 100 + (index % 100) * 12;
-    const y = 12 + Math.floor(index / 100) * 9;
-    return {
-      ...original,
-      id: `00000000-0000-4000-8000-${String(index + 1000).padStart(12, "0")}`,
-      points: [x, y, 0.5, x + 8, y + 3, 0.5],
-      style: { ...original.style, pressureEnabled: false },
-    };
-  });
+  const strokes = createCapacityStrokes();
+  for (let index = 0; index < strokes.length; index += 2)
+    strokes[index]!.style.color = { type: "theme-text" };
   const serializer = new IncrementalDocumentSerializer();
   expect(
     serializer.reset({
@@ -46,24 +77,29 @@ it("shares bounded underlay source trees across ten thousand small Auto strokes"
   expect(result.ok).toBe(true);
   if (!result.ok) throw new Error(result.error.message);
   const svg = new TextDecoder().decode(result.value.svg);
-  // These are the emitted browser source-instance boundaries, not test-loop counters.
-  expect(svg.match(/<use href="#inkbook-auto-underlay"/gu)).toHaveLength(1102);
-  expect(svg.match(/<pattern id="inkbook-auto-paint-/gu)).toHaveLength(10_000);
-  expect(svg.match(/<filter /gu)).toHaveLength(1102);
-  const aliases = [...svg.matchAll(/<pattern id="inkbook-auto-paint-[^>]+/gu)];
-  expect(aliases.every(([markup]) => markup.includes('width="10" height="5"'))).toBe(true);
+  // Observe actual emitted asset and path boundaries across the full capacity fixture.
+  expect(svg.match(/<image /gu)).toHaveLength(1);
+  expect(svg.match(/<use href="#inkbook-image-/gu)).toHaveLength(1);
+  // The fixture has one page path and one guide path in addition to the ink.
+  expect(svg.match(/<path /gu)).toHaveLength(strokes.length + 2);
+  expect(svg.match(/class="inkbook-theme-stroke"/gu)).toHaveLength(strokes.length / 2);
+  expect(svg).not.toMatch(/<(?:filter|mask|pattern)\b/u);
   expect(serializer.instrumentation.cacheBytes).toBeLessThanOrEqual(64 * 1024 * 1024);
   serializer.clear();
   expect(serializer.instrumentation.cacheBytes).toBe(0);
 });
 
-it("reuses Auto wrapper plans and buffers across image-only and page-only updates", async () => {
+it("reuses unchanged stroke geometry and encoded fragments across image-only and page-only updates", async () => {
   const resource = rasterResource();
   const image = rasterImage(resource);
-  const strokes = Array.from({ length: 128 }, (_, index) => ({
-    ...createTestStroke(),
-    id: `00000000-0000-4000-8000-${String(index + 1000).padStart(12, "0")}`,
-  }));
+  const strokes = Array.from({ length: 128 }, (_, index) => {
+    const stroke = createTestStroke();
+    return {
+      ...stroke,
+      id: `00000000-0000-4000-8000-${String(index + 1000).padStart(12, "0")}`,
+      style: { ...stroke.style, color: { type: "theme-text" as const } },
+    };
+  });
   const serializer = new IncrementalDocumentSerializer();
   expect(
     serializer.reset({
@@ -74,10 +110,8 @@ it("reuses Auto wrapper plans and buffers across image-only and page-only update
   ).toBe(true);
   expect((await serializer.serializeRuntimeChunked({})).ok).toBe(true);
   const warmed = serializer.instrumentation;
-  const prepare = vi.spyOn(autoExport, "prepareAutoPresentationSteps");
-  const encode = vi.spyOn(TextEncoder.prototype, "encode");
   for (const [index, delta] of [
-    { changedElements: [{ ...image, x: 120, contrast: "light" as const }] },
+    { changedElements: [{ ...image, x: 120 }] },
     {
       page: {
         ...serializer.currentPage()!,
@@ -85,20 +119,13 @@ it("reuses Auto wrapper plans and buffers across image-only and page-only update
       },
     },
   ].entries()) {
-    prepare.mockClear();
-    encode.mockClear();
     expect(
       serializer.applyDelta({ ...delta, baseModelRevision: 7 + index, modelRevision: 8 + index })
         .ok,
     ).toBe(true);
     const result = await serializer.serializeRuntimeChunked({});
     expect(result.ok).toBe(true);
-    expect(
-      prepare.mock.calls.filter(([fragment]) => fragment.element.kind !== "image"),
-    ).toHaveLength(0);
-    expect(encode.mock.calls.filter(([text]) => text?.includes("inkbook-auto-atom-"))).toHaveLength(
-      0,
-    );
+    expect(serializer.instrumentation.fragmentBuilds).toBe(warmed.fragmentBuilds + 1);
     expect(serializer.instrumentation.shapeBuilds).toBe(warmed.shapeBuilds);
     expect(serializer.instrumentation.cacheBytes).toBeLessThanOrEqual(64 * 1024 * 1024);
     if (result.ok) expect(result.value.snapshot.revision).toBe(8 + index);
@@ -164,6 +191,12 @@ it("retains one verified raster payload through moves and aborts untrusted decod
   const resource = await createImageResource(bytes, "image/png", new TestWorkScheduler());
   const image = rasterImage(resource);
   const reads = vi.spyOn(SampleBase64Reader.prototype, "read");
+  const native = vi.spyOn(
+    Uint8Array.prototype as unknown as {
+      setFromBase64(input: string, options: unknown): { read: number; written: number };
+    },
+    "setFromBase64",
+  );
   const serializer = new IncrementalDocumentSerializer();
   expect(
     serializer.reset({ ...createSnapshot([image]), version: 3, imageResources: [resource] }).ok,
@@ -183,8 +216,10 @@ it("retains one verified raster payload through moves and aborts untrusted decod
   const parser = new ChunkedInkbookInputParser({ staticValidation: "safe" });
   expect((await parser.write(exported.value.svg)).ok).toBe(true);
   expect((await parser.finish()).ok).toBe(true);
-  expect(reads).toHaveBeenCalledTimes(bytes.length);
-  reads.mockClear();
+  expect(reads).not.toHaveBeenCalled();
+  expect(native).toHaveBeenCalledTimes(Math.ceil(resource.data.length / (64 * 1024)));
+  expect(native.mock.calls.every(([input]) => input.length <= 64 * 1024)).toBe(true);
+  native.mockClear();
   const controller = new AbortController();
   const scheduler = new TestWorkScheduler({
     checkpoint: () => {
@@ -195,7 +230,55 @@ it("retains one verified raster payload through moves and aborts untrusted decod
   await expect(
     validateImageResource({ ...resource }, scheduler, controller.signal),
   ).rejects.toThrow();
-  expect(reads).toHaveBeenCalledTimes(4096);
+  expect(reads).not.toHaveBeenCalled();
+  expect(native).toHaveBeenCalledOnce();
   serializer.clear();
   expect(serializer.currentImageResources()).toEqual([]);
+});
+
+it("searches incoming raster prefix chunks once instead of rescanning retained Base64", async () => {
+  const bytes = new Uint8Array(2 * 1024 * 1024);
+  bytes.set(Uint8Array.from(atob(rasterResource().data), (value) => value.charCodeAt(0)));
+  const resource = await createImageResource(bytes, "image/png", new TestWorkScheduler());
+  const serializer = new IncrementalDocumentSerializer();
+  expect(
+    serializer.reset({
+      ...createSnapshot([rasterImage(resource)]),
+      version: 5,
+      imageResources: [resource],
+    }).ok,
+  ).toBe(true);
+  const exported = await serializer.serializeRuntimeChunked({});
+  if (!exported.ok) throw new Error(exported.error.message);
+  const svg = new TextDecoder().decode(exported.value.svg);
+  const metadata = svg.indexOf("<metadata ");
+  expect(metadata).toBeGreaterThan(resource.data.length);
+  const prelude = new SvgInputPrelude();
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- Preserve the native string search boundary.
+  const indexOf = String.prototype.indexOf;
+  let searched = 0;
+  const searches = vi.spyOn(String.prototype, "indexOf").mockImplementation(function (
+    this: string,
+    needle: string,
+    start = 0,
+  ) {
+    const found = indexOf.call(this, needle, start);
+    if ([">", '<style id="inkbook-fonts">', '<defs id="inkbook-images">'].includes(needle))
+      searched += Math.max(0, (found < 0 ? this.length : found + needle.length) - start);
+    return found;
+  });
+  try {
+    for (let offset = 0; offset < metadata; offset += 32 * 1024) {
+      const steps = prelude.write(svg.slice(offset, Math.min(metadata, offset + 32 * 1024)));
+      expect(steps.next()).toEqual({ done: true, value: { ok: true, value: null } });
+    }
+    expect(searched).toBeLessThanOrEqual(metadata * 4);
+  } finally {
+    searches.mockRestore();
+    serializer.clear();
+  }
+  const steps = prelude.write(svg.slice(metadata));
+  let complete = steps.next();
+  while (!complete.done) complete = steps.next();
+  expect(complete.value.ok && complete.value.value?.prelude.imageResources).toEqual([resource]);
 });

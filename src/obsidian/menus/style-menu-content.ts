@@ -11,7 +11,6 @@ import type { StyleChoiceOption, StyleControl } from "./editor-menu-types";
 import { OPACITY_ICON_ID, PRESSURE_SENSITIVITY_ICON_ID } from "../../rendering/ui/icon-ids";
 import { configureMenuTooltips, menuDomWindow } from "./menu-dom";
 import { createStyleControlSync } from "./style-control-sync";
-import { NeutralColorChoice } from "./neutral-color-choice";
 import { formatStyleNumber, valueCharacterWidth } from "./style-number-format";
 import {
   createStyleToggleButtons,
@@ -192,28 +191,9 @@ function createChoices(
     body.classList.add("inkbook-menu-selection-inclusion-grid");
   }
   const valueLabel = field.querySelector<HTMLElement>(".inkbook-menu-control-value-label");
-  const neutral =
-    control.id.endsWith("color") && control.options.some(({ value }) => value === "theme-text")
-      ? new NeutralColorChoice(field, body, control, options)
-      : undefined;
-  const choiceOptions =
-    neutral === undefined
-      ? options
-      : {
-          ...options,
-          onChange: (id: string, value: boolean | number | string): void => {
-            neutral.setValue(String(value));
-            options.onChange(id, value);
-          },
-        };
   for (const option of control.options) {
-    body.append(
-      option.value === "theme-text" && neutral !== undefined
-        ? neutral.trigger
-        : createChoiceButton(choiceOptions, control, option, valueLabel),
-    );
+    body.append(createChoiceButton(options, control, option, valueLabel));
   }
-  neutral?.setValue(control.value);
   return field;
 }
 
@@ -230,6 +210,8 @@ function createChoiceButton(
 
   button.setAttribute("aria-pressed", String(control.value === option.value));
   button.dataset.value = option.value;
+  const emptyColor = control.id.endsWith("color") && option.value === "none";
+  if (emptyColor) button.classList.add("inkbook-menu-empty-color-choice");
   if (control.id.endsWith("width")) button.classList.add("inkbook-menu-width-choice");
   const preview = createChoicePreview(options, control.id, option.value);
   const label = button.createSpan({ cls: "inkbook-menu-choice-label" });
@@ -240,7 +222,8 @@ function createChoiceButton(
     if (valueLabel !== null && button.getAttribute("aria-pressed") === "true")
       valueLabel.textContent = text;
   });
-  if (isVisualOnlyChoice(control.id)) label.classList.add("inkbook-menu-visually-hidden");
+  if (isVisualOnlyChoice(control.id) && !emptyColor)
+    label.classList.add("inkbook-menu-visually-hidden");
   if (preview !== null) button.append(preview);
   button.append(label);
   button.addEventListener("click", (event: MouseEvent) => {

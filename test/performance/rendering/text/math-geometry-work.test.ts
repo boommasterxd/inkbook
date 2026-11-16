@@ -7,17 +7,9 @@ import { layoutTextMarkdown } from "../../../../src/rendering/text/text-layout";
 import { PortableMathRenderer } from "../../../../src/obsidian/text/portable-math-renderer";
 import { parseTextMarkdown } from "../../../fixtures/domain/text-source";
 import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
+import { textElement } from "../../../fixtures/rendering/text";
 
-const style: TextStyleV2 = {
-  fontFamily: "inter",
-  fontSize: 20,
-  color: { type: "theme-text" },
-  opacity: 1,
-  bold: false,
-  italic: false,
-  underline: false,
-  strikethrough: false,
-};
+const style: TextStyleV2 = { ...textElement().style, fontSize: 20, opacity: 1 };
 
 describe("bounded canonical math fitting", () => {
   it("reads each retained source path once at capacity, reuses fitting geometry and cancels obsolete staging", async () => {

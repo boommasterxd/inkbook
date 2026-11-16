@@ -1,4 +1,7 @@
-import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
+import {
+  expectDocumentRoundTrip,
+  parseInkbookDocumentForTest,
+} from "../../../fixtures/persistence/parse-document";
 import { describe, expect, it } from "vitest";
 
 import { FILE_SCHEMA_LIMITS, validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
@@ -19,6 +22,34 @@ import {
   wideMetadataArrayProperty,
 } from "./fixtures";
 
+describe("Inkbook theme and fixed paint serialization", () => {
+  it("roundtrips original theme ink alongside fixed black and white without image-aware paint", async () => {
+    const snapshot = createAllElementSnapshot();
+    for (const element of snapshot.elements) {
+      if (element.kind === "image" || element.kind === "text") continue;
+      if (element.kind === "stroke" || element.kind === "straight-highlighter") {
+        element.style.color = { type: "theme-text" };
+      } else {
+        element.style.outlineColor = { type: "theme-text" };
+        if ("fillColor" in element.style) element.style.fillColor = { type: "theme-text" };
+      }
+    }
+    const ellipse = snapshot.elements.find((element) => element.kind === "ellipse")!;
+    ellipse.style.outlineColor = { type: "rgba", value: "#000000FF" };
+    ellipse.style.fillColor = { type: "rgba", value: "#FFFFFFFF" };
+    const saved = serializeInkbookDocument(snapshot);
+    if (!saved.ok) throw new Error(saved.error.message);
+    expect(saved.value.snapshot.version).toBe(1);
+    expect(saved.value.svg).toContain('class="inkbook-theme-fill"');
+    expect(saved.value.svg).toContain('class="inkbook-theme-stroke"');
+    expect(saved.value.svg).toContain('class="inkbook-theme-stroke-fill"');
+    expect(saved.value.svg).toContain('fill="#FFFFFFFF"');
+    expect(saved.value.svg).toContain('stroke="#000000FF"');
+    expect(saved.value.svg).not.toMatch(/<(?:filter|mask|pattern)\b/u);
+    await expectDocumentRoundTrip(saved.value);
+  });
+});
+
 describe("Inkbook document serialization", () => {
   it("emits deterministic standalone geometry and compact canonical metadata", () => {
     const first = serializeInkbookDocument(createAllElementSnapshot());
@@ -34,7 +65,8 @@ describe("Inkbook document serialization", () => {
     expect(first.value.svg).not.toContain("transform=");
     expect(first.value.svg).toContain('class="inkbook-theme-page"');
     expect(first.value.svg).toContain('class="inkbook-theme-guide"');
-    expect(first.value.svg).toContain('class="inkbook-theme-stroke-fill"');
+    expect(first.value.svg).toContain('fill="#000000FF"');
+    expect(first.value.svg).toContain('stroke="#000000FF"');
     expect(first.value.svg).toContain('stroke-dasharray="16 12"');
     expect(first.value.svg).toContain('stroke-dasharray="0 10"');
     expect(first.value.svg).toContain('<g opacity="0.75">');

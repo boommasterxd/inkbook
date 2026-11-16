@@ -130,7 +130,7 @@ function expectRetainedGeometryWork(
   });
 }
 
-it("updates one image contrast without reading 10,000 strokes or rebuilding spatial geometry", async () => {
+it("updates one image asset without reading 10,000 strokes or rebuilding spatial geometry", async () => {
   const { observations, store } = await createObservedOwnedStore();
   const image = { ...imageElement(), id: "00000000-0000-4000-8000-000000999999" };
   store.create(image);
@@ -139,10 +139,13 @@ it("updates one image contrast without reading 10,000 strokes or rebuilding spat
   const geometry = vi.spyOn(bounds, "calculateElementBoundsSteps");
   const spatial = vi.spyOn(UniformSpatialIndex.prototype, "prepareReplacementsTimeSliced");
   try {
-    const prepared = await store.prepareElementReplacement([{ ...image, contrast: "dark" }], {
-      shouldYield: () => false,
-      yieldControl: async () => undefined,
-    });
+    const prepared = await store.prepareElementReplacement(
+      [{ ...image, assetId: "b".repeat(64) }],
+      {
+        shouldYield: () => false,
+        yieldControl: async () => undefined,
+      },
+    );
     const committed = store.commitPreparedElementReplacement(prepared.token!);
     expect(committed.delta?.changes).toHaveLength(1);
     expect(committed.delta?.changes[0]?.domains).toEqual(["paint"]);

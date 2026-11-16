@@ -9,7 +9,10 @@ import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked
 import { sha256Hex } from "../../../../src/persistence/serialization/sha256";
 import { createMaximumComplexitySvg } from "../../../fixtures/persistence/safe-svg";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 let maximumOutput: Readonly<{ content: string; outputHash: string; totalBytes: number }>;
 
@@ -28,6 +31,39 @@ beforeAll(async () => {
 });
 
 describe("trusted SVG output validation slices", () => {
+  it.each(["text", "bytes"])(
+    "retains complete sliced validation for %s without WebCrypto",
+    async (kind) => {
+      const source =
+        kind === "text" ? maximumOutput.content : new TextEncoder().encode(maximumOutput.content);
+      vi.stubGlobal("crypto", undefined);
+      await expect(
+        inspectTrustedSvgOutput(source, maximumOutput.outputHash),
+      ).resolves.toMatchObject({
+        content: maximumOutput.content,
+        outputHash: maximumOutput.outputHash,
+        totalBytes: maximumOutput.totalBytes,
+      });
+    },
+  );
+
+  it("binds native byte hashing and inspected content to one private input snapshot", async () => {
+    const bytes = new TextEncoder().encode(maximumOutput.content);
+    const nativeDigest = crypto.subtle.digest.bind(crypto.subtle);
+    const digest = vi.spyOn(crypto.subtle, "digest").mockImplementationOnce((algorithm, source) => {
+      const result = nativeDigest(algorithm, source);
+      bytes.fill(0);
+      return result;
+    });
+    await expect(inspectTrustedSvgOutput(bytes, maximumOutput.outputHash)).resolves.toMatchObject({
+      content: maximumOutput.content,
+      outputHash: maximumOutput.outputHash,
+      totalBytes: maximumOutput.totalBytes,
+    });
+    expect(digest).toHaveBeenCalledOnce();
+    expect(bytes.every((byte) => byte === 0)).toBe(true);
+  });
+
   it("rejects external output with literal markup hidden inside metadata", async () => {
     const output = maximumOutput.content.replace(
       "</metadata>",
@@ -74,7 +110,29 @@ describe("trusted SVG output validation slices", () => {
   });
 });
 
+it("rejects a mismatched native digest and shared byte views before issuing trusted output", async () => {
+  const source = maximumOutput.content;
+  await expect(inspectTrustedSvgOutput(source, "0".repeat(64))).rejects.toThrow("hash");
+  const bytes = new TextEncoder().encode(source);
+  await expect(inspectTrustedSvgOutput(bytes.subarray(1))).rejects.toThrow("exclusively own");
+});
+
 describe("confirmed-base digest", () => {
+  it("checks the exact host byte count in both native and portable confirmed preflight", async () => {
+    const source = "ä😀";
+    const expected = sha256Hex(source);
+    const byteCount = new TextEncoder().encode(source).byteLength;
+    for (const native of [true, false]) {
+      if (!native) vi.stubGlobal("crypto", undefined);
+      await expect(hashConfirmedSvgContent(source, { expectedBytes: byteCount })).resolves.toBe(
+        expected,
+      );
+      await expect(
+        hashConfirmedSvgContent(source, { expectedBytes: source.length }),
+      ).resolves.toBeNull();
+    }
+  });
+
   it("hashes exact UTF-8 across one-code-unit surrogate boundaries", async () => {
     const source = "ä✒️\ud83d\udd8b";
     const digest = vi.spyOn(crypto.subtle, "digest");
@@ -118,61 +176,65 @@ describe("confirmed-base digest", () => {
   });
 });
 
-describe("trusted SVG background priority", () => {
-  // Full maximum-SVG hashing and path validation need the existing capacity-test safety guard.
-  it("pauses before hashing and at existing checkpoints without replacing the checkpoint", async () => {
-    const { content: output, outputHash, totalBytes } = maximumOutput;
-    const update = vi.spyOn(ChunkedSha256.prototype, "update");
-    let checkpoints = 0;
-    let backgroundWaits = 0;
-    let backgroundReady = false;
-    const checkpoint = () => {
-      checkpoints += 1;
-      return undefined;
-    };
-    let resume: () => void = () => undefined;
-    let entered: () => void = () => undefined;
-    let pending = new Promise<void>((resolve) => {
-      entered = resolve;
+// Full maximum-SVG hashing and path validation need the existing capacity-test safety guard.
+it("pauses before hashing and at existing checkpoints without replacing the checkpoint", async () => {
+  const { content: output, outputHash, totalBytes } = maximumOutput;
+  const encode = vi.spyOn(TextEncoder.prototype, "encodeInto");
+  const digest = vi.spyOn(crypto.subtle, "digest");
+  let checkpoints = 0;
+  let backgroundWaits = 0;
+  let backgroundReady = false;
+  const checkpoint = () => {
+    checkpoints += 1;
+    return undefined;
+  };
+  let resume: () => void = () => undefined;
+  let entered: () => void = () => undefined;
+  let pending = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const waitForBackground = () => {
+    backgroundWaits += 1;
+    if (backgroundReady) return undefined;
+    return new Promise<void>((resolve) => {
+      resume = resolve;
+      entered();
     });
-    const waitForBackground = () => {
-      backgroundWaits += 1;
-      if (backgroundReady) return undefined;
-      return new Promise<void>((resolve) => {
-        resume = resolve;
-        entered();
-      });
-    };
-    const inspection = inspectTrustedSvgOutput(output, outputHash, {
-      checkpoint,
-      waitForBackground,
-    });
-    await pending;
-    expect(update).not.toHaveBeenCalled();
-    expect(checkpoints).toBe(0);
-    expect(backgroundWaits).toBe(1);
-    pending = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    resume();
-    await pending;
-    expect(update).toHaveBeenCalledTimes(1);
-    expect(checkpoints).toBe(1);
-    expect(backgroundWaits).toBe(2);
-    // Later checkpoints stay observable without retaining every chunk and resolved promise.
-    update.mockRestore();
-    backgroundReady = true;
-    resume();
-    await expect(inspection).resolves.toMatchObject({
-      content: output,
-      lockedHeight: 148.6,
-      outputHash,
-      revision: 3,
-      totalBytes,
-    });
-    expect(backgroundWaits).toBe(checkpoints);
-  }, 15_000);
+  };
+  const inspection = inspectTrustedSvgOutput(output, outputHash, {
+    checkpoint,
+    waitForBackground,
+  });
+  await pending;
+  expect(encode).not.toHaveBeenCalled();
+  expect(digest).not.toHaveBeenCalled();
+  expect(checkpoints).toBe(0);
+  expect(backgroundWaits).toBe(1);
+  pending = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  resume();
+  await pending;
+  expect(encode).toHaveBeenCalledTimes(1);
+  expect(digest).not.toHaveBeenCalled();
+  expect(checkpoints).toBe(1);
+  expect(backgroundWaits).toBe(2);
+  // Later checkpoints stay observable without retaining every chunk and resolved promise.
+  encode.mockRestore();
+  backgroundReady = true;
+  resume();
+  await expect(inspection).resolves.toMatchObject({
+    content: output,
+    lockedHeight: 148.6,
+    outputHash,
+    revision: 3,
+    totalBytes,
+  });
+  expect(backgroundWaits).toBe(checkpoints);
+  expect(digest).toHaveBeenCalledOnce();
+}, 15_000);
 
+describe("trusted SVG background priority", () => {
   it("cancels while a shared checkpoint waits for drawing to finish", async () => {
     const priority = new InteractiveWorkPriority();
     const controller = new AbortController();

@@ -11,7 +11,6 @@ import {
 } from "./svg-theme";
 import { parseCanonicalSvgDecimal, parseCanonicalSvgOpacity } from "./svg-number";
 import { isSafeSvgPathTransform } from "./safe-svg-transform";
-import { isSafeAutoGeometryPaint } from "./safe-svg-auto-paint";
 const RGBA = /^#[0-9A-F]{8}$/u;
 const PATH_ATTRIBUTES = new Set([
   "class",
@@ -28,13 +27,8 @@ const PATH_ATTRIBUTES = new Set([
   "transform",
 ]);
 
-function validatePaint(value: string | undefined, inherited: boolean): boolean {
-  return (
-    value === undefined ||
-    value === "none" ||
-    RGBA.test(value) ||
-    (inherited && value === "inherit")
-  );
+function validatePaint(value: string | undefined): boolean {
+  return value === undefined || value === "none" || RGBA.test(value);
 }
 
 function optionalMember(value: string | undefined, allowed: readonly string[]): boolean {
@@ -55,9 +49,15 @@ export function* validatePathAttributesSteps(
   deadlineExceeded?: () => boolean,
   observeCommand?: PathValidationStepOptions["observeCommand"],
   version = 1,
-  autoGeometry = false,
 ): Generator<void, number | null> {
-  if (!hasSafePaintAttributes(attributes, autoGeometry)) return null;
+  if (
+    attributes.size === 0 ||
+    [...attributes.keys()].some((name) => !PATH_ATTRIBUTES.has(name)) ||
+    !validatePaint(attributes.get("fill")) ||
+    !validatePaint(attributes.get("stroke"))
+  ) {
+    return null;
+  }
   const transform = attributes.get("transform");
   if (transform !== undefined && (version < 2 || !isSafeSvgPathTransform(transform))) return null;
   const pathData = attributes.get("d");
@@ -71,7 +71,7 @@ export function* validatePathAttributesSteps(
   if (pathResult === null) {
     return null;
   }
-  if (!validatePathClass(attributes, version, autoGeometry)) return null;
+  if (!validateClass(attributes)) return null;
   if (
     !optionalMember(attributes.get("fill-rule"), ["nonzero", "evenodd"]) ||
     !optionalMember(attributes.get("stroke-linecap"), ["butt", "round", "square"]) ||
@@ -82,23 +82,6 @@ export function* validatePathAttributesSteps(
   }
   const dash = attributes.get("stroke-dasharray");
   return dash !== undefined && !validateDashArray(dash) ? null : pathResult.commands;
-}
-
-function hasSafePaintAttributes(attributes: ReadonlyMap<string, string>, auto: boolean): boolean {
-  return (
-    attributes.size > 0 &&
-    [...attributes.keys()].every((name) => PATH_ATTRIBUTES.has(name)) &&
-    validatePaint(attributes.get("fill"), auto) &&
-    validatePaint(attributes.get("stroke"), auto)
-  );
-}
-
-function validatePathClass(
-  attributes: ReadonlyMap<string, string>,
-  version: number,
-  auto: boolean,
-): boolean {
-  return auto ? version >= 5 && isSafeAutoGeometryPaint(attributes) : validateClass(attributes);
 }
 
 function validateClass(attributes: ReadonlyMap<string, string>): boolean {

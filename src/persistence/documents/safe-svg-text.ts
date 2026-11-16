@@ -3,7 +3,6 @@ import { parseCanonicalSvgDecimal, parseCanonicalSvgOpacity } from "./svg-number
 import { parseOpeningTag, skipWhitespace } from "./svg-tag";
 import { isSafeSvgCoordinate, isSafeSvgRotation } from "./safe-svg-transform";
 import { DOCUMENT_PALETTE } from "./svg-theme";
-import { isSafeAutoGeometryPaint } from "./safe-svg-auto-paint";
 
 export const MAXIMUM_TEXT_MARKUP_CHARACTERS = 16 * 1024 * 1024;
 const FONT_FAMILY = /^inkbook-[a-z][a-z0-9-]{0,95}$/u;
@@ -37,10 +36,7 @@ function validTextAttributes(attributes: ReadonlyMap<string, string>): boolean {
   return transform === undefined || isSafeSvgRotation(transform);
 }
 
-function validSpanAttributes(
-  attributes: ReadonlyMap<string, string>,
-  autoGeometry: boolean,
-): boolean {
+function validSpanAttributes(attributes: ReadonlyMap<string, string>): boolean {
   if (
     REQUIRED_SPAN_ATTRIBUTES.some((name) => !attributes.has(name)) ||
     [...attributes.keys()].some(
@@ -61,12 +57,10 @@ function validSpanAttributes(
     ["none", "underline", "line-through", "underline line-through"].includes(
       attributes.get("text-decoration")!,
     ) &&
-    (PAINT.test(attributes.get("fill")!) ||
-      (autoGeometry && attributes.get("fill") === "inherit")) &&
+    PAINT.test(attributes.get("fill")!) &&
     validTextLengthPair(attributes) &&
     parseCanonicalSvgOpacity(attributes.get("fill-opacity")) !== null &&
-    ((autoGeometry && isSafeAutoGeometryPaint(attributes)) ||
-      className === undefined ||
+    (className === undefined ||
       (className === "inkbook-theme-fill" &&
         attributes.get("fill") === DOCUMENT_PALETTE.light.text))
   );
@@ -85,7 +79,6 @@ export function* validateTextElementSteps(
   input: string,
   start: number,
   visitor?: SafeSvgTextVisitor,
-  autoGeometry = false,
 ): Generator<void, number | null> {
   const tag = parseOpeningTag(input, start);
   if (
@@ -105,7 +98,7 @@ export function* validateTextElementSteps(
       span === null ||
       span.name !== "tspan" ||
       span.selfClosing ||
-      !validSpanAttributes(span.attributes, autoGeometry)
+      !validSpanAttributes(span.attributes)
     )
       return null;
     const end = input.indexOf("</tspan>", span.next);

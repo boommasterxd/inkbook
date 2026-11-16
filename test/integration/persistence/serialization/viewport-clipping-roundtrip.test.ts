@@ -19,7 +19,7 @@ describe("standalone SVG viewport clipping", () => {
           width: 2_500,
           height: 150,
           style: {
-            outlineColor: { type: "theme-text" },
+            outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
             outlineWidth: 4,
             outlineOpacity: 1,
             outlineStyle: "solid",

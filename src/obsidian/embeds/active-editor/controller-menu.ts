@@ -19,7 +19,6 @@ import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { FontOptionPreviews } from "../../fonts/font-option-previews";
 import type { FontPreviewSource } from "../../fonts/font-preview-source";
 import { menuTranslator } from "../../menus/localized-menu-text";
-import { openImageContrastMenu } from "../../menus/image-contrast-menu";
 
 interface ActiveEditorMenuOptions {
   readonly selectionLock: "none" | "lock" | "unlock";
@@ -31,8 +30,6 @@ interface ActiveEditorMenuOptions {
   readonly onSelectLocked: () => void;
   readonly onImportImages?: (() => void) | undefined;
   readonly onCropImage?: (() => void) | undefined;
-  readonly imageContrast?: "auto" | "light" | "dark" | undefined;
-  readonly onImageContrast?: (() => void) | undefined;
   readonly canCopyText?: boolean | undefined;
   readonly localization?: Localization | undefined;
   readonly event?: MouseEvent;
@@ -93,7 +90,6 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
       canDelete: options.canDelete,
       canCopyText: options.canCopyText,
       canCropImage: options.onCropImage !== undefined,
-      imageContrast: options.imageContrast,
       canImportImages: options.onImportImages !== undefined,
       canBringForward: options.arrangeAvailability["bring-forward"],
       canBringToFront: options.arrangeAvailability["bring-to-front"],
@@ -125,7 +121,6 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
       sendToBack: () => options.onArrange("send-to-back"),
       editText: options.onEditText,
       cropImage: options.onCropImage,
-      imageContrast: options.onImageContrast,
       importImages: options.onImportImages,
     },
   );
@@ -355,9 +350,6 @@ export class ActiveEditorMenuController {
             if (actions.selectedImageId === imageId) actions.cropImage();
           }
         : undefined,
-      imageContrast: actions.selectedImageContrast,
-      onImageContrast:
-        imageId === undefined ? undefined : () => this.#openImageContrast(position, imageId),
       localization: this.#options.localization,
       arrangeAvailability: actions.arrangeAvailability(),
       canEraseAll: actions.isAvailable("erase-all"),
@@ -389,30 +381,6 @@ export class ActiveEditorMenuController {
       position: this.#options.toScreenPoint(position),
       restoreFocus,
       ...(returnFocus === undefined ? {} : { returnFocus }),
-    });
-    this.#session = session;
-  }
-
-  #openImageContrast(position: InputPoint, imageId: string): void {
-    const { actions, inputSurface } = this.#options;
-    const contrast = actions.selectedImageContrast;
-    if (contrast === undefined || actions.selectedImageId !== imageId) return;
-    this.#session?.close("immediate");
-    let session: ContextMenuSession;
-    session = openImageContrastMenu({
-      contrast,
-      factory: this.#options.factory,
-      localization: this.#options.localization,
-      ownerDocument: this.#options.ownerDocument,
-      position: this.#options.toScreenPoint(position),
-      onChange: (value) => {
-        if (actions.selectedImageId === imageId) actions.setImageContrast(value);
-      },
-      onClosed: () => {
-        if (this.#session !== session) return;
-        this.#session = undefined;
-        if (inputSurface.isConnected) inputSurface.focus({ preventScroll: true });
-      },
     });
     this.#session = session;
   }

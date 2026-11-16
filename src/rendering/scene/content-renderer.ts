@@ -1,6 +1,7 @@
 import { SceneGeometryPublication } from "./content/geometry-publication";
 import { TextViewportPublication } from "./content/text-viewport-publication";
 import { SceneSelectionRuns } from "./presentation/selection-runs";
+import { RunTranslationAdmission } from "./presentation/selection-translation-admission";
 import type { ProgressivePreviewTransform } from "./presentation/progressive-preview-request";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
@@ -32,7 +33,8 @@ type CanonicalPreviewArguments = Parameters<
 import type { SceneVisibilityPriority } from "./visibility/scene-entrant-priority";
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 export class SceneContentRenderer {
-  public readonly paintReady: (id: string) => boolean;
+  public readonly selectionTranslation: RunTranslationAdmission;
+  public readonly selectionFeedbackIds: SceneSelectionRuns["ids"];
   public onTextElementStateChanged: (id: string, state: "published" | "removed") => void = () =>
     undefined;
   #pinnedTextId: string | undefined;
@@ -78,7 +80,6 @@ export class SceneContentRenderer {
     options: ContentOptions = {},
   ) {
     this.#dom = dom;
-    this.paintReady = (id) => dom.autoPaint.ready(this.#mounted.get(id));
     this.#detachedCache = options.detachedCache;
     this.#selectionTraces = new SceneSelectionTraces(
       dom.selectionTraceGroup,
@@ -96,6 +97,7 @@ export class SceneContentRenderer {
       visible: (id) => this.#visibility.contains(id),
       syncTrace: (entry) => this.#selectionTraces.transform(entry.id, entry),
     });
+    this.selectionFeedbackIds = this.#selectionRuns.ids.bind(this.#selectionRuns);
     let waitingForGeometryAdmission = false;
     this.#publication = new SceneGeometryPublication({
       prepareGeometry: (record, deadline, now, preemptLocal) => {
@@ -126,6 +128,7 @@ export class SceneContentRenderer {
       selectionTraces: this.#selectionTraces,
       onTextPublished: (id) => this.onTextElementStateChanged(id, "published"),
     });
+    this.selectionTranslation = new RunTranslationAdmission(this.#selectionRuns, this.#publication);
     this.#store = store;
     this.#visibility = visibility;
     this.#reconciler = new SceneVisibilityReconciler({
@@ -456,11 +459,6 @@ export class SceneContentRenderer {
     this.#detachedCache?.dispose();
     this.#newlyMountedIds = EMPTY_IDS;
   }
-  public selectionFeedbackIds(
-    feedback: ProgressivePreviewTransform | undefined,
-  ): readonly string[] | undefined {
-    return this.#selectionRuns.ids(feedback);
-  }
   public selectionFeedbackSnapshotIds(
     feedback: ProgressivePreviewTransform | undefined,
   ): readonly string[] | undefined {
@@ -492,9 +490,6 @@ export class SceneContentRenderer {
     return this.#selectionRuns.transforms;
   }
   public get deferVisibilityForRunCommit(): boolean {
-    return (
-      this.#selectionRuns.structuralRetirement ||
-      (this.#selectionRuns.cleaning && !this.#selectionRuns.active)
-    );
+    return this.#selectionRuns.defersVisibility;
   }
 }

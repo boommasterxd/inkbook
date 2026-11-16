@@ -77,6 +77,10 @@ export class SharedFrameScheduler implements WorkScheduler {
     return this.#ensureEpoch(this.now()) + this.budgetMs();
   }
 
+  public admissionId(): number {
+    return this.#epoch;
+  }
+
   public shouldYield(): boolean {
     if (this.#disposed) return true;
     const now = this.now();

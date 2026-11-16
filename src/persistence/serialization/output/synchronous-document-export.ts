@@ -10,11 +10,6 @@ import {
 import type { DocumentHashPort } from "../sha256";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "../types";
 import * as document from "./document-assembly";
-import { autoExportFragment } from "./auto-contrast-export";
-import { UnpreparedAutoTextError } from "./auto-contrast-text-bounds";
-import { ChunkedOutputLimitError } from "./chunked-output-assembler";
-import { codecFailure, generatedOutputLimitFailure } from "../codec-failure";
-import { AutoPaintServerRegistry } from "./auto-contrast-servers";
 
 interface SynchronousExportOptions {
   readonly snapshot: InkSnapshotV1 | null;
@@ -29,31 +24,13 @@ interface SynchronousExportOptions {
 export function serializeDocumentFragments(
   options: SynchronousExportOptions,
 ): DocumentCodecResult<SerializedInkbookDocument> {
-  try {
-    return serializeCurrentDocumentFragments(options);
-  } catch (error) {
-    if (error instanceof UnpreparedAutoTextError)
-      return codecFailure("snapshot-invalid", error.message);
-    if (error instanceof ChunkedOutputLimitError) return generatedOutputLimitFailure();
-    throw error;
-  }
-}
-
-function serializeCurrentDocumentFragments(
-  options: SynchronousExportOptions,
-): DocumentCodecResult<SerializedInkbookDocument> {
   const currentSnapshot = options.snapshot;
-  const autoPaints = new AutoPaintServerRegistry();
-  const underlayImages = options.orders.image
-    .map((id) => options.element(id))
-    .filter((element) => element.kind === "image");
   const prepared = prepareSerialization(
     options.snapshot?.page ?? null,
     options.snapshot?.revision ?? null,
     options.maximumBottom,
     options.backgroundCache,
     currentSnapshot ?? undefined,
-    underlayImages,
   );
   if (!prepared.ok) return prepared;
   const {
@@ -67,13 +44,9 @@ function serializeCurrentDocumentFragments(
   const assembly = assembleOrderedElementFragments({
     orders: options.orders,
     element: (id) => options.element(id),
-    fragment: (element) =>
-      (currentSnapshot?.version ?? 1) >= 5 && underlayImages.length > 0
-        ? autoExportFragment(options.fragment(element), autoPaints)
-        : options.fragment(element),
+    fragment: (element) => options.fragment(element),
     outputBudget,
     metadataBudget,
-    autoPaints,
   });
   if (!assembly.ok) return assembly;
   const snapshot = document.snapshotValue(
@@ -91,14 +64,7 @@ function serializeCurrentDocumentFragments(
   const svg = document.envelope(
     revision,
     lockedHeight,
-    {
-      hash: metadataHash,
-      text: metadata,
-      snapshot,
-      images: assembly.value.images,
-      underlayImages,
-      autoPaints,
-    },
+    { hash: metadataHash, text: metadata, snapshot, images: assembly.value.images },
     background,
     assembly.value.highlights,
     assembly.value.content,

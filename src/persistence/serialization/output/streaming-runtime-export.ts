@@ -1,9 +1,5 @@
 import { derivePageExtent } from "../../../domain/geometry/public";
-import {
-  FILE_SCHEMA_LIMITS,
-  type ImageElementV3,
-  type InkSnapshotV1,
-} from "../../../domain/schema/public";
+import { FILE_SCHEMA_LIMITS, type InkSnapshotV1 } from "../../../domain/schema/public";
 import { serializeSvgNumber } from "../../documents/svg-number";
 import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "../../documents/svg-output-limits";
 import { BackgroundFragmentCache, backgroundPathDataByteLength } from "./background";
@@ -26,15 +22,8 @@ import { elementRenderBand, type ElementFragments } from "./element-fragments";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "../types";
 import { snapshotImageResources } from "./image-markup";
 import { snapshotTextResources } from "./text-fonts";
-import { autoExportFragmentSteps } from "./auto-contrast-export";
-import { consumeSerializationSteps } from "./serialization-model-preparation";
-import { UnpreparedAutoTextError } from "./auto-contrast-text-bounds";
-import { ChunkedOutputLimitError } from "./chunked-output-assembler";
-import { AutoPaintServerRegistry } from "./auto-contrast-servers";
 
 interface PreparedRuntimeExport {
-  readonly autoPaints: AutoPaintServerRegistry;
-  readonly underlayImages: readonly ImageElementV3[];
   readonly background: string;
   readonly fragments: readonly ElementFragments[];
   readonly lockedHeight: number;
@@ -56,20 +45,8 @@ export async function serializeRuntimeSnapshotToUtf8(
 ): Promise<DocumentCodecResult<SerializedInkbookDocument<Uint8Array<ArrayBuffer>>>> {
   // Keep current record identities for the fragment cache while pruning font resources.
   const { fontResources: _resources, imageResources: _images, ...header } = snapshot;
-  snapshot = {
-    ...header,
-    ...snapshotTextResources(snapshot),
-    ...snapshotImageResources(snapshot, true),
-  };
-  let prepared: Awaited<ReturnType<typeof prepareRuntimeExport>>;
-  try {
-    prepared = await prepareRuntimeExport(snapshot, options, resolveFragment, backgroundCache);
-  } catch (error) {
-    if (error instanceof UnpreparedAutoTextError)
-      return codecFailure("snapshot-invalid", error.message);
-    if (error instanceof ChunkedOutputLimitError) return limitFailure();
-    throw error;
-  }
+  snapshot = { ...header, ...snapshotTextResources(snapshot), ...snapshotImageResources(snapshot) };
+  const prepared = await prepareRuntimeExport(snapshot, options, resolveFragment, backgroundCache);
   if (!prepared.ok) return prepared;
   const value = prepared.value;
   const assembled = await assembleAndHashPreparedUtf8Output(
@@ -111,37 +88,22 @@ async function prepareRuntimeExport(
   );
   let maximumBottom: number | null = null;
   const fragments: ElementFragments[] = [];
-  const autoPaints = new AutoPaintServerRegistry();
-  let serverBytes = 0;
-  const underlayImages: ImageElementV3[] = [];
   const pathDataBudget = new EncodedByteBudget(MAXIMUM_TOTAL_PATH_DATA_BYTES);
   for (let index = 0; index < snapshot.elements.length; index += 1) {
     options.signal?.throwIfAborted();
     const element = snapshot.elements[index]!;
-    if (element.kind === "image") underlayImages.push(element);
     const resolved = resolveFragment(element);
-    const cached = resolved instanceof Promise ? await resolved : resolved;
-    const fragment =
-      snapshot.version < 5 || (snapshot.imageResources?.length ?? 0) === 0
-        ? cached
-        : await consumeSerializationSteps(
-            autoExportFragmentSteps(cached, options.signal, autoPaints),
-            options,
-          );
+    const fragment = resolved instanceof Promise ? await resolved : resolved;
     fragments.push(fragment);
     const separatorBytes = index === 0 ? 0 : 1;
-    const currentServerBytes = autoPaints.contentByteLength;
     canonicalMetadataBytes += fragment.canonicalMetadataBytes + separatorBytes;
     if (
       !metadataBudget.tryReserve(fragment.metadataBytes + separatorBytes) ||
-      !outputBudget.tryReserve(
-        fragment.bytes + separatorBytes + currentServerBytes - serverBytes,
-      ) ||
+      !outputBudget.tryReserve(fragment.bytes + separatorBytes) ||
       !pathDataBudget.tryReserve(fragment.pathDataBytes)
     ) {
       return limitFailure();
     }
-    serverBytes = currentServerBytes;
     maximumBottom = Math.max(maximumBottom ?? 0, fragment.bottom);
     const pending = options.checkpoint?.();
     if (pending !== undefined) await pending;
@@ -173,15 +135,14 @@ async function prepareRuntimeExport(
       metadataPrefix,
       background,
       snapshot,
-      underlayImages,
     ) - metadataPrefixBytes;
-  if (!outputBudget.tryReserve(remainingStaticBytes)) return limitFailure();
+  if (!outputBudget.tryReserve(remainingStaticBytes)) {
+    return limitFailure();
+  }
   return {
     ok: true,
     value: {
       background,
-      autoPaints,
-      underlayImages,
       fragments,
       lockedHeight,
       metadataBytes: metadataBudget.usedBytes,
@@ -207,8 +168,6 @@ function runtimeDocumentFragments(
     prepared.metadataHash,
     {
       snapshot,
-      autoPaints: prepared.autoPaints,
-      underlayImages: prepared.underlayImages,
       image: fragmentMarkup(prepared.fragments, "image"),
       content: fragmentMarkup(prepared.fragments, "content"),
       highlight: fragmentMarkup(prepared.fragments, "highlight"),
@@ -228,8 +187,7 @@ function* fragmentMarkup(
 ): Iterable<Uint8Array> {
   for (const fragment of fragments) {
     if (elementRenderBand(fragment.element) !== band) continue;
-    if (fragment.presentation === undefined) yield fragment.svgUtf8;
-    else yield* fragment.presentation.chunks;
+    yield fragment.svgUtf8;
   }
 }
 

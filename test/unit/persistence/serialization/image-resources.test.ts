@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { rasterResource } from "../../../fixtures/persistence/image-svg";
 import {
   createImageResource,
+  decodeImageResourceSteps,
   validateImageResource,
 } from "../../../../src/persistence/images/image-resources";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
@@ -17,8 +18,34 @@ it("rejects forged raster identities, dimensions, MIME types and noncanonical pa
     { ...resource, width: 2 },
     { ...resource, mimeType: "image/jpeg" as const },
     { ...resource, data: resource.data + "=" },
+    { ...resource, data: resource.data.replace("V", " ") },
+    { ...resource, data: resource.data.replace("V", "_") },
   ])
     await expect(validateImageResource(forged, scheduler)).rejects.toThrow();
+});
+
+it("decodes identical canonical bytes with the native and legacy image paths", () => {
+  const resource = rasterResource();
+  const descriptor = Object.getOwnPropertyDescriptor(Uint8Array.prototype, "setFromBase64");
+  const decode = () => {
+    const steps = decodeImageResourceSteps(resource);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
+  };
+  const expected = Uint8Array.from(atob(resource.data), (character) => character.charCodeAt(0));
+  try {
+    expect(decode()).toEqual(expected);
+    Object.defineProperty(Uint8Array.prototype, "setFromBase64", {
+      configurable: true,
+      value: undefined,
+    });
+    expect(decode()).toEqual(expected);
+  } finally {
+    if (descriptor !== undefined)
+      Object.defineProperty(Uint8Array.prototype, "setFromBase64", descriptor);
+    else Reflect.deleteProperty(Uint8Array.prototype, "setFromBase64");
+  }
 });
 
 it("rejects a JPEG with a truncated quantization segment as an unsupported format", async () => {

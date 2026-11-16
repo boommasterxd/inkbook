@@ -159,7 +159,7 @@ it.each([
   { version: 3 as const, fallback: false },
   { version: 4 as const, fallback: true },
 ])(
-  "backs up exact legacy image version $version once before an unedited rewrite (fallback=$fallback)",
+  "backs up exact image version $version once on the first edited save (fallback=$fallback)",
   async ({ version, fallback }) => {
     const createRuntime = fallback
       ? vi.fn(async (): Promise<DocumentRuntimePort> => {
@@ -172,6 +172,14 @@ it.each([
     });
     try {
       await unlockAndLockWithoutEdit(harness);
+      expect(harness.content()).toBe(harness.original.svg);
+      expect(harness.copies.size).toBe(0);
+      expect(harness.process).not.toHaveBeenCalled();
+      const model = harness.factory.getDocumentModel("session-1")!;
+      model.commitPage({ ...model.page, activeBufferLines: 4 });
+      await expect(
+        harness.session.lockLatest({ ...operation(), operationId: 2, workspaceToken: 2 }),
+      ).resolves.toMatchObject({ status: "confirmed" });
       expect(harness.copies.get(`drawings/ink.backup-v${version}.svg`)?.text).toBe(
         harness.original.svg,
       );
@@ -182,10 +190,9 @@ it.each([
         value: { requiresCanonicalRewrite: false, sourceVersion: 5, snapshot: { version: 5 } },
       });
       expect(createRuntime?.mock.calls.length ?? 0).toBe(fallback ? 2 : 0);
-      const model = harness.factory.getDocumentModel("session-1")!;
-      model.commitPage({ ...model.page, activeBufferLines: 4 });
+      model.commitPage({ ...model.page, activeBufferLines: 5 });
       await expect(
-        harness.session.lockLatest({ ...operation(), operationId: 2, workspaceToken: 2 }),
+        harness.session.lockLatest({ ...operation(), operationId: 3, workspaceToken: 3 }),
       ).resolves.toMatchObject({ status: "confirmed" });
       expect(harness.copies.size).toBe(1);
       expect(harness.create).toHaveBeenCalledOnce();
@@ -198,11 +205,11 @@ it.each([
   },
 );
 
-it("preserves the exact legacy image source when its migration backup fails", async () => {
+it("preserves the exact image source when its first edited-save backup fails", async () => {
   const harness = migrationHarness({ legacyImageVersion: 3, failBackup: true });
   try {
     await expect(harness.session.unlock(operation())).resolves.toMatchObject({ status: "active" });
-    await expect(harness.session.lockLatest(operation())).resolves.toMatchObject({
+    await expect(commitAndLock(harness, 3)).resolves.toMatchObject({
       status: "failed",
     });
     expect(harness.process).not.toHaveBeenCalled();

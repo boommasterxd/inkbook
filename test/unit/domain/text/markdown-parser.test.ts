@@ -8,7 +8,7 @@ import { textStyleAt } from "../../../../src/domain/text/text-style-segments";
 const style: TextStyleV2 = {
   fontFamily: "Inkbook Sans",
   fontSize: 20,
-  color: { type: "theme-text" },
+  color: { type: "rgba", value: "#000000FF" },
   opacity: 1,
   bold: false,
   italic: false,

@@ -3,17 +3,12 @@ import { parseOpeningTag, skipWhitespace } from "./svg-tag";
 import { accountPath, isBandGroup, validPressureGroup, type SvgTotals } from "./safe-svg-totals";
 import { validatePathAttributesSteps } from "./safe-svg-paths";
 import { validateTextElementSteps } from "./safe-svg-text";
-import { parseSafeAutoAtomSteps } from "./safe-svg-auto-atoms";
-import type { SafeAutoPaintReferences } from "./safe-svg-auto-paint";
 
 interface BandContext {
   readonly id: string;
   readonly totals: SvgTotals;
   readonly pathsPerStep: number;
   readonly version: number;
-  readonly autoEnabled: boolean;
-  readonly autoIds: Set<bigint>;
-  readonly references: SafeAutoPaintReferences;
 }
 
 export function* parsePathGroupSteps(
@@ -40,7 +35,7 @@ export function* parsePathGroupSteps(
       continue;
     }
     const path = parseOpeningTag(input, cursor);
-    if (path?.name === "g" && !isAutoAtom(path, context)) {
+    if (path?.name === "g") {
       if (!validPressureGroup(path, id, pressurePaths, totals)) return null;
       pressurePaths = 0;
       cursor = skipWhitespace(input, path.next);
@@ -67,14 +62,6 @@ export function* parsePathGroupSteps(
   return { next: cursor + 4, range: { end: cursor, start: contentStart } };
 }
 
-function isAutoAtom(tag: ReturnType<typeof parseOpeningTag>, context: BandContext): boolean {
-  return (
-    context.autoEnabled &&
-    context.id !== "inkbook-background" &&
-    tag?.attributes.get("id")?.startsWith("inkbook-auto-atom-") === true
-  );
-}
-
 function* parseBandPaintSteps(
   input: string,
   cursor: number,
@@ -82,15 +69,6 @@ function* parseBandPaintSteps(
   context: BandContext & { readonly pressurePaths: number | null },
   exhausted?: () => boolean,
 ): Generator<void, { next: number; text: boolean } | null> {
-  if (isAutoAtom(tag, context)) {
-    const atom = yield* parseSafeAutoAtomSteps(input, cursor, {
-      ids: context.autoIds,
-      totals: context.totals,
-      references: context.references,
-      exhausted,
-    });
-    return atom === null ? null : { next: atom.next, text: false };
-  }
   const text = tag?.name === "text";
   const next = text
     ? yield* parseBandTextSteps(input, cursor, context)

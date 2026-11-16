@@ -135,10 +135,10 @@ describe("selection paint property families", () => {
 
     const changedRectangle = applySelectionStyleChange([rectangle], {
       property: "fill-color",
-      value: { type: "theme-text" },
+      value: { type: "rgba", value: "#000000FF" },
     });
     expect(readElementStyle(changedRectangle.elements[0])).toMatchObject({
-      fillColor: { type: "theme-text" },
+      fillColor: { type: "rgba", value: "#000000FF" },
     });
     expect(
       readElementStyle(
@@ -421,7 +421,7 @@ describe("active tool default families", () => {
       { property: "outline-width", value: 8 },
       { property: "outline-style", value: "dotted" },
       { property: "outline-opacity", value: 0.25 },
-      { property: "fill-color", value: { type: "theme-text" } },
+      { property: "fill-color", value: { type: "rgba", value: "#000000FF" } },
       { property: "fill-opacity", value: 0.75 },
     ] as const) {
       const result = applyToolStyleChange(
@@ -463,7 +463,10 @@ describe("active tool compatibility", () => {
       }),
     ).toEqual({ toolValues: values, changed: false });
     expect(() =>
-      applyToolStyleChange(values, "select", { property: "color", value: { type: "theme-text" } }),
+      applyToolStyleChange(values, "select", {
+        property: "color",
+        value: { type: "rgba", value: "#000000FF" },
+      }),
     ).toThrow(/does not apply/);
     expect(() =>
       applyToolStyleChange(values, "line", { property: "fill-color", value: null }),
@@ -471,7 +474,7 @@ describe("active tool compatibility", () => {
     expect(() =>
       applyToolStyleChange(values, "rectangle", {
         property: "color",
-        value: { type: "theme-text" },
+        value: { type: "rgba", value: "#000000FF" },
       }),
     ).toThrow(/does not apply/);
   });

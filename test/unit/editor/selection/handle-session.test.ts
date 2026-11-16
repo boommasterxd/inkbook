@@ -15,7 +15,7 @@ import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { connectedLine, coordinateSystem, IDS, rectangle } from "../../domain/store/fixtures";
 
 const LINE_STYLE = {
-  outlineColor: { type: "theme-text" as const },
+  outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
   outlineOpacity: 1,
   outlineStyle: "solid" as const,
   outlineWidth: 4 as const,

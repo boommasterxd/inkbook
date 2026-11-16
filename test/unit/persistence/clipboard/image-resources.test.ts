@@ -13,13 +13,11 @@ import { page, RECTANGLE_ID } from "./fixtures";
 
 it("copies only selected resources and preserves canonical image bytes through sliced paste", async () => {
   const asset = await capacityImageResource(0, 4000);
-  const source = rasterImage(asset);
-  const element = { ...source, contrast: "dark" as const };
+  const element = rasterImage(asset);
   const unused = { ...asset, id: "b".repeat(64) };
   const encoded = encodeRuntimeSelection([element], new Set([element.id]), [], [asset, unused]);
   if (!encoded.ok) throw new Error(encoded.error.message);
   expect(encoded.value.payload).toMatchObject({ version: 5, imageResources: [asset] });
-  expect(validateClipboardPayload({ ...encoded.value.payload, version: 4 }).ok).toBe(false);
   const sliced = await encodeRuntimeSelectionChunked(
     [element],
     [element.id],
@@ -48,7 +46,6 @@ it("copies only selected resources and preserves canonical image bytes through s
     kind: "image",
     assetId: asset.id,
     crop: element.crop,
-    contrast: "dark",
   });
 });
 

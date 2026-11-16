@@ -339,25 +339,28 @@ it("uses actual parents for topology replacement and the frontier for detached m
   expect(released).toEqual(["a", "b", "c"]);
 });
 
-it("bounds pointer transform writes by two band runs and normalizes in original rank order", () => {
+it("bounds pointer transform writes by all three band runs and normalizes in original rank order", () => {
   const f = fixture();
-  const a = f.entry("a", 0, 1, "highlight"),
-    b = f.entry("b", 1, 1, "content");
-  f.groups.begin([f.run([b]), f.run([a])]);
+  const image = f.entry("image", 0, 1, "image"),
+    a = f.entry("a", 1, 1, "highlight"),
+    b = f.entry("b", 2, 1, "content");
+  f.groups.begin([f.run([b]), f.run([image]), f.run([a])]);
   expect(
     f.groups.prepare(
       10,
       () => 0,
-      { remainingRoots: 4 },
+      { remainingRoots: 6 },
       () => undefined,
     ),
   ).toBe(true);
   const writes = f.instrumentation.contentAttributeWrites;
   f.groups.publish("matrix(1 0 0 1 2 3)");
-  expect(f.instrumentation.contentAttributeWrites - writes).toBe(2);
+  expect(f.instrumentation.contentAttributeWrites - writes).toBe(3);
   f.groups.beginCommit();
-  expect(f.groups.pendingCanonical).toBe(a);
+  expect(f.groups.pendingCanonical).toBe(image);
   expect(() => f.groups.canonical(b)).toThrow("monotonic");
+  f.groups.canonical(image);
+  expect(f.groups.pendingCanonical).toBe(a);
   f.groups.canonical(a);
   expect(f.groups.pendingCanonical).toBe(b);
   f.groups.canonical(b);
@@ -368,6 +371,7 @@ it("bounds pointer transform writes by two band runs and normalizes in original 
     () => 0,
     () => undefined,
   );
+  expect(f.flattened(f.bands.image)).toEqual(["image"]);
   expect(f.flattened(f.bands.highlight)).toEqual(["a"]);
   expect(f.flattened(f.bands.content)).toEqual(["b"]);
 });

@@ -23,7 +23,7 @@ import type { TextFieldEditorOptions } from "./text-field-editor-types";
 import { TextEditorScroll } from "./text-editor-scroll";
 import { focusTextEditorAt, focusTextEditorSelection } from "./text-editor-focus";
 import { TextEditorBackgroundLayer } from "./text-editor-background";
-import { syncLegibleBackdrop, textFieldTheme, textStyleCss } from "./text-field-theme";
+import { textFieldTheme, textStyleCss } from "./text-field-theme";
 import { TextPreviewGeometry } from "./text-preview-geometry";
 import { mountTextControlStyles } from "./text-editor-styles";
 import { TextPreviewController } from "./text-preview-controller";
@@ -65,7 +65,6 @@ export class TextFieldEditor {
       options.scheduler,
       {
         onChange: (state, mapping) => {
-          syncLegibleBackdrop(this.view, options.imageBackdrop, this.#element.style, state.ranges);
           options.onChange(state, mapping);
           this.#preview.invalidate(true);
           this.#tables.refresh();
@@ -413,12 +412,6 @@ export class TextFieldEditor {
   }
 
   #updateBaseStyle(): void {
-    syncLegibleBackdrop(
-      this.view,
-      this.#options.imageBackdrop,
-      this.#element.style,
-      this.#source.ranges,
-    );
     this.view.contentDOM.setAttribute(
       "style",
       `${textStyleCss(

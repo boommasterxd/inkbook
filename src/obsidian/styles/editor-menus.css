@@ -49,8 +49,7 @@
   text-align: end;
 }
 
-.inkbook-menu-control-description,
-.inkbook-menu-controls .inkbook-neutral-color-description {
+.inkbook-menu-control-description {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   font-weight: var(--font-normal);
@@ -146,6 +145,11 @@
   padding: var(--size-4-1) var(--size-4-2);
 }
 
+.inkbook-menu-color-grid .inkbook-menu-empty-color-choice {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+}
+
 .inkbook-menu-choice-palette [role="option"][aria-selected="true"],
 .inkbook-menu-choice[aria-pressed="true"]:where(:not([data-inkbook-choice-state])),
 .inkbook-menu-choice[data-inkbook-choice-state="selected"] {
@@ -171,6 +175,10 @@
   background:
     linear-gradient(135deg, transparent 46%, var(--text-error) 47% 53%, transparent 54%),
     var(--background-primary);
+}
+
+.inkbook-menu-color-swatch[data-theme="true"] {
+  background: linear-gradient(90deg, #222 50%, #f6f6f6 50%);
 }
 
 .inkbook-menu-line-preview {

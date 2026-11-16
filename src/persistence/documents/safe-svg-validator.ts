@@ -12,9 +12,6 @@ import { CANONICAL_THEME_STYLESHEET, isSupportedThemeStylesheet } from "./svg-th
 import { parseSafeSvgRoot, type SafeSvgRoot, type SafeSvgVersionPolicy } from "./svg-envelope-root";
 import { decodeMetadataTextSteps, measureUtf8BytesSteps } from "./safe-svg-metadata";
 import { validateFontStylesheetSteps, type SafeSvgFontFace } from "./safe-svg-fonts";
-import { parseSafeAutoDefinitionsSteps } from "./safe-svg-auto-definitions";
-import { parseSafeAutoPaintDefinitionsSteps } from "./safe-svg-auto-servers";
-import type { SafeAutoPaintServer, SafeAutoPaintReferences } from "./safe-svg-auto-paint";
 import { parsePathGroupSteps } from "./safe-svg-bands";
 import {
   COMPACT_METADATA_ENCODING,
@@ -25,9 +22,6 @@ const MAXIMUM_METADATA_BYTES = 60 * 1024 * 1024;
 const DEFAULT_PATHS_PER_STEP = 128;
 const MARKUP_CODE_UNITS_PER_STEP = 256 * 1024;
 interface SafeSvgPrefix {
-  readonly autoDefinitions?: string;
-  readonly autoPaintDefinitions?: string;
-  readonly autoPaintServers?: ReadonlyMap<string, SafeAutoPaintServer>;
   readonly imageResources?: readonly ImageResourceV3[];
   readonly fontFaces?: readonly SafeSvgFontFace[];
   readonly fontStylesheet?: string;
@@ -52,9 +46,6 @@ export interface SafeSvgValidationStepOptions {
 }
 
 export interface SafeSvgValidation {
-  readonly autoDefinitions?: string;
-  readonly autoPaintDefinitions?: string;
-  readonly autoPaintServers?: ReadonlyMap<string, SafeAutoPaintServer>;
   readonly imageResources?: readonly ImageResourceV3[];
   readonly unadjustedTextRuns: number;
   readonly fontFaces?: readonly SafeSvgFontFace[];
@@ -76,9 +67,6 @@ export type SafeSvgPrelude = Readonly<
   Pick<SafeSvgRoot, "revision" | "snapshotHash" | "version"> & {
     lockedHeight: number;
     imageResources?: readonly ImageResourceV3[];
-    autoDefinitions?: string;
-    autoPaintDefinitions?: string;
-    autoPaintServers?: ReadonlyMap<string, SafeAutoPaintServer>;
     fontStylesheet?: string;
     fontFaces?: readonly SafeSvgFontFace[];
     metadataEncoding: SnapshotMetadataEncoding;
@@ -128,14 +116,13 @@ export function* validateEditableSafeSvgPreludeSteps(
       : "") +
     '<g id="inkbook-highlights"></g>' +
     '<g id="inkbook-content"></g></svg>';
-  const safe = yield* validateSvgStructureSteps(synthetic, { versionPolicy: "editable" }, false);
+  const safe = yield* validateSvgStructureSteps(synthetic, { versionPolicy: "editable" });
   return safe === null
     ? null
     : {
         ...(safe.fontStylesheet === undefined ? {} : { fontStylesheet: safe.fontStylesheet }),
         ...(safe.fontFaces === undefined ? {} : { fontFaces: safe.fontFaces }),
         ...(safe.imageResources === undefined ? {} : { imageResources: safe.imageResources }),
-        ...safeAutoFields(safe),
         lockedHeight: safe.lockedHeight,
         metadataEncoding: safe.metadataEncoding,
         requiresCanonicalRewrite: safe.requiresCanonicalRewrite,
@@ -160,13 +147,12 @@ export function* validateSafeSvgSteps(
   svg: string,
   options: SafeSvgValidationStepOptions = {},
 ): Generator<void, SafeSvgValidation | null> {
-  return yield* validateSvgStructureSteps(svg, options, true);
+  return yield* validateSvgStructureSteps(svg, options);
 }
 
 function* validateSvgStructureSteps(
   svg: string,
   options: SafeSvgValidationStepOptions,
-  requireAutoUses: boolean,
 ): Generator<void, SafeSvgValidation | null> {
   const inputBytes = options.totalInputBytes ?? new TextEncoder().encode(svg).byteLength;
   const pathsPerStep = options.pathsPerStep ?? DEFAULT_PATHS_PER_STEP;
@@ -190,11 +176,6 @@ function* validateSvgStructureSteps(
     ...(prefix.root.version >= 2 ? { textElements: 0 } : {}),
   };
   const groups = {} as Record<keyof SafeSvgGroupRanges, SafeSvgGroupRange>;
-  const autoIds = new Set<bigint>();
-  const references = {
-    servers: prefix.autoPaintServers ?? new Map<string, SafeAutoPaintServer>(),
-    used: new Set<string>(),
-  };
   const bands = [
     "inkbook-background",
     ...(hasSafeImageBand(svg, prefix.root.version) ? ["inkbook-images-band"] : []),
@@ -219,9 +200,6 @@ function* validateSvgStructureSteps(
               totals,
               pathsPerStep,
               version: prefix.root.version,
-              autoIds,
-              autoEnabled: prefix.autoDefinitions !== undefined,
-              references,
             },
             options.deadlineExceeded,
           );
@@ -234,7 +212,7 @@ function* validateSvgStructureSteps(
     groups[key] = parsedGroup.range;
     cursor = skipWhitespace(svg, parsedGroup.next);
   }
-  if (!validCompleteEnvelope(svg, cursor, references, requireAutoUses)) return null;
+  if (!validCompleteEnvelope(svg, cursor)) return null;
   return {
     ...safeResourceFields(prefix),
     groups,
@@ -252,17 +230,8 @@ function* validateSvgStructureSteps(
   };
 }
 
-function validCompleteEnvelope(
-  svg: string,
-  cursor: number,
-  references: SafeAutoPaintReferences,
-  requireAutoUses: boolean,
-): boolean {
-  return (
-    svg.startsWith("</svg>", cursor) &&
-    skipWhitespace(svg, cursor + 6) === svg.length &&
-    (!requireAutoUses || references.used.size === references.servers.size)
-  );
+function validCompleteEnvelope(svg: string, cursor: number): boolean {
+  return svg.startsWith("</svg>", cursor) && skipWhitespace(svg, cursor + 6) === svg.length;
 }
 
 function isInvalidStepInput(inputBytes: number, pathsPerStep: number): boolean {
@@ -303,9 +272,6 @@ function* parseSafeSvgPrefixSteps(
   const images = yield* parseOptionalImageDefinitionsSteps(svg, cursor, root.version);
   if (images === null) return null;
   cursor = images.cursor;
-  const auto = yield* parseOptionalAutoSteps(svg, cursor, root, images.fields.imageResources ?? []);
-  if (auto === null) return null;
-  cursor = auto.cursor;
   const metadataTag = parseOpeningTag(svg, cursor);
   const metadataEncoding = metadataTag?.attributes.get("data-encoding");
   if (metadataEncoding !== "json" && metadataEncoding !== COMPACT_METADATA_ENCODING) return null;
@@ -317,16 +283,11 @@ function* parseSafeSvgPrefixSteps(
     ? null
     : {
         ...images.fields,
-        ...auto.fields,
         ...fonts.fields,
         cursor: skipWhitespace(svg, metadata.next),
         metadataText: metadata.text,
         metadataEncoding,
-        requiresCanonicalRewrite:
-          style.text !== CANONICAL_THEME_STYLESHEET ||
-          (root.version >= 3 &&
-            root.version < 5 &&
-            (images.fields.imageResources?.length ?? 0) > 0),
+        requiresCanonicalRewrite: style.text !== CANONICAL_THEME_STYLESHEET,
         root,
       };
 }
@@ -338,33 +299,12 @@ function completeValidation<T>(steps: Generator<void, T>): T {
 }
 
 function safeResourceFields(
-  source: Pick<
-    SafeSvgPrefix,
-    | "imageResources"
-    | "fontFaces"
-    | "fontStylesheet"
-    | "autoDefinitions"
-    | "autoPaintDefinitions"
-    | "autoPaintServers"
-  >,
+  source: Pick<SafeSvgPrefix, "imageResources" | "fontFaces" | "fontStylesheet">,
 ) {
   return {
-    ...safeAutoFields(source),
     ...(source.imageResources === undefined ? {} : { imageResources: source.imageResources }),
     ...(source.fontFaces === undefined ? {} : { fontFaces: source.fontFaces }),
     ...(source.fontStylesheet === undefined ? {} : { fontStylesheet: source.fontStylesheet }),
-  };
-}
-
-function safeAutoFields(
-  source: Pick<SafeSvgPrefix, "autoDefinitions" | "autoPaintDefinitions" | "autoPaintServers">,
-) {
-  return {
-    ...(source.autoDefinitions === undefined ? {} : { autoDefinitions: source.autoDefinitions }),
-    ...(source.autoPaintDefinitions === undefined
-      ? {}
-      : { autoPaintDefinitions: source.autoPaintDefinitions }),
-    ...(source.autoPaintServers === undefined ? {} : { autoPaintServers: source.autoPaintServers }),
   };
 }
 
@@ -419,37 +359,4 @@ function* parseOptionalFontsSteps(
       ...(fontFaces === undefined ? {} : { fontFaces }),
     },
   };
-}
-
-function* parseOptionalAutoSteps(
-  svg: string,
-  cursor: number,
-  root: SafeSvgRoot,
-  resources: readonly ImageResourceV3[],
-): Generator<
-  void,
-  {
-    cursor: number;
-    fields: Pick<SafeSvgPrefix, "autoDefinitions" | "autoPaintDefinitions" | "autoPaintServers">;
-  } | null
-> {
-  if (!svg.startsWith('<defs id="inkbook-auto"', cursor)) return { cursor, fields: {} };
-  if (root.version < 5) return null;
-  const auto = yield* parseSafeAutoDefinitionsSteps(svg, cursor, {
-    height: root.height,
-    resources,
-  });
-  if (auto === null) return null;
-  const paintsStart = skipWhitespace(svg, auto);
-  const paints = yield* parseSafeAutoPaintDefinitionsSteps(svg, paintsStart);
-  return paints === null
-    ? null
-    : {
-        cursor: skipWhitespace(svg, paints.next),
-        fields: {
-          autoDefinitions: svg.slice(cursor, auto),
-          autoPaintDefinitions: svg.slice(paintsStart, paints.next),
-          autoPaintServers: paints.servers,
-        },
-      };
 }

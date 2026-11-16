@@ -367,20 +367,11 @@ describe("document worker wire validation", () => {
   it("rejects reused, missing, and malformed wire buffers", async () => {
     const packed = packElements([
       {
+        ...structuredClone(STROKE),
         createdAt: 1,
         id: "00000000-0000-4000-8000-000000000003",
-        kind: "stroke",
         pivot: { x: 10, y: 10 },
         points: [10, 10, 1],
-        rotation: 0,
-        style: {
-          color: { type: "theme-text" },
-          opacity: 1,
-          pressureEnabled: false,
-          smoothing: 0.5,
-          width: 2,
-        },
-        tool: "pen",
       },
     ]);
     const record = packed.records[0]!;

@@ -113,7 +113,16 @@ describe("confirmed hashing fallback work", () => {
     const expected = sha256Hex(source);
     const nativeHash = vi.spyOn(crypto.subtle, "digest");
     const hash = vi.spyOn(ChunkedSha256.prototype, "update");
+    const encoder = new TextEncoder();
+    const encodeInto = encoder.encodeInto.bind(encoder);
+    let nativePreparationBytes = 0;
+    vi.spyOn(TextEncoder.prototype, "encodeInto").mockImplementation((input, destination) => {
+      const result = encodeInto(input, destination);
+      nativePreparationBytes += result.written;
+      return result;
+    });
     await expect(hashConfirmedSvgContent(source)).resolves.toBe(expected);
+    expect(nativePreparationBytes).toBe(20 * 1024 * 1024);
     expect(nativeHash).not.toHaveBeenCalled();
     expect(hash.mock.calls.reduce((bytes, [chunk]) => bytes + chunk.byteLength, 0)).toBe(
       22 * 1024 * 1024,

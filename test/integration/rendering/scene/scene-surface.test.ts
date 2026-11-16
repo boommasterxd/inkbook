@@ -41,9 +41,7 @@ function fixture(
   const root = ownerDocument.createElementNS("http://www.w3.org/1999/xhtml", "div");
   root.className = "inkbook-root";
   root.classList.toggle("inkbook-active-preparing", options.preparing ?? false);
-  const container = options.nested
-    ? ownerDocument.createElementNS("http://www.w3.org/1999/xhtml", "div")
-    : root;
+  const container = options.nested ? ownerDocument.createElement("div") : root;
   if (options.nested) {
     const chrome = ownerDocument.createElementNS("http://www.w3.org/1999/xhtml", "div");
     chrome.className = "inkbook-editor-chrome";
@@ -53,8 +51,7 @@ function fixture(
   }
   const style = ownerDocument.createElementNS("http://www.w3.org/1999/xhtml", "style");
   style.textContent = hostStyles;
-  ownerDocument.body.append(style);
-  ownerDocument.body.append(root);
+  ownerDocument.body.append(style, root);
   const pointerdown = vi.fn();
   const ownerWindow = ownerDocument.defaultView!;
   const readStyle = ownerWindow.getComputedStyle.bind(ownerWindow);
@@ -164,16 +161,19 @@ describe("scene presentation documents and foreground", () => {
     const { scene } = fixture();
     scene.setPageHeight(900);
     const geometry = scene.pageSurface.getAttribute("d");
+    const auto = scene.pageSurface.cloneNode(false) as SVGPathElement;
+    auto.setAttribute("class", "inkbook-theme-stroke");
+    scene.backgroundPath.setAttribute("stroke", "#000000FF");
+    scene.contentGroup.append(auto);
     for (const scheme of ["dark", "light"] as const) {
       scene.setScheme(scheme);
-      expect(scene.svg.style.getPropertyValue("--inkbook-page")).toBe(
-        PORTABLE_PALETTE_V1[scheme].page,
-      );
-      expect(scene.svg.style.getPropertyValue("--inkbook-text")).toBe(
-        PORTABLE_PALETTE_V1[scheme].text,
-      );
+      const { page, text } = PORTABLE_PALETTE_V1[scheme];
+      expect(scene.svg.style.getPropertyValue("--inkbook-page")).toBe(page);
       expect(scene.svg.style.colorScheme).toBe(scheme);
       expect(scene.pageSurface.getAttribute("d")).toBe(geometry);
+      expect(drawingStyle(auto).stroke).toBe(text);
+      expect(scene.backgroundPath.getAttribute("stroke")).toBe("#000000FF");
+      expect(scene.toolCursor.surface.style.getPropertyValue("--inkbook-text")).toBe(text);
     }
     expect(scene.svg.querySelectorAll("style")).toHaveLength(1);
     expect(scene.svg.getAttribute("width")).toBe("100%");
@@ -182,10 +182,7 @@ describe("scene presentation documents and foreground", () => {
   });
 
   it("owns its surface in the supplied presentation document", () => {
-    const parentFrame = document.createElementNS(
-      "http://www.w3.org/1999/xhtml",
-      "iframe",
-    ) as HTMLIFrameElement;
+    const parentFrame = document.createElement("iframe");
     document.body.append(parentFrame);
     const other = parentFrame.contentDocument!;
     const { container, host, scene } = fixture(other);
@@ -244,7 +241,8 @@ describe("scene theme and local presentation styles", () => {
     const release = scene.attachTextDocument(target);
     expect(targetStyle.getPropertyValue("--code-tag")).toBe("#aabbcc");
     scene.setScheme("dark");
-    expect(targetStyle.getPropertyValue("--inkbook-text")).toBe(PORTABLE_PALETTE_V1.dark.text);
+    expect(targetStyle.getPropertyValue("--inkbook-text")).toBe("#DADADAFF");
+    expect(targetStyle.getPropertyValue("--text-normal")).toBe("#654321");
     expect(scene.svg.ownerDocument.body.style.getPropertyValue("--interactive-accent")).toBe(
       "#123456",
     );
@@ -272,6 +270,8 @@ describe("scene theme and local presentation styles", () => {
     expect(targetStyle.getPropertyValue("--interactive-accent")).toBe("#abcdef");
     expect(scene.svg.ownerDocument.body.style.getPropertyValue("--text-normal")).toBe("#fedcba");
     expect(scene.svg.ownerDocument.body.style.getPropertyValue("--inkbook-page")).toBe("");
+    scene.setScheme("light");
+    expect(targetStyle.getPropertyValue("--inkbook-text")).toBe("#222222FF");
     release();
     container.style.setProperty("--interactive-accent", "#ffffff");
     synchronize(scene);

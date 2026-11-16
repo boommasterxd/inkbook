@@ -9,7 +9,7 @@ import { outlineStyle, shapeStyle } from "../schema/fixtures";
 export { outlineStyle } from "../schema/fixtures";
 
 export const strokeStyle: StrokeStyleV1 = {
-  color: { type: "theme-text" },
+  color: { type: "rgba", value: "#000000FF" },
   width: 8,
   opacity: 1,
   pressureEnabled: false,

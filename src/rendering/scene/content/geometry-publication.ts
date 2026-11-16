@@ -1,17 +1,9 @@
 import type { SvgPathPart } from "../../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../../domain/schema/public";
 import { CommittedPreviewGeometry } from "../presentation/committed-preview-geometry";
-import type { SceneSelectionRuns } from "../presentation/selection-runs";
-import type { SceneSelectionTraces } from "../presentation/selection-traces";
 import type { ScenePublicationBudget } from "../reconciliation/mount-slice";
 import type { PreviewTransform } from "../reconciliation/scene-visibility-reconciler";
-import type { SceneDom } from "../scene-dom";
-import type {
-  MutableSceneInstrumentation,
-  SceneDeltaEntry,
-  SceneElementRecord,
-  SceneStorePort,
-} from "../types";
+import type { SceneDeltaEntry, SceneElementRecord, SceneStorePort } from "../types";
 import { writeDirtySet } from "./dirty-set-work";
 import {
   updateMountedGeometry,
@@ -26,8 +18,7 @@ import { publishMountedPaint } from "./mounted-paint-publication";
 import { TextPreviewPublication } from "./text-preview-publication";
 import * as preview from "./element-preview-publication";
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
-interface GeometryPublicationPorts {
-  readonly onTextPublished?: (id: string) => void;
+interface GeometryPublicationPorts extends preview.PreviewPublicationContext {
   readonly prepareGeometry: (
     record: SceneElementRecord,
     deadline: number,
@@ -36,13 +27,9 @@ interface GeometryPublicationPorts {
   ) => readonly SvgPathPart[] | undefined;
   readonly waitingForPaths: () => boolean;
   readonly releaseGeometry: (id: string, version?: number) => void;
-  readonly dom: SceneDom;
   readonly mounted: ReadonlyMap<string, MountedSceneElement>;
   readonly store: SceneStorePort;
   readonly pathCache: ScenePathCache;
-  readonly instrumentation: MutableSceneInstrumentation;
-  readonly selectionRuns: SceneSelectionRuns;
-  readonly selectionTraces: SceneSelectionTraces;
 }
 /** Owns mounted dirty queues and canonical geometry publication under one shared deadline. */
 export class SceneGeometryPublication {
@@ -60,7 +47,14 @@ export class SceneGeometryPublication {
   public constructor(ports: GeometryPublicationPorts) {
     this.#ports = ports;
     this.#textPreviews = new TextPreviewPublication(ports.mounted, ports.store);
+    this.materializePreviewGeometry = this.#committedGeometry.retainer(
+      ports.selectionRuns,
+      this.#geometryDirty,
+      ports.mounted,
+    );
   }
+  public readonly materializePreviewGeometry: ReturnType<CommittedPreviewGeometry["retainer"]>;
+
   public retain(entry: MountedSceneElement): void {
     if (!this.#ports.selectionRuns.needsVisibleGeometry(entry)) return;
     this.#geometryDirty.add(entry.id);
@@ -138,20 +132,6 @@ export class SceneGeometryPublication {
     this.#textPreviews.canonical(id);
     this.#ports.selectionRuns.invalidate();
     this.#paintDirty.add(id);
-  }
-  public materializePreviewGeometry(
-    previews: ReadonlyMap<string, PreviewTransform>,
-    elements: ReadonlyMap<string, InkElementV1>,
-  ): void {
-    const grouped = this.#ports.selectionRuns.retainCommit();
-    this.#committedGeometry.retainPreviews(
-      grouped ? this.#ports.selectionRuns.exceptionTransforms() : previews,
-      grouped ? this.#ports.selectionRuns.exceptionElements(elements) : elements,
-      {
-        dirty: this.#geometryDirty,
-        mounted: this.#ports.mounted,
-      },
-    );
   }
   public takeCommittedPreviewIds(): readonly string[] {
     if (this.#committedPreviewIds.length === 0) return EMPTY_IDS;
@@ -344,14 +324,8 @@ export class SceneGeometryPublication {
     }
   }
   private previewEntry(id: string): MountedSceneElement | undefined {
-    if (
-      this.#committedGeometry.has(id) ||
-      (this.#ports.selectionRuns.committing && this.#ports.selectionRuns.grouped(id))
-    ) {
-      this.#deferredPreviews.add(id);
-      return undefined;
-    }
-    return this.#ports.mounted.get(id);
+    const { mounted, selectionRuns } = this.#ports;
+    return this.#committedGeometry.previewEntry(id, mounted, selectionRuns, this.#deferredPreviews);
   }
   public applyElementPreview(element: InkElementV1): boolean {
     const entry = this.previewEntry(element.id);
@@ -364,7 +338,6 @@ export class SceneGeometryPublication {
   public applyCanonicalElementPreview(
     element: InkElementV1,
     parts: readonly SvgPathPart[],
-    paintBounds?: SceneElementRecord["bounds"],
   ): boolean {
     const entry = this.previewEntry(element.id);
     if (entry === undefined) return false;
@@ -375,13 +348,18 @@ export class SceneGeometryPublication {
       return false;
     }
     if (this.#textPreviews.defer(entry, element, parts)) return true;
-    if (preview.publish(entry, record, element, parts, this.#ports, paintBounds))
+    if (preview.publish(entry, record, element, parts, this.#ports))
       this.#selectionDirty.delete(element.id);
     else this.#selectionDirty.add(element.id);
     return true;
   }
   public clearElementPreview(id: string): void {
     this.#textPreviews.cancel(id);
+    const entry = this.#ports.mounted.get(id);
+    if (entry !== undefined && this.#ports.selectionRuns.needsVisibleGeometry(entry)) {
+      this.retain(entry);
+      return;
+    }
     if (
       (this.#ports.selectionRuns.committing && this.#ports.selectionRuns.grouped(id)) ||
       this.#committedGeometry.has(id)
@@ -389,12 +367,12 @@ export class SceneGeometryPublication {
       this.#geometryDirty.add(id);
       return;
     }
-    const entry = this.#ports.mounted.get(id);
     if (entry === undefined) return;
     const record = this.#ports.store.get(id);
     if (record === undefined) return;
     if (record.element.kind === "text") {
-      this.applyCanonicalElementPreview(record.element, entry.pathParts);
+      if (!this.applyCanonicalElementPreview(record.element, entry.pathParts))
+        this.#geometryDirty.add(id);
       return;
     }
     const parts = preview.restoreParts(entry, record, this.#ports.pathCache);
@@ -402,7 +380,7 @@ export class SceneGeometryPublication {
       this.#geometryDirty.add(id);
       return;
     }
-    this.updateGeometry(entry, record, parts);
+    if (!this.updateGeometry(entry, record, parts)) this.#geometryDirty.add(id);
   }
   private writeGeometry(
     id: string,
@@ -421,7 +399,7 @@ export class SceneGeometryPublication {
     }
     const liveDesired = this.#ports.selectionRuns.pendingPreview(id);
     if (entry.geometryVersion === record.geometryVersion) {
-      this.#ports.selectionRuns.update(entry, record);
+      if (!this.#ports.selectionRuns.update(entry, record)) return false;
       this.#ports.selectionTraces.transform(id, entry);
       this.finishGeometryPublication(record, liveDesired);
       return true;
@@ -450,7 +428,7 @@ export class SceneGeometryPublication {
       this.#waitingForPaths = canonicalStroke && this.#ports.waitingForPaths();
       return false;
     }
-    this.updateGeometry(entry, record, parts, publication);
+    if (!this.updateGeometry(entry, record, parts, publication)) return false;
     this.finishGeometryPublication(record, liveDesired);
     return true;
   }
@@ -479,7 +457,7 @@ export class SceneGeometryPublication {
     record: SceneElementRecord,
     parts: readonly SvgPathPart[],
     publication?: ScenePublicationBudget,
-  ): void {
+  ): boolean {
     const geometryChanged = entry.geometryVersion !== record.geometryVersion;
     if (geometryChanged && !this.#ports.pathCache.has(record.id, record.geometryVersion))
       this.#ports.pathCache.completePreparation(record.element, parts, record.geometryVersion);
@@ -492,9 +470,10 @@ export class SceneGeometryPublication {
       this.#ports.instrumentation,
     );
     if (entry.text !== undefined) this.#ports.onTextPublished?.(entry.id);
-    this.#ports.selectionRuns.update(entry, record);
+    const ready = this.#ports.selectionRuns.update(entry, record);
     if (this.#ports.selectionTraces.update(entry, record.element, parts, publication))
       this.#selectionDirty.delete(entry.id);
     else this.#selectionDirty.add(entry.id);
+    return ready;
   }
 }

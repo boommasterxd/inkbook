@@ -153,24 +153,32 @@ The choice controls the shared owning-window work budget and the same scheduling
 
 The built-in palette uses these exact snapshot values:
 
-| Name   | Value                      |
-| ------ | -------------------------- |
-| Auto   | `{ "type": "theme-text" }` |
-| Black  | `#000000FF`                |
-| White  | `#FFFFFFFF`                |
-| Red    | `#EF4444FF`                |
-| Orange | `#F97316FF`                |
-| Yellow | `#EAB308FF`                |
-| Green  | `#22C55EFF`                |
-| Cyan   | `#06B6D4FF`                |
-| Blue   | `#3B82F6FF`                |
-| Violet | `#8B5CF6FF`                |
-| Pink   | `#EC4899FF`                |
-| Gray   | `#6B7280FF`                |
+| Name       | Value                    |
+| ---------- | ------------------------ |
+| Auto       | `{ type: "theme-text" }` |
+| Black      | `#000000FF`              |
+| Dark gray  | `#374151FF`              |
+| Light gray | `#D1D5DBFF`              |
+| White      | `#FFFFFFFF`              |
+| Gray       | `#6B7280FF`              |
+| Yellow     | `#EAB308FF`              |
+| Amber      | `#F59E0BFF`              |
+| Orange     | `#F97316FF`              |
+| Brown      | `#92400EFF`              |
+| Red        | `#EF4444FF`              |
+| Pink       | `#EC4899FF`              |
+| Violet     | `#8B5CF6FF`              |
+| Indigo     | `#6366F1FF`              |
+| Blue       | `#3B82F6FF`              |
+| Lime       | `#84CC16FF`              |
+| Green      | `#22C55EFF`              |
+| Teal       | `#0F766EFF`              |
+| Cyan       | `#06B6D4FF`              |
+| Sky blue   | `#7DD3FCFF`              |
 
 Custom colors are not part of the first release. Opacity remains a separate normalized value.
 
-The first palette cell shows the selected neutral choice and opens **Auto**, **Black**, and **White** with a concise description. These choices share one cell rather than expanding the palette grid. Auto preserves the existing `theme-text` semantic value and chooses its document paint from the page and image underlay; Black and White are fixed RGBA colors. Host chrome continues to use live Obsidian variables, while document paint is portable. See [Standalone SVG Envelope and Theme Rendering](svg-envelope.md).
+Every drawing-color picker exposes the same twenty choices in four rows of five, in the table's order. Auto is the first choice, shown with a split light/dark symbol and a localized label identifying that it follows the Obsidian theme. It uses the original scheme-dependent document paint for strokes, shapes, text, and available fills and backgrounds. It never inspects image pixels. Black, White, and the other seventeen RGBA choices retain their exact values in both light and dark mode. Fill and text-background pickers offer a separate full-width **None** choice above the complete palette. Host chrome continues to use live Obsidian variables, while document paint is portable. See [Standalone SVG Envelope and Theme Rendering](svg-envelope.md).
 
 ## Pen Defaults
 
@@ -186,7 +194,7 @@ interface PenDefaultsV1 {
 
 Built-in values:
 
-- color: Auto (`theme-text`)
+- color: Auto, `{ type: "theme-text" }`
 - width: S, 4
 - opacity: 1
 - pressure enabled: true
@@ -236,7 +244,7 @@ interface ShapeDefaultsV1 extends OutlineDefaultsV1 {
 
 Built-in outline values for every shape:
 
-- outline color: Auto (`theme-text`)
+- outline color: Auto, `{ type: "theme-text" }`
 - outline width: S, 4
 - outline style: solid
 - outline opacity: 1
@@ -442,7 +450,7 @@ Settings inherit Obsidian's neutral `SettingGroup` surface and its host-owned ra
 The following controls are visual choices rather than plain dropdowns:
 
 - Select area uses icon-only Rectangle and Lasso choices with accessible names. The Select toolbar icon follows the active area choice immediately. Select inclusion uses a two-column Fully enclosed and Touched choice row whose labels wrap inside their controls instead of overflowing a narrow adaptive panel. The two independent groups retain this order and expose the same labels, values, and selected state in Style and Settings.
-- Colors use the same labelled color swatches and selected state as Style, including Auto and the documented palette.
+- Colors use the same twenty labelled Auto and fixed-color choices and selected state as Style.
 - Outline style uses exactly three buttons, in the same order, with the same solid, dashed, and dotted line previews.
 - Pen, highlighter, and outline widths use five evenly sized XS-through-XL choices with real line-width previews. The stored width values remain those in the type definitions and validation matrix.
 - Fill uses the same No fill choice, color swatches, selected states, and fill-opacity treatment as Style. Fill is present only for closed shapes.

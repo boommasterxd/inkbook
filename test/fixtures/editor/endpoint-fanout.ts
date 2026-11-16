@@ -68,7 +68,7 @@ function endpointLine(target: BoxShapeElementV1, index: number): LineElementV1 {
 
 function outlineStyle() {
   return {
-    outlineColor: { type: "theme-text" as const },
+    outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
     outlineOpacity: 1,
     outlineStyle: "solid" as const,
     outlineWidth: 2 as const,

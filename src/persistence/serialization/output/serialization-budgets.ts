@@ -1,5 +1,5 @@
 import { FILE_SCHEMA_LIMITS } from "../../../domain/schema/public";
-import type { ImageElementV3, InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
+import type { InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
 import { documentStaticByteLength } from "./document-assembly";
 import { EncodedByteBudget, encodedByteLength } from "./encoded-byte-budget";
 import { snapshotMetadataPrefix } from "./document-assembly";
@@ -25,7 +25,6 @@ function createSerializationBudgets(
   metadataPrefix: string,
   background: string,
   snapshot?: InkSnapshotV1,
-  underlayImages?: readonly ImageElementV3[],
 ): SerializationBudgets {
   return {
     metadata: new EncodedByteBudget(
@@ -34,14 +33,7 @@ function createSerializationBudgets(
     ),
     output: new EncodedByteBudget(
       FILE_SCHEMA_LIMITS.totalInputBytes,
-      documentStaticByteLength(
-        revision,
-        lockedHeight,
-        metadataPrefix,
-        background,
-        snapshot,
-        underlayImages,
-      ),
+      documentStaticByteLength(revision, lockedHeight, metadataPrefix, background, snapshot),
     ),
   };
 }
@@ -52,7 +44,6 @@ export function prepareSerialization(
   maximumBottom: number | null,
   backgroundCache: BackgroundFragmentCache,
   snapshot?: InkSnapshotV1,
-  underlayImages?: readonly ImageElementV3[],
 ): DocumentCodecResult<PreparedSerialization> {
   if (page === null || revision === null) {
     return codecFailure("invalid-delta", "Serializer has no initialized document model.");
@@ -67,7 +58,6 @@ export function prepareSerialization(
     metadataPrefix,
     background,
     snapshot,
-    underlayImages,
   );
   return {
     ok: true,

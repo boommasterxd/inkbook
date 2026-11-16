@@ -2,7 +2,7 @@
 
 ## Tool Cursors
 
-All mouse and pen creation tools and both selection-area modes use the native system `crosshair` cursor at the exact input point; Inkbook does not draw a substitute crosshair. An 18-CSS-pixel icon sits at a fixed screen offset of 10 pixels right and 28 pixels above that point. It uses the same registered icon and variant as the toolbar, including all arrow start/end combinations and 2D/3D coordinate systems. Drawing icons use the configured tool color, shapes use their outline color, and selection icons use the neutral theme text color. Icons preserve configured color alpha and tool opacity. Closed-shape icons show outline and fill colors with independent outline and fill opacity; a null fill remains unfilled. Width, pressure, and dash patterns do not change the icon geometry. The native crosshair and offset icon remain visible throughout drawing and after release, without a filled stroke-width preview or visibility handoff.
+All mouse and pen creation tools and both selection-area modes use the native system `crosshair` cursor at the exact input point; Inkbook does not draw a substitute crosshair. An 18-CSS-pixel icon sits at a fixed screen offset of 10 pixels right and 28 pixels above that point. It uses the same registered icon and variant as the toolbar, including all arrow start/end combinations and 2D/3D coordinate systems. Drawing icons use the configured tool color, shapes use their outline color, and selection icons use the host's neutral foreground. Icons preserve configured color alpha and tool opacity. Closed-shape icons show outline and fill colors with independent outline and fill opacity; a null fill remains unfilled. Width, pressure, and dash patterns do not change the icon geometry. The native crosshair and offset icon remain visible throughout drawing and after release, without a filled stroke-width preview or visibility handoff.
 
 Movable selections use the system `move` cursor only after movement crosses the existing drag threshold. Hovering a movable body or pressing without dragging retains the tool feedback. Secondary-button presses also retain the tool feedback until page dragging is accepted, so opening a context menu does not flash a `grabbing` cursor. Resize handles use the directional system resize cursor matching their visible orientation. Rotation uses `grab` before dragging and `grabbing` during dragging; accepted page dragging uses `grabbing`. These interactions replace the crosshair and icon. Temporary eraser input follows the existing input-arbitration rules. Touch does not show tool icons or hover feedback.
 
@@ -84,7 +84,7 @@ Internally, a stroke consists of:
 
 The default pen uses:
 
-- color: Auto, stored as `theme-text` and resolved against the page and image underlay
+- color: Auto, stored as `{ type: "theme-text" }`
 - width: 4 page units
 - dynamic stroke width: enabled
 - real pressure data when a pen is detected
@@ -315,7 +315,7 @@ The coordinate-system dimensionality and table column-count controls apply both 
 
 Changing the column count of a selected table preserves that table's current column width. Adding a column extends the table by one column width on its local right side, while removing a column removes the local rightmost column and shrinks the total width by one column width. Height, header height, rotation, and line width remain unchanged. The rendered local left edge stays fixed, including for a rotated table.
 
-Colors use the canonical built-in palette defined in [Settings](settings.md#color-values), including Auto, fixed Black and White, and Gray. The list and serialized values are maintained only in that document.
+Colors use the canonical twenty-choice built-in palette defined in [Settings](settings.md#color-values). The list and serialized values are maintained only in that document.
 
 When elements are selected, the menu edits the unlocked selection instead of the current tool. Select area and inclusion controls remain unavailable until the selection is cleared. The menu exposes the full intersection of selection-editable properties supported by every unlocked selected element, regardless of whether their current values match. A selection containing only locked elements exposes no editable style controls. For example, lines and arrows share outline color, width, style, and opacity; closed shapes additionally share fill color and opacity. Each accepted paint or structural change is one atomic undo step and changes neither session tool values nor vault defaults. Choosing the existing value is a no-op with no revision or history entry.
 

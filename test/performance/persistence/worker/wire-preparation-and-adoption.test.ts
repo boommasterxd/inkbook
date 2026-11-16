@@ -422,7 +422,7 @@ function observedPackingInput(elementCount: number, pointCount: number) {
     tool: "pen",
     points,
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba" as const, value: "#000000FF" as const },
       opacity: 1,
       pressureEnabled: false,
       smoothing: 0.5,

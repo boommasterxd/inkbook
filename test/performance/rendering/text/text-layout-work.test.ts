@@ -14,17 +14,9 @@ import type {
 } from "../../../../src/rendering/text/text-layout-types";
 import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { TextMathSyntaxError } from "../../../../src/rendering/text/text-math-syntax-error";
+import { textElement } from "../../../fixtures/rendering/text";
 
-const style: TextStyleV2 = {
-  fontFamily: "inter",
-  fontSize: 20,
-  color: { type: "theme-text" },
-  opacity: 1,
-  bold: false,
-  italic: false,
-  underline: false,
-  strikethrough: false,
-};
+const style: TextStyleV2 = { ...textElement().style, fontSize: 20, opacity: 1 };
 
 it("retains native italic overhang beyond advances while reusing shapes across 2,000 lines", async () => {
   const boundary = measurementBoundary();

@@ -12,7 +12,7 @@ import { textLayoutAtoms } from "../../../../src/rendering/text/text-layout-atom
 const style: TextStyleV2 = {
   fontFamily: "inter",
   fontSize: 20,
-  color: { type: "theme-text" },
+  color: { type: "rgba", value: "#000000FF" },
   opacity: 1,
   bold: false,
   italic: false,

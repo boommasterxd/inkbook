@@ -91,11 +91,12 @@ describe("PDF import selection and reviewed output", () => {
     await reviewedPage(state.render, 4);
     expect(state.range.value).toBe("1");
     changeImportField(state.page, "1");
-    await reviewedPage(state.render, 1);
+    await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
+    expect(state.page.value).toBe("1");
     expect(unselectedNotice().hidden).toBe(true);
     dialogButton("Insert 1 page").click();
     expect(await state.pending).toEqual({ source: "pdf", resources: [state.resource] });
-    expect(state.render.mock.calls.map(([page]) => page)).toEqual([1, 2, 5, 4, 1]);
+    expect(state.render.mock.calls.map(([page]) => page)).toEqual([1, 2, 5, 4]);
     expect(readImageSource).toHaveBeenCalledOnce();
   });
 
@@ -148,7 +149,7 @@ it("keeps the displayed page synchronized while navigating through an invalid im
   expect(dialogButton("Insert 1 page").disabled).toBe(false);
   dialogButton("Insert 1 page").click();
   expect(await state.pending).toEqual({ source: "pdf", resources: [state.resource] });
-  expect(state.render.mock.calls.map(([page]) => page)).toEqual([1, 2, 1]);
+  expect(state.render.mock.calls.map(([page]) => page)).toEqual([1, 2]);
   expect(readImageSource).toHaveBeenCalledOnce();
 });
 

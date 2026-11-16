@@ -43,7 +43,6 @@ describe("viewport tool cursor surface", () => {
       h.renderer.setScheme(scheme);
       h.scheduler.runAll();
       const palette = PORTABLE_PALETTE_V1[scheme];
-      expect(h.surface.style["--inkbook-text"]).toBe(palette.text);
       expect(h.surface.style["--inkbook-page"]).toBe(palette.page);
       expect(h.surface.style["--inkbook-guide"]).toBe(palette.guide);
       h.renderer.destroy();
@@ -57,7 +56,7 @@ describe("viewport tool cursor surface", () => {
     const read = vi.fn(() => ({
       cursor: {
         kind: "tool",
-        color: { type: "theme-text" },
+        color: { type: "rgba" as const, value: "#000000FF" as const },
         opacity: 1,
         x: 120,
         y: 80,

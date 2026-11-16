@@ -13,7 +13,7 @@ export function maximumStroke(
     points,
     rotation: 0,
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba", value: "#000000FF" },
       opacity: 1,
       pressureEnabled: true,
       smoothing: 0.5,

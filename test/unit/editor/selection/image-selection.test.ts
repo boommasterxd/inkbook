@@ -64,7 +64,11 @@ describe("native image selection geometry", () => {
     };
     const shape = {
       ...rectangle(),
-      style: { ...rectangle().style, fillColor: { type: "theme-text" as const }, fillOpacity: 1 },
+      style: {
+        ...rectangle().style,
+        fillColor: { type: "rgba" as const, value: "#000000FF" as const },
+        fillOpacity: 1,
+      },
     };
     const scratch = new HitTestScratch();
     for (const reversed of [false, true]) {

@@ -103,7 +103,7 @@ it("declines grouped fixed arrowhead fills and preserves their canonical finite 
       pivot: { x: 25, y: 40 },
       rotation: 0,
       style: {
-        outlineColor: { type: "theme-text" },
+        outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
         outlineOpacity: 1,
         outlineWidth: 2,
         outlineStyle: "solid",
@@ -184,7 +184,7 @@ it("publishes canonical open arrowheads and compound coordinate axes in a safe z
     end: { x: 40, y: 60 },
     bend: null,
     style: {
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
       outlineOpacity: 1,
       outlineWidth: 2,
       outlineStyle: "solid",

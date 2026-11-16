@@ -16,6 +16,8 @@ export interface ChunkedInkbookInputOptions {
   readonly safeStaticProof?: SafeStaticProof;
   readonly sampleEncodingCache?: StrokeSampleEncodingCache;
   readonly nativeExportHash?: boolean;
+  /** Exact allocation hint only; the parser still hashes its own consumed byte copies. */
+  readonly nativeInputBytes?: number;
 }
 
 export class ChunkedInputCancelledError extends Error {

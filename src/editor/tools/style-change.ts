@@ -408,7 +408,7 @@ function equalColor(left: ColorV1 | null | undefined, right: ColorV1 | null): bo
   if (left === null || left === undefined || right === null) return left === right;
   return (
     left.type === right.type &&
-    (left.type === "theme-text" || left.value === (right as typeof left).value)
+    (left.type === "theme-text" || (right.type === "rgba" && left.value === right.value))
   );
 }
 

@@ -2,7 +2,6 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import type { StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import { SVG_NAMESPACE } from "../../../../src/rendering/scene/constants";
-import { SceneAutoPaint } from "../../../../src/rendering/scene/scene-auto-paint";
 import { liveStrokePresentation } from "../../../../src/rendering/scene/content/element-presentation";
 import type { SceneToolCursorFrameReader } from "../../../../src/rendering/scene/tool-cursor";
 import { FakeNode, fakeNode } from "../../../unit/rendering/scene/fakes";
@@ -108,7 +107,6 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz staged marker commits move pat
   const write = vi.spyOn(FakeNode.prototype, "setAttribute");
   const get = vi.spyOn(store, "get");
   const query = vi.spyOn(store, "beginQuery");
-  const readiness = vi.spyOn(SceneAutoPaint.prototype, "ready");
   const retained: FakeNode[] = [];
   const ids: string[] = [];
   try {
@@ -118,7 +116,7 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz staged marker commits move pat
       publishMarker(renderer, store, marker);
       const path = liveGroup.nodes[0]!;
       stageMarker(renderer, marker);
-      for (const spy of [create, append, write, get, query, readiness]) spy.mockClear();
+      for (const spy of [create, append, write, get, query]) spy.mockClear();
       renderer.resetInstrumentation();
       renderer.commitLivePath(marker.id);
       retained.push(path.parent!);
@@ -135,7 +133,6 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz staged marker commits move pat
       expect(write.mock.calls.filter(([attribute]) => attribute === "d")).toHaveLength(1);
       expect(get).not.toHaveBeenCalled();
       expect(query).not.toHaveBeenCalled();
-      expect(readiness).toHaveBeenCalledTimes(rank + 1);
       expect(renderer.instrumentation().geometryBuilds).toBe(0);
       expect(scheduler.pendingCount).toBe(1);
     }

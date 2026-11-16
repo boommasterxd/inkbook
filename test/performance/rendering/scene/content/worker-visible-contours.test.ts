@@ -298,7 +298,7 @@ it("mounts a maximum plain stroke with worker geometry and zero main-thread samp
   expect(entry.pathParts).toEqual(buildElementPathParts(strokeLocalGeometry(fixture.original)));
   expect(entry.paths[0]!.node.getAttribute("transform")).toBe("translate(30 40)");
   expect(entry.paths[0]!.node.getAttribute("stroke-width")).toBe("2");
-  expect(entry.paths[0]!.node.getAttribute("class")).toBe("inkbook-theme-stroke");
+  expect(entry.paths[0]!.node.getAttribute("stroke")).toBe("#000000FF");
   expect(entry.paths[0]!.node.getAttribute("fill")).toBe("none");
   expect(fixture.preparation.stage(fixture.record, slice, undefined)?.pathParts).toBe(
     entry.pathParts,

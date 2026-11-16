@@ -4,10 +4,18 @@ import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "./constants";
 import type { SceneContentRenderer } from "./content-renderer";
 import type { ScenePublicationBudget } from "./reconciliation/mount-slice";
 import type { PreviewTransform } from "./reconciliation/scene-visibility-reconciler";
+import type { SceneTransformPreviewController } from "./presentation/transform-preview-controller";
 
 /** Retires obsolete DOM first; otherwise alternates the first remaining frame slice. */
 export class SceneContentScheduler {
   #preferVisibility = false;
+  #publication:
+    | {
+        readonly deadline: number;
+        readonly admissionId: number | undefined;
+        readonly budget: ScenePublicationBudget;
+      }
+    | undefined;
 
   public constructor(
     private readonly content: SceneContentRenderer,
@@ -21,10 +29,8 @@ export class SceneContentScheduler {
     allowLatePreparedUnit = false,
   ): boolean {
     const now = () => this.scheduler.now();
-    const publication: ScenePublicationBudget = {
-      allowLatePreparedUnit,
-      remainingRoots: SCENE_PUBLICATION_ROOTS_PER_FRAME,
-    };
+    const publication = this.publication(deadline);
+    publication.allowLatePreparedUnit = allowLatePreparedUnit;
     const reconcile = () =>
       this.content.deferVisibilityForRunCommit
         ? this.content.hasVisibilityWork
@@ -59,5 +65,18 @@ export class SceneContentScheduler {
     const visibilityPending = canRunVisibility ? reconcile() : this.content.hasVisibilityWork;
     this.#preferVisibility = mountedPending || (!canRunVisibility && visibilityPending);
     return mountedPending || visibilityPending;
+  }
+  public prepareTranslation(transforms: SceneTransformPreviewController, deadline: number): void {
+    transforms.prepareTranslation(deadline, () => this.scheduler.now(), this.publication(deadline));
+  }
+  private publication(deadline: number): ScenePublicationBudget {
+    const admissionId = this.scheduler.admissionId?.();
+    if (this.#publication?.deadline !== deadline || this.#publication.admissionId !== admissionId)
+      this.#publication = {
+        deadline,
+        admissionId,
+        budget: { remainingRoots: SCENE_PUBLICATION_ROOTS_PER_FRAME },
+      };
+    return this.#publication.budget;
   }
 }

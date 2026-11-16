@@ -20,7 +20,7 @@ function arrangeElement(index: number): BoxShapeElementV1 {
     style: {
       fillColor: null,
       fillOpacity: 0,
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba", value: "#000000FF" },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 2,

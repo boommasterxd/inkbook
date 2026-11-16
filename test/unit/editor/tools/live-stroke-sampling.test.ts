@@ -7,7 +7,7 @@ function builder(pressureEnabled: boolean, source: "pen" | "simulated" = "pen", 
   return new LiveStrokeBuilder({
     input: { pressureSource: source, zoom },
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba", value: "#000000FF" },
       width: 8,
       opacity: 1,
       pressureEnabled,

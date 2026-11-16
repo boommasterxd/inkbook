@@ -1,6 +1,7 @@
 import type { ImageResourceV3 } from "../../domain/schema/public";
-import type { ImageRasterSize } from "../../domain/images/image-raster-size";
 import { imageImportResolution } from "../../domain/images/image-import-resolution";
+import { IMAGE_LIMITS } from "../../domain/images/image-limits";
+import { BoundedVersionLru } from "../../domain/cache/bounded-version-lru";
 import type { ImportedImageBatch } from "../embeds/active-scene/editor-chrome-openings";
 import { setIcon } from "obsidian";
 import { ImageImportStaging } from "./image-import-staging";
@@ -9,11 +10,19 @@ import { ImageImportPages } from "./image-import-pages";
 import { imageImportErrorMessage } from "./image-import-error";
 import { ImageDialog, type ImageDialogOptions } from "./image-dialog";
 import { prepareRasterImage, readImageSource, type PreparedRasterImage } from "./image-import";
-import { openPdfImageSource, type PdfImageSource } from "./pdf-image-source";
+import {
+  openPdfImageSource,
+  type PdfImageSource,
+  type PdfImageResolution,
+} from "./pdf-image-source";
 import {
   ImageImportResolutionControl,
   imageResolutionDescription,
 } from "./image-import-resolution-control";
+
+interface PreparedImportImage extends PreparedRasterImage {
+  readonly resolution?: PdfImageResolution | undefined;
+}
 
 export function openImageImportDialog(
   options: ImageDialogOptions,
@@ -23,6 +32,10 @@ export function openImageImportDialog(
 }
 
 class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
+  readonly #prepared = new BoundedVersionLru<PreparedImportImage>(
+    IMAGE_LIMITS.pdfSelectedPages,
+    IMAGE_LIMITS.documentPixels * 4,
+  );
   #pdf: PdfImageSource | undefined;
   #preview: ImageResourceV3 | undefined;
   #previewPage = 1;
@@ -185,6 +198,7 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
   async #select(file: File): Promise<void> {
     if (this.#busy || this.abort.signal.aborted) return;
     this.#setBusy(true);
+    this.#prepared.clear();
     this.#preview = undefined;
     this.#rasterBytes = undefined;
     this.#pdfPages.setSource(undefined);
@@ -209,15 +223,10 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
       if (String.fromCharCode(...bytes.subarray(0, 5)) === "%PDF-") {
         this.#pdf = await openPdfImageSource(bytes, this.abort.signal);
         this.#pdfPages.setSource(this.#pdf.pageCount);
-        this.#previewPage = 1;
-        this.#previewQuality = this.#quality.value;
-        this.#showPreview(await this.#pdf.render(1, this.#rasterOptions()));
-      } else {
-        this.#rasterBytes = bytes;
-        const prepared = await prepareRasterImage(bytes, this.#rasterOptions());
-        this.#previewQuality = this.#quality.value;
-        this.#showPreview(prepared.resource, prepared.resizedFrom);
-      }
+      } else this.#rasterBytes = bytes;
+      this.#previewPage = 1;
+      this.#previewQuality = this.#quality.value;
+      this.#showPreview(await this.#prepare(1));
     } catch (error) {
       this.#showError(error);
     } finally {
@@ -236,6 +245,24 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     };
   }
 
+  async #prepare(page: number): Promise<PreparedImportImage> {
+    this.abort.signal.throwIfAborted();
+    const key = `${this.#quality.value}:${page}`;
+    const retained = this.#prepared.get(key, this.#generation);
+    if (retained !== undefined) return retained;
+    const pdf = this.#pdf;
+    const options = this.#rasterOptions();
+    const prepared: PreparedImportImage =
+      pdf === undefined
+        ? await prepareRasterImage(this.#rasterBytes!, options)
+        : { resource: await pdf.render(page, options), resolution: pdf.resolution };
+    this.abort.signal.throwIfAborted();
+    const { resource } = prepared;
+    const bytes = resource.width * resource.height * 4 + resource.data.length * 2 + 256;
+    this.#prepared.set(key, this.#generation, prepared, bytes);
+    return prepared;
+  }
+
   async #refreshPreview(): Promise<void> {
     if (this.#busy || this.abort.signal.aborted) return;
     if (this.#pdf === undefined && this.#rasterBytes === undefined) return;
@@ -252,13 +279,10 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     this.#setBusy(true, true);
     this.#preview = undefined;
     try {
-      const prepared: PreparedRasterImage =
-        this.#pdf !== undefined
-          ? { resource: await this.#pdf.render(page, this.#rasterOptions()) }
-          : await prepareRasterImage(this.#rasterBytes!, this.#rasterOptions());
+      const prepared = await this.#prepare(page);
       this.#previewPage = page;
       this.#previewQuality = this.#quality.value;
-      this.#showPreview(prepared.resource, prepared.resizedFrom);
+      this.#showPreview(prepared);
     } catch (error) {
       this.#showError(error);
     } finally {
@@ -274,14 +298,14 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
     }
   }
 
-  #showPreview(resource: ImageResourceV3, resizedFrom?: ImageRasterSize): void {
+  #showPreview({ resource, resizedFrom, resolution }: PreparedImportImage): void {
     if (this.abort.signal.aborted) return;
     this.#preview = resource;
     this.modalEl.dataset.review = "true";
     this.#resolution.show(this.#pdf !== undefined);
     const { details, warning } = imageResolutionDescription(this.options.localization.t, resource, {
       resizedFrom,
-      resolution: this.#pdf?.resolution,
+      resolution,
     });
     this.#resizeWarning.hidden = warning === "";
     this.#resizeWarningText.textContent = warning;
@@ -329,7 +353,7 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
           const resource =
             page === this.#previewPage && this.#quality.value === this.#previewQuality
               ? this.#preview
-              : await this.#pdf.render(page, this.#rasterOptions());
+              : (await this.#prepare(page)).resource;
           this.abort.signal.throwIfAborted();
           staging.add(resource);
         }
@@ -424,12 +448,14 @@ class ImageImportDialog extends ImageDialog<ImportedImageBatch> {
   }
 
   protected override onClosing(): void {
+    this.#prepared.clear();
     this.#spinner?.dispose();
     super.onClosing();
     void this.#pdf?.dispose().catch(() => undefined);
   }
 
   public override onClose(): void {
+    this.#prepared.clear();
     this.#spinner?.dispose();
     this.#spinner = undefined;
     void this.#pdf?.dispose().catch(() => undefined);

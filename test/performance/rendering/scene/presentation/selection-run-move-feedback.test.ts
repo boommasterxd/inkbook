@@ -13,19 +13,45 @@ import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-
 import { createSceneFixture, sceneDeltaEntries } from "../../../../fixtures/rendering/scene";
 import { connectedLine, PAGE, rectangle } from "../../../../unit/domain/store/fixtures";
 import { fakeNode, FakeNode } from "../../../../unit/rendering/scene/fakes";
+import { imageElement, imageResource } from "../../../../fixtures/domain/images";
+import { contentPaths, paintedX } from "../../../../fixtures/rendering/selection-runs";
+import { sceneBandNode } from "../../../../unit/rendering/scene/fakes";
 
-function fixture(count: number, connected = false) {
-  const elements: InkElementV1[] = Array.from({ length: count }, (_, i) =>
-    rectangle(indexedStroke(i).id, 40 + (i % 100) * 10, 30 + Math.floor(i / 100) * 5),
-  );
+function fixture(
+  count: number,
+  connected = false,
+  extra: readonly InkElementV1[] = [],
+  options: { readonly early?: boolean; readonly ink?: boolean } = {},
+) {
+  const elements: InkElementV1[] = Array.from({ length: count }, (_, i) => {
+    const stroke = indexedStroke(i),
+      x = 40 + (i % 100) * 10,
+      y = 30 + Math.floor(i / 100) * 5;
+    return options.ink
+      ? {
+          ...stroke,
+          points: [x, y, 0.5, x + 8, y + 1, 0.5],
+          pivot: { x: x + 4, y: y + 0.5 },
+          style: {
+            ...stroke.style,
+            pressureEnabled: false,
+            color: { type: "rgba" as const, value: "#000000FF" as const },
+          },
+        }
+      : rectangle(stroke.id, x, y);
+  });
   if (connected) elements.push(connectedLine(elements[0] as ReturnType<typeof rectangle>));
+  elements.push(...extra);
   const store = new ElementStore(elements);
   const port = new ElementSceneStore(store);
-  const scene = createSceneFixture(PAGE, port);
+  const resource = imageResource();
+  const scene = createSceneFixture(PAGE, port, undefined, {
+    imageResource: (id) => (id === resource.id ? resource : undefined),
+  });
   scene.scheduler.runAll();
   const selection = new Set(elements.map(({ id }) => id));
   scene.renderer.setSelectedElements(selection);
-  scene.scheduler.runAll();
+  if (!options.early) scene.scheduler.runAll();
   const createMove = (
     overrides: Partial<
       Pick<
@@ -136,35 +162,54 @@ it("retains shared move and resize feedback for 10,000 editable shapes beside a 
   }
 });
 
-it("moves 10,000 mounted selected shapes with bounded actual DOM feedback writes and cancels cleanly", () => {
-  const f = fixture(10_000);
+it("takes over an early move of 10,000 fixed-color strokes with an image and highlighter through three bands", () => {
+  const marker: InkElementV1 = {
+    ...indexedStroke(0),
+    id: "00000000-0000-4000-8000-000000000011",
+    tool: "highlighter",
+    style: { ...indexedStroke(0).style, pressureEnabled: false },
+  };
+  const f = fixture(10_000, false, [imageElement(), marker], { early: true, ink: true });
   const svg = fakeNode(f.renderer.svg);
   const writes = vi.spyOn(FakeNode.prototype, "setAttribute");
   try {
-    expect(svg.getAttribute("data-inkbook-run-ready")).toBe("true");
+    expect(svg.getAttribute("data-inkbook-run-ready")).toBeNull();
+    const paths = contentPaths(svg),
+      path = paths[paths.length - 1]!;
+    const band = sceneBandNode(svg, "content");
+    const before = paintedX(path, band);
     const preview = f.createMove();
-    for (const delta of [10, 20, -10]) {
+    preview.update(pointer(10, 10));
+    expect(paintedX(path, band)).toBeCloseTo(before + 10, 6);
+    f.scheduler.runAll();
+    expect(svg.getAttribute("data-inkbook-run-ready")).toBe("true");
+    for (const delta of [20, -10, 30]) {
       writes.mockClear();
       f.renderer.resetInstrumentation();
       preview.update(pointer(delta, 10));
       expect(svg.getAttribute("data-inkbook-run-feedback")).toBe("true");
-      // Translation keeps prepared local bases unchanged and writes only shared parents.
-      const transforms = writes.mock.calls.filter(([name]) => name === "transform");
-      expect(transforms.length).toBeLessThanOrEqual(2);
-      expect(transforms.some(([, value]) => value === `translate(${delta} 10)`)).toBe(true);
+      // Only the four content/trace parents receive shared feedback transforms.
+      const transforms = writes.mock.calls.flatMap(([name], index) =>
+        name === "transform" ? [writes.mock.contexts[index] as FakeNode] : [],
+      );
+      expect(transforms.filter((node) => node.tagName === "g").length).toBeLessThanOrEqual(4);
+      expect(transforms.every((node) => node.tagName === "g")).toBe(true);
+      expect(paintedX(path, band)).toBeCloseTo(before + delta, 6);
       expect(f.renderer.instrumentation().geometryBuilds).toBe(0);
     }
     writes.mockClear();
     preview.revert();
-    expect(svg.getAttribute("data-inkbook-run-feedback")).toBeNull();
+    expect(paintedX(path, band)).toBeCloseTo(before, 6);
     expect(writes.mock.calls.filter(([name]) => name === "transform").length).toBeLessThanOrEqual(
-      2,
+      8,
     );
+    f.scheduler.runAll();
+    expect(svg.getAttribute("data-inkbook-run-feedback")).toBeNull();
     const repeated = f.createMove();
     repeated.update(pointer(15, 5));
     expect(svg.getAttribute("data-inkbook-run-feedback")).toBe("true");
     repeated.revert();
-    expect(f.store.size).toBe(10_000);
+    expect(f.store.size).toBe(10_002);
   } finally {
     writes.mockRestore();
     f.renderer.destroy();

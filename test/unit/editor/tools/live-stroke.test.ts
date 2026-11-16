@@ -12,7 +12,7 @@ import {
 import { prepareExpectedStrokeSamples as prepareStrokeSamples } from "../../../fixtures/editor/stroke-sample-reference";
 
 const penStyle: StrokeStyleV1 = {
-  color: { type: "theme-text" },
+  color: { type: "rgba", value: "#000000FF" },
   width: 8,
   opacity: 1,
   pressureEnabled: true,

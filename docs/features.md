@@ -168,7 +168,7 @@ Moving beyond the long-press threshold, receiving a second touch, starting a pen
 When a selection exists, the menu begins with:
 
 1. Lock selection or Unlock selection, based on the [element lock rules](editor-tools.md#element-locks)
-2. Crop image and the current Underlay setting, or Edit text, when available for the selection
+2. Crop image or Edit text, when available for the selection
 3. Copy, or Copy text field for a text-only selection
 4. Copy text for a text-only selection, independently of the ordinary Copy preference
 5. Cut

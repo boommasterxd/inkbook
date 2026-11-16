@@ -100,7 +100,6 @@ export class SvgSceneRenderer {
       this.#dom.liveStrokeGroup,
       (band) => this.#dom.placeLiveGroup("stroke", band),
       this.#stats,
-      this.#dom.autoPaint,
     );
     this.#content = new SceneContentRenderer(
       this.#dom,
@@ -301,7 +300,7 @@ export class SvgSceneRenderer {
   public commitLivePath(id: string): void {
     runtime.assertSceneActive(this.#disposed);
     this.#frameWriter.commitLivePath(id);
-    this.#frameWriter.livePathCommits.settle(this.#content.paintReady);
+    this.#frameWriter.livePathCommits.settle(this.#content.hasMounted);
     this.#frames.schedule();
   }
   public commitLiveStroke(id: string, prepared?: PreparedScenePath): void {
@@ -343,6 +342,7 @@ export class SvgSceneRenderer {
     runtime.assertSceneActive(this.#disposed);
     this.#crop.flush();
     if (refreshCursorLayout) this.#frameWriter.readToolCursor(true);
+    this.#contentScheduler.prepareTranslation(this.#transformPreviews, deadline);
     this.#frameWriter.writePointerFeedback(
       this.#transformPreviews,
       this.#elementPreviews,
@@ -350,7 +350,6 @@ export class SvgSceneRenderer {
       deadline,
       () => this.#scheduler.now(),
     );
-    if (this.#dom.autoPaint.flush(this.#viewport, this.#camera, deadline)) this.#frames.schedule();
   }
   public setPreviewTransform(
     ids: readonly string[],
@@ -475,10 +474,6 @@ export class SvgSceneRenderer {
       this.#frameWriter.livePathCommits,
       this.#motion,
       startedAt,
-      () => {
-        if (this.#dom.autoPaint.flush(this.#viewport, this.#camera, deadline))
-          work = { ...work, pendingVisibility: true };
-      },
     );
     this.#frameWriter.writeSelection(this.#elementPreviews, this.#motion);
     this.#crop.flush();

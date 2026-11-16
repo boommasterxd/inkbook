@@ -8,6 +8,7 @@ import { PAGE, rectangle } from "../../unit/domain/store/fixtures";
 import { FakeNode, fakeNode, sceneBandNode } from "../../unit/rendering/scene/fakes";
 import { indexedStroke } from "../editor/stroke";
 import { createSceneFixture, sceneDeltaEntries } from "./scene";
+import type { SceneRendererOptions } from "../../../src/rendering/scene/types";
 
 export function fixture(
   count = 600,
@@ -15,6 +16,7 @@ export function fixture(
   prepareSelection = true,
   additional: readonly InkElementV1[] = [],
   frameBudgetMs = 8,
+  options: Pick<SceneRendererOptions, "imageResource"> = {},
 ) {
   const a = { ...indexedStroke(0), points: [20, 20, 0.5, 23, 22, 0.8] },
     b = { ...indexedStroke(1), points: [30, 20, 0.5, 33, 22, 0.8] };
@@ -49,7 +51,7 @@ export function fixture(
     selection = new Set(ids),
     store = new ElementStore(elements),
     port = new ElementSceneStore(store);
-  const scene = createSceneFixture(PAGE, port, undefined, { frameBudgetMs });
+  const scene = createSceneFixture(PAGE, port, undefined, { frameBudgetMs, ...options });
   scene.scheduler.runAll();
   if (prepareSelection) {
     scene.renderer.setSelectedElements(selection);
@@ -222,6 +224,37 @@ export function moveFeedback(selection: ReadonlySet<string>, x: number, y: numbe
     transform: `translate(${x} ${y})`,
     inverse: `translate(${-x} ${-y})`,
   };
+}
+
+/** Publishes the same immediate Move request used by the public editor boundary. */
+export function publishSelectionMove(
+  f: Pick<ReturnType<typeof fixture>, "renderer" | "scheduler" | "ids" | "selection">,
+  delta: PointV1,
+  version = 1,
+  members: Pick<ReturnType<typeof fixture>, "ids" | "selection"> = f,
+): void {
+  const feedback = moveFeedback(members.selection, delta.x, delta.y);
+  f.renderer.setPreviewTransform(
+    members.ids,
+    feedback.transform,
+    version,
+    "scale",
+    undefined,
+    feedback,
+  );
+  f.renderer.flushPointerFeedbackFrame(f.scheduler.now());
+}
+
+/** Checks the original retained path after its normal cancellation drain. */
+export function expectCancelledSelectionMove(
+  f: Pick<ReturnType<typeof fixture>, "renderer" | "scheduler">,
+  node: FakeNode,
+  band: FakeNode,
+  before: number,
+): void {
+  f.renderer.clearPreviewTransforms();
+  f.scheduler.runAll(1000);
+  expect(paintedX(node, band)).toBeCloseTo(before, 6);
 }
 
 /** Checks canonical first-point placement after normalization and residual cleanup. */

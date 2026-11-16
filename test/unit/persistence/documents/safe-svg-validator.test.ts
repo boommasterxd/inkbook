@@ -50,12 +50,10 @@ function createValidSvg(): string {
       '<path class="inkbook-theme-page" d="M 0 0 L 2048.6 0 L 2048.6 148.6 L 0 148.6 Z" fill="#F6F6F6FF"/>',
       '<path class="inkbook-theme-guide" d="M 0 1 L 2 1" fill="none" stroke="#70707040"/>',
     ],
-    highlights: [
-      '<path class="inkbook-theme-stroke" d="M 1 2 L 2 3" fill="none" stroke="#222222FF"/>',
-    ],
+    highlights: ['<path d="M 1 2 L 2 3" fill="none" stroke="#000000FF"/>'],
     content: [
-      '<path class="inkbook-theme-fill" d="M 2 2 L 3 3" fill="#222222FF"/>',
-      '<path class="inkbook-theme-stroke-fill" d="M 3 3 L 4 4" fill="#222222FF" stroke="#222222FF"/>',
+      '<path d="M 2 2 L 3 3" fill="#000000FF"/>',
+      '<path d="M 3 3 L 4 4" fill="#000000FF" stroke="#000000FF"/>',
       '<path d="M 1 1 L 2 2" fill="none" stroke="#112233FF" stroke-width="4"/>',
     ],
   });
@@ -112,12 +110,12 @@ describe("strict safe SVG validation", () => {
     (svg: string) => svg.replace('stroke="#112233FF"', 'stroke="url(https://invalid)"'),
     (svg: string) => svg.replace('fill="#F6F6F6FF"', 'fill="#212121FF"'),
     (svg: string) => svg.replace('stroke="#70707040"', 'stroke="#99999940"'),
-    (svg: string) => svg.replace('stroke="#222222FF"', 'stroke="#DADADAFF"'),
-    (svg: string) => svg.replace('fill="#222222FF"', 'fill="#DADADAFF"'),
+    (svg: string) => svg.replace('stroke="#000000FF"', 'stroke="red"'),
+    (svg: string) => svg.replace('fill="#000000FF"', 'fill="inherit"'),
     (svg: string) =>
       svg.replace(
-        'class="inkbook-theme-stroke-fill" d="M 3 3 L 4 4" fill="#222222FF"',
-        'class="inkbook-theme-stroke-fill" d="M 3 3 L 4 4" fill="#DADADAFF"',
+        ' d="M 3 3 L 4 4" fill="#000000FF"',
+        ' class="unsupported" d="M 3 3 L 4 4" fill="#000000FF"',
       ),
     (svg: string) => svg.replace("M 1 1 L 2 2", "M 1e2 1 L 2 2"),
     (svg: string) => svg.replace('stroke-width="4"', 'stroke-width="4.000"'),

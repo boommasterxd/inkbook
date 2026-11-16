@@ -56,12 +56,10 @@ function parseColor(value: boolean | number | string, nullable: false): ColorV1;
 function parseColor(value: boolean | number | string, nullable: true): ColorV1 | null;
 function parseColor(value: boolean | number | string, nullable: boolean): ColorV1 | null {
   if (nullable && value === "none") return null;
-  if (value === "theme-text") return { type: "theme-text" };
-  if (value === "#000000FF" || value === "#FFFFFFFF") return { type: "rgba", value };
-  const color = BUILT_IN_COLORS.find(
-    (candidate) => candidate.type === "rgba" && candidate.value === value,
+  const color = BUILT_IN_COLORS.find((candidate) =>
+    candidate.type === "theme-text" ? value === "theme-text" : candidate.value === value,
   );
-  if (color?.type !== "rgba") throw new RangeError("The color is not an available style option.");
+  if (color === undefined) throw new RangeError("The color is not an available style option.");
   return color;
 }
 

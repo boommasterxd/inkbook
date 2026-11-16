@@ -244,7 +244,7 @@ function common<T>(
 function equalColor(left: ColorV1, right: ColorV1): boolean {
   return (
     left.type === right.type &&
-    (left.type === "theme-text" || left.value === (right as typeof left).value)
+    (left.type === "theme-text" || (right.type === "rgba" && left.value === right.value))
   );
 }
 

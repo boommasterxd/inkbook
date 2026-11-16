@@ -1,9 +1,5 @@
 import type { PreviewTransform } from "../reconciliation/scene-mount-preparation";
-import type {
-  CompletedPath,
-  PreviewRequest,
-  ProgressivePreviewTransform,
-} from "./progressive-preview-request";
+import type { PreviewRequest, ProgressivePreviewTransform } from "./progressive-preview-request";
 import type { SceneContentRenderer } from "../content-renderer";
 import {
   composeMatrices,
@@ -11,18 +7,6 @@ import {
   matrixString,
   IDENTITY_MATRIX,
 } from "./selection-run-residuals";
-
-export function publishCanonicalPreview(
-  content: SceneContentRenderer,
-  completed: CompletedPath,
-): boolean {
-  const bounds = content.mountedBounds?.(completed.element.id);
-  const paintBounds =
-    bounds === undefined ? undefined : completed.feedback?.transformBounds?.(bounds);
-  if (paintBounds === undefined)
-    return content.applyCanonicalElementPreview(completed.element, completed.parts);
-  return content.applyCanonicalElementPreview(completed.element, completed.parts, paintBounds);
-}
 
 /** Feedback is relative to the canonical snapshot that is actually mounted. */
 export function progressiveFeedbackTransform(

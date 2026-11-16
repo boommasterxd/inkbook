@@ -37,6 +37,16 @@ const selection = [pen, highlighter, straight, rectangle];
 
 const commonChanges = [
   {
+    change: { property: "color", value: { type: "theme-text" } },
+    stroke: { color: { type: "theme-text" } },
+    outline: { outlineColor: { type: "theme-text" } },
+  },
+  {
+    change: { property: "color", value: { type: "rgba", value: "#000000FF" } },
+    stroke: { color: { type: "rgba", value: "#000000FF" } },
+    outline: { outlineColor: { type: "rgba", value: "#000000FF" } },
+  },
+  {
     change: { property: "color", value: { type: "rgba", value: "#FF00AAFF" } },
     stroke: { color: { type: "rgba", value: "#FF00AAFF" } },
     outline: { outlineColor: { type: "rgba", value: "#FF00AAFF" } },
@@ -101,7 +111,7 @@ describe("mixed selection paint", () => {
   it("rejects family-specific properties without partially mutating a mixed selection", () => {
     const before = structuredClone(selection);
     const changes: StyleChange[] = [
-      { property: "outline-color", value: { type: "theme-text" } },
+      { property: "outline-color", value: { type: "rgba", value: "#000000FF" } },
       { property: "outline-width", value: 8 },
       { property: "outline-opacity", value: 0.5 },
       { property: "outline-style", value: "dashed" },

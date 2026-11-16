@@ -133,7 +133,12 @@ describe("mixed selection Style summaries", () => {
           style: { ...line.style, outlineWidth: 12 },
         },
       ]),
-    ).toEqual({ kind: "common", color: { type: "theme-text" }, width: "mixed", opacity: 1 });
+    ).toEqual({
+      kind: "common",
+      color: { type: "theme-text" },
+      width: "mixed",
+      opacity: 1,
+    });
     const highlighter = createFreehandElement({
       identity,
       tool: "highlighter",

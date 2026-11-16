@@ -138,6 +138,27 @@ export class EditorChromeModuleLoader {
 
 const productionLoader = new EditorChromeModuleLoader();
 
+/** Prepares only the shared module; React roots and editor effects still require activation. */
+export function prepareEditorChrome(
+  owningWindow: unknown,
+  loader: EditorChromeModuleLoader = productionLoader,
+): { readonly ready: Promise<boolean>; readonly release: () => void } {
+  const lease = loader.acquire(owningWindow);
+  return {
+    ready: lease.module.then(
+      () => {
+        lease.release();
+        return true;
+      },
+      () => {
+        lease.release();
+        return false;
+      },
+    ),
+    release: () => lease.release(),
+  };
+}
+
 export function beginEditorChromeMount(
   container: HTMLElement,
   initialProps: InkbookEditorChromeProps,

@@ -293,7 +293,7 @@ function reportedTable(): Extract<InkElementV1, { kind: "table" }> {
     pivot: { x: 1099.695, y: 1022.904 },
     rotation: 0,
     style: {
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba", value: "#000000FF" },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 4,

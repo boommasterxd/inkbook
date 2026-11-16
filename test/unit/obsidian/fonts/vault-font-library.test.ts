@@ -9,7 +9,7 @@ import { selectFontResources } from "../../../../src/persistence/fonts/font-reso
 import { fontLibraryChoices } from "../../../../src/obsidian/fonts/font-library-families";
 import { readWoff2Directory } from "../../../../src/persistence/fonts/woff2-directory";
 import { readBundledFont as fontBytes } from "../../../fixtures/persistence/font-assets";
-import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
+import * as binaryResources from "../../../../src/persistence/serialization/binary-resource";
 
 async function setup(name = "inter-400-normal.woff2") {
   const bytes = await fontBytes(name);
@@ -240,7 +240,7 @@ it("rejects changed vault binaries and operations after owner disposal", async (
 
 it("prepares read-only previews and commits named variants once without repeating expensive work", async () => {
   const context = await setup();
-  const hash = vi.spyOn(ChunkedSha256.prototype, "update");
+  const encode = vi.spyOn(binaryResources, "encodeBinaryResource");
   try {
     const regular = await context.library.prepareImport(context.bytes, "regular.woff2");
     const bold = await context.library.prepareImport(
@@ -256,11 +256,7 @@ it("prepares read-only previews and commits named variants once without repeatin
     expect(context.library.list()).toEqual([]);
     expect(context.createBinary).not.toHaveBeenCalled();
     expect(context.metadataWrite).not.toHaveBeenCalled();
-    const hashReads = hash.mock.calls.length;
-    expect(hashReads).toBe(
-      Math.ceil(context.bytes.length / 4096) +
-        Math.ceil((await fontBytes("inter-700-normal.woff2")).length / 4096),
-    );
+    expect(encode).toHaveBeenCalledTimes(2);
     context.bytes.fill(0);
     const imported = await context.library.commitImport([regular, bold, regular], {
       displayName: "My headings",
@@ -271,13 +267,13 @@ it("prepares read-only previews and commits named variants once without repeatin
     expect(context.metadataWrite).toHaveBeenCalledOnce();
     expect(context.createBinary).toHaveBeenCalledTimes(2);
     expect(context.sanitize).toHaveBeenCalledTimes(2);
-    expect(hash).toHaveBeenCalledTimes(hashReads);
+    expect(encode).toHaveBeenCalledTimes(2);
     expect(new Uint8Array(context.data.get(imported[0]!.path)!)).not.toEqual(context.bytes);
     await expect(
       context.library.commitImport([regular], { displayName: "Again" }),
     ).rejects.toMatchObject({ code: "invalid-prepared" });
   } finally {
-    hash.mockRestore();
+    encode.mockRestore();
   }
 });
 

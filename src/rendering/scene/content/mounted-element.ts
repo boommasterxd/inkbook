@@ -9,7 +9,7 @@ import {
   writeRaw,
   type MountedPath,
 } from "./mounted-path";
-import { positionedTransform } from "./stroke-position";
+import { positionedTransform, strokeShapeBounds } from "./stroke-position";
 import { textBasisRebaseMatrix } from "../text-editing-geometry";
 import { multiplyAffineMatrices, type AffineMatrix } from "../../../domain/geometry/affine-matrix";
 import type { TextElementV2 } from "../../../domain/schema/public";
@@ -32,12 +32,6 @@ import {
   writeMotionStyle,
   setPathMotionOrigin,
 } from "../presentation/motion-visual";
-import {
-  writeAutoPaintBounds,
-  elementAutoPaintBounds,
-  previewAutoPaintBounds,
-} from "./auto-paint-bounds";
-import { releaseLivePaintHold } from "./live-paint-handoff";
 
 export { setMountedElementFade } from "../presentation/element-fade-style";
 
@@ -111,8 +105,6 @@ export function createMountedElement(
     image?.group ??
     text?.group ??
     createPressureGroup(ownerDocument, record, paths, instrumentation);
-  if (text !== undefined)
-    writeAutoPaintBounds(text.group, elementAutoPaintBounds(record.element, record.bounds));
   const entry: MountedSceneElement = {
     band: record.band,
     bounds: record.bounds,
@@ -157,11 +149,9 @@ export function removeMountedElement(entry: MountedSceneElement): void {
   entry.text?.cancelPreparation();
   if (entry.fadeActive) setMountedElementFade(entry, null);
   if (entry.group !== null) {
-    releaseLivePaintHold(entry.group);
     entry.group.remove();
   } else
     for (const path of entry.paths) {
-      releaseLivePaintHold(path.node);
       path.node.remove();
     }
 }
@@ -169,7 +159,6 @@ export function removeMountedElement(entry: MountedSceneElement): void {
 /** Removes one top-level SVG node, retaining partial path ownership until reconciliation ends. */
 export function removeMountedElementNode(entry: MountedSceneElement): boolean {
   if (entry.group !== null) {
-    releaseLivePaintHold(entry.group);
     entry.image?.release();
     entry.text?.cancelPreparation();
     if (entry.fadeActive) setMountedElementFade(entry, null);
@@ -178,7 +167,6 @@ export function removeMountedElementNode(entry: MountedSceneElement): boolean {
   }
   const index = entry.paths.length - entry.detachedPathCount - 1;
   const node = entry.paths[index]?.node;
-  if (node !== undefined) releaseLivePaintHold(node);
   if (node !== undefined && entry.fadeActive)
     setElementFadeNode(node, null, entry.fadePresentation ?? "opacity");
   node?.remove();
@@ -198,13 +186,6 @@ export function updateMountedGeometry(
   entry.pathParts = parts;
   entry.bounds = record.bounds;
   entry.displayedElement = record.element;
-  const autoBounds = elementAutoPaintBounds(record.element, record.bounds);
-  for (const node of [
-    ...entry.paths.map((path) => path.node),
-    ...(entry.group === null ? [] : [entry.group]),
-  ]) {
-    writeAutoPaintBounds(node, autoBounds);
-  }
   refreshPosition(entry, instrumentation);
   entry.displayedPathParts = parts;
   entry.geometryVersion = record.geometryVersion;
@@ -233,16 +214,11 @@ export function updateMountedPaint(
     writeRaw(node, "opacity", pressure ? String(opacity) : null, instrumentation, false);
   }
   entry.groupOpacity = opacity;
-  let autoBounds: SceneElementRecord["bounds"] | undefined;
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index];
     const path = entry.paths[index];
     if (part === undefined || path === undefined) continue;
     const presentation = pathPresentation(record.element, part);
-    if (presentation.class !== null) {
-      autoBounds ??= elementAutoPaintBounds(record.element, record.bounds);
-      writeAutoPaintBounds(path.node, autoBounds);
-    }
     for (const attribute of PRESENTATION_ATTRIBUTES) {
       writePresentation(path, attribute, presentation[attribute], instrumentation);
     }
@@ -317,23 +293,11 @@ export function updateMountedElementPreview(
     readonly instrumentation: MutableSceneInstrumentation;
     readonly ownerDocument: Document;
     readonly parent: SVGGElement;
-    readonly paintBounds?: SceneElementRecord["bounds"] | undefined;
   },
 ): void {
   const { geometryVersion, paintVersion, pathParts, rank } = entry;
   updateMountedPreviewGeometry(entry, { ...record, element: previewElement }, parts, options);
   entry.displayedElement = previewElement;
-  const autoBounds = previewAutoPaintBounds(
-    previewElement,
-    record.element,
-    record.bounds,
-    options.paintBounds,
-  );
-  for (const node of [
-    ...entry.paths.map((path) => path.node),
-    ...(entry.group === null ? [] : [entry.group]),
-  ])
-    writeAutoPaintBounds(node, autoBounds);
   refreshPosition(entry, options.instrumentation);
   entry.displayedPathParts = parts;
   entry.geometryVersion = geometryVersion;
@@ -383,7 +347,7 @@ export function setMountedElementMotion(
   for (const node of nodes) {
     const element = entry.displayedElement;
     if (element.kind !== "text" && element.kind !== "image")
-      setPathMotionOrigin(node, elementAutoPaintBounds(element, entry.bounds));
+      setPathMotionOrigin(node, strokeShapeBounds(element, entry.bounds));
     const textPosition =
       entry.displayedElement.kind === "text" || entry.displayedElement.kind === "image"
         ? setTextMotionOrigin(node, opacity === null ? null : entry.displayedElement)

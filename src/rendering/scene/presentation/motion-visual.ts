@@ -3,7 +3,7 @@ import { buildElementPathParts } from "../../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../../domain/schema/public";
 import { PRESENTATION_ATTRIBUTES, pathPresentation } from "../content/element-presentation";
 import { SVG_NAMESPACE } from "../constants";
-import { positionedTransform } from "../content/stroke-position";
+import { positionedTransform, strokeShapeBounds } from "../content/stroke-position";
 import type { SvgPathPart } from "../../../domain/geometry/svg-path-part";
 import { setTextMotionOrigin } from "../content/mounted-text";
 import { imageMotionSnapshot } from "../content/mounted-image";
@@ -11,11 +11,6 @@ import type { SceneDom } from "../scene-dom";
 import type { MutableSceneInstrumentation } from "../types";
 import type { Bounds } from "../../../domain/geometry/primitives";
 import { calculateElementBounds } from "../../../domain/geometry/bounds";
-import {
-  writeAutoPaintBounds,
-  elementAutoPaintBounds,
-  readAutoPaintBounds,
-} from "../content/auto-paint-bounds";
 
 export interface MotionVisual {
   readonly releases?: readonly (() => void)[];
@@ -97,7 +92,7 @@ export function createMotionVisual(
     }
     const readCanonicalPath = typeof reader === "function" ? reader : reader?.path;
     const canonical = readCanonicalPath?.(element);
-    const { bounds, localBounds } = motionPaintBounds(reader, element, canonical !== undefined);
+    const { bounds, localBounds } = motionGeometryBounds(reader, element, canonical !== undefined);
     const parts = canonical ?? buildElementPathParts(element);
     const grouped = element.kind === "stroke" && element.style.pressureEnabled;
     const groupBytes = parts.reduce((total, part) => total + part.d.length * 2, 0);
@@ -108,7 +103,6 @@ export function createMotionVisual(
     if (group !== null && element.kind === "stroke") {
       const opacity = normalizeStrokePaint(element.style).opacity;
       group.setAttribute("opacity", String(opacity));
-      writeAutoPaintBounds(group, bounds);
       setPathMotionOrigin(group, bounds);
       parent.append(group);
       targets.push({ node: group, opacity, renderedOpacity: opacity });
@@ -122,7 +116,6 @@ export function createMotionVisual(
         part,
         canonical !== undefined,
       );
-      writeAutoPaintBounds(node, localBounds);
       if (group === null) {
         setPathMotionOrigin(node, localBounds);
         targets.push({
@@ -139,7 +132,7 @@ export function createMotionVisual(
   return { bytes, nodes, targets, releases };
 }
 
-function motionPaintBounds(
+function motionGeometryBounds(
   reader: GeometryReader | undefined,
   element: InkElementV1,
   canonical: boolean,
@@ -147,7 +140,7 @@ function motionPaintBounds(
   const bounds =
     (typeof reader === "object" ? reader.bounds?.(element.id) : undefined) ??
     calculateElementBounds(element);
-  return { bounds, localBounds: canonical ? elementAutoPaintBounds(element, bounds) : bounds };
+  return { bounds, localBounds: canonical ? strokeShapeBounds(element, bounds) : bounds };
 }
 
 function appendTextVisual(
@@ -233,10 +226,6 @@ export function writeMotionStyle(
   scale: number,
   position = "",
 ): void {
-  if (!node.style.getPropertyValue("transform-origin")) {
-    const bounds = readAutoPaintBounds(node);
-    if (bounds !== undefined) setPathMotionOrigin(node, bounds);
-  }
   node.style.setProperty("opacity", format(opacity));
   node.style.setProperty("transform", `${position}scale(${format(scale)})`);
   node.setAttribute(

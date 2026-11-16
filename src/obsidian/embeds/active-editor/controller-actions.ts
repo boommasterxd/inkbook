@@ -174,13 +174,6 @@ export class ActiveEditorActions {
   public get selectedImageId(): string | undefined {
     return this.#images.selectedImageId;
   }
-  public get selectedImageContrast(): "auto" | "light" | "dark" | undefined {
-    return this.#images.selectedImageContrast;
-  }
-  public setImageContrast(contrast: "auto" | "light" | "dark"): void {
-    if (this.#locks.pending) return;
-    this.#images.setContrast(contrast);
-  }
   public importImages(point?: { readonly x: number; readonly y: number }): void {
     if (this.#locks.pending) return;
     this.#images.import(point);

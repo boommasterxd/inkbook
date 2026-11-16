@@ -14,6 +14,47 @@ import type { BoxShapeElementV1, PageV1 } from "../../../../src/domain/schema/pu
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
 import { createSceneFixture, QueryCostStore } from "../../../fixtures/rendering/scene";
+import {
+  fixture as selectionFixture,
+  moveFeedback,
+} from "../../../fixtures/rendering/selection-runs";
+
+it("retains one publication cap across repeated input and scene flushes of the same deadline", () => {
+  const f = selectionFixture(2 * SCENE_PUBLICATION_ROOTS_PER_FRAME + 5, false, false);
+  try {
+    f.renderer.setSelectedElements(f.selection);
+    f.renderer.resetInstrumentation();
+    const roots = () =>
+      f.renderer.instrumentation().selectionTraceNodesCreated +
+      f.renderer.instrumentation().domRootsPublished;
+    for (let epoch = 0; epoch < 2; epoch += 1) {
+      const previous = roots();
+      f.scheduler.time += 1000 / 120;
+      f.scheduler.workScheduler.requestFrame(() => {
+        const feedback = moveFeedback(f.selection, epoch + 1, 5);
+        f.renderer.setPreviewTransform(
+          f.ids,
+          feedback.transform,
+          epoch + 1,
+          "scale",
+          undefined,
+          feedback,
+        );
+        f.renderer.flushPointerFeedbackFrame();
+        const afterFirst = roots();
+        f.renderer.flushPointerFeedbackFrame();
+        expect(roots()).toBe(afterFirst);
+        expect(afterFirst - previous).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+      }, "input");
+      f.scheduler.runFrame();
+      expect(f.renderer.instrumentation().frames).toBeGreaterThan(0);
+      expect(roots() - previous).toBe(SCENE_PUBLICATION_ROOTS_PER_FRAME);
+    }
+  } finally {
+    f.renderer.destroy();
+    f.port.release();
+  }
+});
 
 const PAGE: PageV1 = {
   activeBufferLines: 3,

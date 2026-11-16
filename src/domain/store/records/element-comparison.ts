@@ -234,7 +234,6 @@ function imagePaintEqual(left: ImmutableInkElement, right: InkElementV1): boolea
     left.kind === "image" &&
     right.kind === "image" &&
     left.assetId === right.assetId &&
-    left.contrast === right.contrast &&
     valuesEqual(left.crop, right.crop)
   );
 }

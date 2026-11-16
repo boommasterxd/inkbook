@@ -54,7 +54,7 @@ export async function hashConfirmedSvgContent(
   const { checkpoint, pending, chunkBytes } = prepareHash(options);
   if (pending !== undefined) await pending;
   options.signal?.throwIfAborted();
-  if (canHashConfirmedNatively(content, expectedBytes)) {
+  if (canHashNatively(content.length, expectedBytes)) {
     const encoded = await encodeConfirmedContent(
       content,
       Math.min(chunkBytes, DEFAULT_CHUNK_BYTES),
@@ -66,15 +66,15 @@ export async function hashConfirmedSvgContent(
       return hashExactUtf8Output(encoded, options.signal, undefined, checkpoint);
     }
   }
-  const inspected = await inspectString(content, chunkBytes, checkpoint, options.signal);
+  const inspected = await inspectStringSliced(content, chunkBytes, checkpoint, options.signal);
   return expectedBytes === undefined || inspected.totalBytes === expectedBytes
     ? inspected.outputHash
     : null;
 }
 
-function canHashConfirmedNatively(content: string, expectedBytes?: number): boolean {
+function canHashNatively(codeUnits: number, expectedBytes?: number): boolean {
   return (
-    content.length <= MAX_NATIVE_HASH_BYTES &&
+    codeUnits <= MAX_NATIVE_HASH_BYTES &&
     (expectedBytes === undefined || expectedBytes <= MAX_NATIVE_HASH_BYTES) &&
     typeof crypto !== "undefined" &&
     crypto.subtle !== undefined
@@ -181,6 +181,16 @@ async function inspectBytes(
   signal?: AbortSignal,
 ): Promise<InspectedOutput> {
   assertOwnedBytes(output);
+  if (canHashNatively(output.byteLength)) {
+    const owned = new Uint8Array(output);
+    const outputHash = await hashExactUtf8Output(owned, signal, undefined, checkpoint);
+    const content = await adoptUtf8Output(owned, {
+      checkpoint,
+      chunkBytes,
+      ...(signal ? { signal } : {}),
+    });
+    return { content, outputHash, totalBytes: owned.byteLength };
+  }
   const hasher = new ChunkedSha256();
   for (let offset = 0; offset < output.byteLength; offset += chunkBytes) {
     signal?.throwIfAborted();
@@ -198,6 +208,27 @@ async function inspectBytes(
 }
 
 async function inspectString(
+  output: string,
+  chunkBytes: number,
+  checkpoint: () => Promise<void> | undefined,
+  signal?: AbortSignal,
+): Promise<InspectedOutput> {
+  if (canHashNatively(output.length)) {
+    const encoded = await encodeConfirmedContent(
+      output,
+      Math.min(chunkBytes, DEFAULT_CHUNK_BYTES),
+      checkpoint,
+      signal,
+    );
+    if (encoded !== null) {
+      const outputHash = await hashExactUtf8Output(encoded, signal, undefined, checkpoint);
+      return { content: output, outputHash, totalBytes: encoded.byteLength };
+    }
+  }
+  return inspectStringSliced(output, chunkBytes, checkpoint, signal);
+}
+
+async function inspectStringSliced(
   output: string,
   chunkBytes: number,
   checkpoint: () => Promise<void> | undefined,

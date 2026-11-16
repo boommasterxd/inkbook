@@ -167,11 +167,7 @@ export class ChunkedInkbookInputParser {
       if (this.#failure !== null) return this.#failure;
       const flushed = await this.#flushDecoder();
       if (!flushed.ok) return flushed;
-      const staticResult = await finishInputStaticMatcher(
-        this.#staticMatcher,
-        this.#safeStaticProof,
-        () => this.#runCheckpoint() ?? undefined,
-      );
+      const staticResult = finishInputStaticMatcher(this.#staticMatcher, this.#safeStaticProof);
       if (!staticResult.ok) return staticResult;
       if (
         this.#streamPhase !== "static" ||

@@ -220,10 +220,9 @@ describe("transformed preview candidate retention", () => {
       },
       { x: 0, zoom: 1 },
     );
-    const viewport = { height: 100, left: 0, top: 0, width: 100 };
-    controller.setContext({ x: 0, zoom: 1 }, viewport);
+    controller.setContext({ x: 0, zoom: 1 });
     controller.set(ids, "translate(1000 0)", 1, "scale");
-    controller.setContext({ x: -1000, zoom: 1 }, viewport);
+    controller.setContext({ x: -1000, zoom: 1 });
     controller.refreshContext();
     controller.write();
     expect(controller.activeIds).toContain("0");

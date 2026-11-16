@@ -26,7 +26,7 @@ const FIXED_STROKE_STYLE = Object.freeze({
 
 const THEME_STROKE_STYLE = Object.freeze({
   ...FIXED_STROKE_STYLE,
-  color: { type: "theme-text" } as const,
+  color: { type: "rgba", value: "#000000FF" } as const,
 });
 
 const OUTLINE_STYLE = Object.freeze({

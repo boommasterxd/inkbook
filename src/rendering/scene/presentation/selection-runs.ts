@@ -6,7 +6,6 @@ import type { PreviewTransform } from "../reconciliation/scene-visibility-reconc
 import type { SceneDeltaEntry, SceneElementRecord } from "../types";
 import type { ProgressivePreviewTransform } from "./progressive-preview-request";
 import {
-  canonicalRunMember,
   selectionRunPlanMemoryUsage,
   SelectionRunPlanning,
   type SelectionRunPlan,
@@ -15,10 +14,18 @@ import { SelectionRunGroups } from "./selection-run-groups";
 import { SelectionRunTraces } from "./selection-run-traces";
 import { SceneRunStrokeWidth } from "./selection-run-width";
 import type { SelectionFeedbackTransforms } from "./selection-feedback-transforms";
+import {
+  selectionExceptionElements,
+  selectionExceptionTransforms,
+} from "./selection-feedback-transforms";
 import { SelectionRunTargets } from "./selection-run-targets";
 import { SelectionRunRebase } from "./selection-run-rebase";
 
 import { SelectionRunFeedback, type SelectionRunPorts } from "./selection-run-feedback";
+import {
+  SelectionRunTranslation,
+  type PublishedSelectionTranslation,
+} from "./selection-run-translation";
 
 /** Plans prepared physical cohorts through the existing scene admission. */
 export class SceneSelectionRuns {
@@ -27,6 +34,7 @@ export class SceneSelectionRuns {
   readonly #traces: SelectionRunTraces;
   readonly #width: SceneRunStrokeWidth;
   readonly #targets = new SelectionRunTargets();
+  readonly #translation = new SelectionRunTranslation();
   #selection: ReadonlySet<string> | undefined;
   #requested: ReadonlySet<string> | undefined;
   #planning: SelectionRunPlanning | undefined;
@@ -95,11 +103,8 @@ export class SceneSelectionRuns {
   public get committing(): boolean {
     return this.#feedback.committing;
   }
-  public get cleaning(): boolean {
-    return this.#cleaning;
-  }
-  public get structuralRetirement(): boolean {
-    return this.#retire;
+  public get defersVisibility(): boolean {
+    return this.#retire || (this.#cleaning && !this.active);
   }
   public get hasRetainableFeedback(): boolean {
     return this.#feedback.hasRetainableFeedback;
@@ -186,6 +191,7 @@ export class SceneSelectionRuns {
   }
   public setSelection(selection: ReadonlySet<string>): void {
     if (selection === this.#requested) return;
+    this.#translation.clear();
     this.#requested = selection;
     this.#ready = false;
     this.#fallback = false;
@@ -207,6 +213,7 @@ export class SceneSelectionRuns {
             (entry) =>
               (entry.group === null ? entry.paths.length : 1) +
               Number(this.ports.trace(entry.id) !== undefined),
+            (entry) => this.#translation.accepts(entry),
           );
     this.#plan = undefined;
     this.#version = undefined;
@@ -271,7 +278,7 @@ export class SceneSelectionRuns {
         if (
           this.ports.mounted.get(entry.id) !== entry ||
           record?.geometryVersion !== entry.geometryVersion ||
-          !canonicalRunMember(entry)
+          !this.#translation.accepts(entry)
         ) {
           this.#ready = false;
           this.#cleaning = true;
@@ -288,6 +295,26 @@ export class SceneSelectionRuns {
     this.#ready = this.groups.ready;
     this.readyAttribute();
     return !this.#ready;
+  }
+  public prepareTranslation(
+    request: PublishedSelectionTranslation,
+    published: () => PublishedSelectionTranslation | undefined,
+    deadline: number,
+    now: () => number,
+    publication: ScenePublicationBudget,
+  ): boolean {
+    if (!this.stageTranslation(request, published)) return false;
+    this.prepare(deadline, now, publication);
+    if (!this.#ready || !this.#feedback.canUse(request.feedback)) return false;
+    this.#feedback.adoptTranslationBasis(published());
+    return true;
+  }
+  public stageTranslation(
+    request: PublishedSelectionTranslation,
+    published: () => PublishedSelectionTranslation | undefined,
+  ): boolean {
+    const matches = this.#translation.stage(this.#requested, request, published);
+    return !this.active && !this.committing && matches;
   }
   private readyAttribute(): void {
     if (this.#ready) this.ports.dom.svg.setAttribute("data-inkbook-run-ready", "true");
@@ -340,8 +367,8 @@ export class SceneSelectionRuns {
   ): boolean {
     return this.#feedback.applyTransform(entry, version, transform, width, matrix);
   }
-  public update(entry: MountedSceneElement, record?: SceneElementRecord): void {
-    this.#feedback.canonicalPublished(entry, record);
+  public update(entry: MountedSceneElement, record?: SceneElementRecord): boolean {
+    const ready = this.#feedback.canonicalPublished(entry, record);
     const proof = this.#rebase.published(entry);
     if (proof !== "untracked") {
       if (proof === "invalid" || (!this.#exceptions.has(entry.id) && !this.groups.owns(entry))) {
@@ -351,6 +378,7 @@ export class SceneSelectionRuns {
       if (this.#rebase.active && !this.#rebase.pending) this.finishRebase();
     }
     if (this.groups.owns(entry)) this.#width.prepare(entry);
+    return ready;
   }
   public bindTrace(entry: MountedSceneElement): void {
     return this.#feedback.bindTrace(entry);
@@ -371,12 +399,14 @@ export class SceneSelectionRuns {
     return this.#feedback.retainCommit();
   }
   public exceptionTransforms(): ReadonlyMap<string, PreviewTransform> {
-    return this.#feedback.exceptionTransforms();
+    return selectionExceptionTransforms(this.#exceptions, (id) =>
+      this.#feedback.worldTransform(id),
+    );
   }
   public exceptionElements(
     elements: ReadonlyMap<string, InkElementV1>,
   ): ReadonlyMap<string, InkElementV1> {
-    return this.#feedback.exceptionElements(elements);
+    return selectionExceptionElements(elements, this.#exceptions);
   }
   public normalize(
     deadline: number,
@@ -387,6 +417,7 @@ export class SceneSelectionRuns {
     return this.#feedback.normalize(deadline, now, write, admittedFirstStep);
   }
   public clear(): void {
+    this.#translation.clear();
     return this.#feedback.clear();
   }
   public memoryUsage(): number {
@@ -410,6 +441,7 @@ export class SceneSelectionRuns {
   }
   public release(): void {
     this.#released = true;
+    this.#translation.clear();
 
     this.#planning?.cancel();
     this.groups.discard();

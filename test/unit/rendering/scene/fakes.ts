@@ -184,6 +184,10 @@ export class FakeNode extends EventTarget {
     for (const node of nodes) this.insertBefore(node, null);
   }
 
+  public prepend(...nodes: FakeNode[]): void {
+    for (const node of [...nodes].reverse()) this.insertBefore(node, this.nodes[0] ?? null);
+  }
+
   public appendChild(node: FakeNode): FakeNode {
     return this.insertBefore(node, null);
   }

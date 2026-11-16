@@ -10,6 +10,7 @@ import type { WorkspaceFeedbackHost } from "./workspace-feedback-router";
 import type { WorkspaceEmbedActionFeedbackPort } from "./workspace-embed-actions";
 import { deleteWorkspaceEmbed, openWorkspaceEmbedSvg } from "./workspace-embed-actions";
 import type { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
+import { prepareEditorChrome } from "../active-scene/editor-chrome-loader";
 
 export function bindWorkspaceLockedMenu(
   profiles: Pick<WorkspaceRefreshProfiles, "workScheduler">,
@@ -40,7 +41,7 @@ function createWorkspaceLockedMenu(options: {
   if (preview === undefined) return undefined;
   const isCurrent = () =>
     attachment.root.isConnected && attachment.root.dataset.inkbookState === "locked";
-  return new LockedEmbedMenu({
+  const menu = new LockedEmbedMenu({
     localization: host.localization,
     root: attachment.root,
     preview,
@@ -67,5 +68,34 @@ function createWorkspaceLockedMenu(options: {
         ...(attachment.removal === undefined ? {} : { removal: attachment.removal }),
       });
     },
+  });
+  bindEditorChromeIntent(menu, preview, isCurrent);
+  return menu;
+}
+
+function bindEditorChromeIntent(
+  menu: LockedEmbedMenu,
+  preview: HTMLElement,
+  isCurrent: () => boolean,
+): void {
+  let pending: ReturnType<typeof prepareEditorChrome> | undefined;
+  let ownerWindow: Window | null | undefined;
+  const prepare = () => {
+    const currentWindow = preview.ownerDocument.defaultView;
+    if (!isCurrent() || (pending !== undefined && ownerWindow === currentWindow)) return;
+    pending?.release();
+    ownerWindow = currentWindow;
+    const candidate = prepareEditorChrome(currentWindow);
+    pending = candidate;
+    void candidate.ready.then((ready) => {
+      if (!ready && pending === candidate) pending = undefined;
+    });
+  };
+  menu.registerDomEvent(preview, "pointerenter", prepare);
+  menu.registerDomEvent(preview, "focusin", prepare);
+  menu.registerDomEvent(preview, "pointerdown", prepare);
+  menu.register(() => {
+    pending?.release();
+    pending = undefined;
   });
 }

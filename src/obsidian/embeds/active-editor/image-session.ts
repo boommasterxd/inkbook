@@ -76,29 +76,6 @@ export class ActiveImageSession {
     return this.#selectedImage()?.id;
   }
 
-  public get selectedImageContrast(): "auto" | "light" | "dark" | undefined {
-    const image = this.#selectedImage();
-    return image === undefined || image.locked === true ? undefined : (image.contrast ?? "auto");
-  }
-
-  public setContrast(contrast: "auto" | "light" | "dark"): void {
-    const image = this.#selectedImage();
-    if (image === undefined || image.locked === true || (image.contrast ?? "auto") === contrast)
-      return;
-    const options = this.#options;
-    const revision = options.model.revision;
-    const selection = options.selection();
-    void this.#run(async (signal) => {
-      const isCancelled = () =>
-        options.selection() !== selection || !this.#currentImage(image, signal, revision);
-      if (isCancelled()) return;
-      const replacement = { ...image };
-      if (contrast === "auto") delete replacement.contrast;
-      else replacement.contrast = contrast;
-      if (await this.#replaceImage(image, replacement, isCancelled)) options.onCommitted(true);
-    });
-  }
-
   public import(point?: PointV1): void {
     if (!this.canImport) return;
     void this.#run(async (signal) => {

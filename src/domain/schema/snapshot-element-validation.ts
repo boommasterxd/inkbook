@@ -40,6 +40,4 @@ function assertElementVersion(element: InkElementV1, version: number): void {
   if (element.kind !== "image") return;
   if (version < 3)
     fail("invalid-literal", "$.version", "Image elements require snapshot version 3.");
-  if (version < 5 && element.contrast !== undefined)
-    fail("invalid-literal", "$.version", "Image contrast overrides require snapshot version 5.");
 }

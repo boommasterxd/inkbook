@@ -16,7 +16,7 @@ function pressureDocument(points = [100, 100, 1, 200, 100, 1], rotation = 0) {
       rotation,
       pivot: { x: 150, y: 100 },
       style: {
-        color: { type: "theme-text" },
+        color: { type: "rgba" as const, value: "#000000FF" as const },
         opacity: 1,
         pressureEnabled: true,
         smoothing: 0.5,
@@ -60,7 +60,7 @@ describe("canonical pressure path groups", () => {
       true,
       (svg: string) => svg.replace(/(<g opacity="1"><path d=")[^"]+/u, "$1M0 0L1 1Z"),
     ],
-    ["part color", false, (svg: string) => svg.replace('fill="#222222FF"', 'fill="#212122FF"')],
+    ["part color", true, (svg: string) => svg.replace('fill="#000000FF"', 'fill="#212122FF"')],
     [
       "extra path",
       false,
@@ -89,7 +89,7 @@ describe("canonical pressure path groups", () => {
     const document = pressureDocument();
     const legacy = document.current.replace(
       /<g opacity="1">.*?<\/g>/u,
-      '<path d="M100 104L200 104A4 4 0 0 0 200 96L100 96A4 4 0 0 0 100 104Z" class="inkbook-theme-fill" fill="#222222FF"/>',
+      '<path d="M100 104L200 104A4 4 0 0 0 200 96L100 96A4 4 0 0 0 100 104Z" fill="#000000FF"/>',
     );
     const model = new DocumentModelRuntime();
     await expect(model.unlock(legacy)).resolves.toMatchObject({ requiresCanonicalRewrite: false });

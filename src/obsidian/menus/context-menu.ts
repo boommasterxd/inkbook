@@ -45,7 +45,6 @@ export interface ContextMenuState {
   readonly canCut?: boolean;
   readonly canDelete?: boolean;
   readonly canCropImage?: boolean;
-  readonly imageContrast?: "auto" | "light" | "dark" | undefined;
   readonly canImportImages?: boolean;
   readonly canCopyText?: boolean | undefined;
   readonly canEditText?: boolean;
@@ -65,7 +64,6 @@ export interface ContextMenuHandlers {
   readonly unlockSelection?: (() => void) | undefined;
   readonly selectLocked?: (() => void) | undefined;
   readonly cropImage?: (() => void) | undefined;
-  readonly imageContrast?: (() => void) | undefined;
   readonly importImages?: (() => void) | undefined;
   readonly copyText?: (() => void) | undefined;
   readonly copyElement?: (() => void) | undefined;
@@ -161,15 +159,6 @@ function configureSelectionItems(
       "editor.action.crop-image",
       CONTEXT_MENU_ICONS.cropImage,
       handlers.cropImage,
-    );
-    menu.addSeparator();
-  }
-  if (state.imageContrast !== undefined && handlers.imageContrast !== undefined) {
-    configureItem(
-      menu,
-      `editor.image.underlay-${state.imageContrast}`,
-      "sun-moon",
-      handlers.imageContrast,
     );
     menu.addSeparator();
   }
@@ -342,14 +331,6 @@ export function openContextMenu(
     state,
     {
       ...handlers,
-      ...(handlers.imageContrast === undefined
-        ? {}
-        : {
-            imageContrast: () => {
-              menu.close("handoff");
-              handlers.imageContrast?.();
-            },
-          }),
       ...(handlers.cropImage === undefined
         ? {}
         : {

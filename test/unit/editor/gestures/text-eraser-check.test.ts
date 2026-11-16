@@ -87,7 +87,7 @@ describe("visible text eraser geometry", () => {
   it("includes visible whole-field backgrounds and excludes transparent rounded corners", () => {
     const text = textElement();
     text.layout.lines = [];
-    text.backgroundColor = { type: "theme-text" };
+    text.backgroundColor = { type: "rgba", value: "#000000FF" };
     text.backgroundOpacity = 0.5;
     expect(touches(text, { x: 180, y: 125 })).toBe(true);
     expect(touches(text, { x: 100, y: 100 })).toBe(false);

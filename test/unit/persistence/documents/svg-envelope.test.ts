@@ -60,7 +60,6 @@ describe("SVG primitives", () => {
     expect(DOCUMENT_PALETTE).toEqual(PORTABLE_PALETTE_V1);
     expect(DOCUMENT_PALETTE.dark.page).toBe("#212121FF");
     expect(DOCUMENT_PALETTE.dark.guide).toBe("#66666640");
-    expect(DOCUMENT_PALETTE.dark.text).toBe("#DADADAFF");
     expect(CANONICAL_THEME_STYLESHEET).toContain("prefers-color-scheme:dark");
     expect(CANONICAL_THEME_STYLESHEET).toContain("--inkbook-page:#212121FF");
     expect(CANONICAL_THEME_STYLESHEET).not.toContain("shape-rendering:crispEdges");

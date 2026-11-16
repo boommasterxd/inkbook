@@ -7,6 +7,13 @@ import { SampleBase64Reader } from "../serialization/metadata/sample-base64";
 import { inspectImageHeaderSteps } from "./image-header";
 
 const validated = new WeakSet<ImageResourceV3>();
+const BASE64_DECODE_CHARACTERS = 64 * 1024;
+interface NativeBase64Target extends Uint8Array {
+  setFromBase64?: (
+    input: string,
+    options: { readonly alphabet: "base64"; readonly lastChunkHandling: "strict" },
+  ) => { readonly read: number; readonly written: number };
+}
 
 export async function createImageResource(
   bytes: Uint8Array,
@@ -47,10 +54,32 @@ export function* decodeImageResourceSteps(
     resource.data.length > Math.ceil(IMAGE_LIMITS.resourceBytes / 3) * 4
   )
     throw new RangeError("Image resource exceeds byte capacity.");
-  const reader = new SampleBase64Reader(resource.data);
+  const data = resource.data;
+  const reader = new SampleBase64Reader(data);
   if (reader.byteLength > IMAGE_LIMITS.resourceBytes)
     throw new RangeError("Image resource exceeds byte capacity.");
   const bytes = new Uint8Array(reader.byteLength);
+  const native = (bytes as NativeBase64Target).setFromBase64;
+  if (typeof native === "function") {
+    let written = 0;
+    for (let offset = 0; offset < data.length; offset += BASE64_DECODE_CHARACTERS) {
+      signal?.throwIfAborted();
+      const part = data.slice(offset, offset + BASE64_DECODE_CHARACTERS);
+      const final = offset + part.length === data.length;
+      if (!(final ? /^[A-Za-z0-9+/]+={0,2}$/u : /^[A-Za-z0-9+/]+$/u).test(part))
+        throw new RangeError("Invalid image resource Base64.");
+      const decoded = native.call(bytes.subarray(written), part, {
+        alphabet: "base64",
+        lastChunkHandling: "strict",
+      });
+      const expected = Math.min((part.length / 4) * 3, bytes.length - written);
+      if (decoded.read !== part.length || decoded.written !== expected)
+        throw new RangeError("Invalid native image resource Base64 result.");
+      written += decoded.written;
+      yield;
+    }
+    return bytes;
+  }
   for (let offset = 0; offset < bytes.length; offset += 4096) {
     signal?.throwIfAborted();
     const end = Math.min(offset + 4096, bytes.length);

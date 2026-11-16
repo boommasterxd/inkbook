@@ -1,14 +1,6 @@
 import type { ImageResourceV3 } from "../../../domain/schema/public";
 import { parseSafeImageInstance } from "../../documents/safe-svg-images";
 import { parseOpeningTag, skipWhitespace } from "../../documents/svg-tag";
-import type {
-  SafeAutoPaintReferences,
-  SafeAutoPaintServer,
-} from "../../documents/safe-svg-auto-paint";
-import {
-  parseSafeAutoAtomSteps,
-  MAXIMUM_AUTO_ATOM_CHARACTERS,
-} from "../../documents/safe-svg-auto-atoms";
 import { FILE_SCHEMA_LIMITS } from "../../../domain/schema/public";
 import {
   MAXIMUM_TEXT_MARKUP_CHARACTERS,
@@ -31,14 +23,9 @@ export class StreamingSafeStaticValidator {
   public readonly failure = "invalid-svg";
   readonly #checkpoint: () => Promise<void> | undefined;
   readonly #version: number;
-  readonly #autoEnabled: boolean;
-  readonly #references: SafeAutoPaintReferences;
   readonly #bands: readonly string[];
   readonly #imageResources: ReadonlyMap<string, ImageResourceV3>;
   #image = "";
-  #auto = "";
-  #autoDepth = 0;
-  readonly #autoIds = new Set<bigint>();
   readonly #totals: SvgTotals = { commands: 0, groups: 0, pathBytes: 0, paths: 0 };
   #pending = "";
   #text = "";
@@ -54,12 +41,9 @@ export class StreamingSafeStaticValidator {
     checkpoint: () => Promise<void> | undefined,
     version = 2,
     imageResources: readonly ImageResourceV3[] = [],
-    autoPaintServers?: ReadonlyMap<string, SafeAutoPaintServer>,
   ) {
     this.#checkpoint = checkpoint;
     this.#version = version;
-    this.#autoEnabled = version >= 5 && autoPaintServers !== undefined;
-    this.#references = { servers: autoPaintServers ?? new Map(), used: new Set() };
     this.#bands = version >= 3 ? [BANDS[0]!, "inkbook-images-band", ...BANDS.slice(1)] : BANDS;
     this.#imageResources = new Map(imageResources.map((resource) => [resource.id, resource]));
   }
@@ -68,7 +52,7 @@ export class StreamingSafeStaticValidator {
     if (!this.#valid) return false;
     let cursor = 0;
     while (cursor < input.length) {
-      if (this.#pending.length === 0 && this.#text.length === 0 && this.#auto.length === 0)
+      if (this.#pending.length === 0 && this.#text.length === 0)
         cursor = skipWhitespace(input, cursor);
       if (cursor === input.length) break;
       const end = input.indexOf(">", cursor);
@@ -77,11 +61,9 @@ export class StreamingSafeStaticValidator {
       cursor = next;
       this.#maximumPendingCharacters = Math.max(
         this.#maximumPendingCharacters,
-        this.#pending.length + this.#text.length + this.#image.length + this.#auto.length,
+        this.#pending.length + this.#text.length + this.#image.length,
       );
       if (this.#pending.length > MAXIMUM_TAG_CHARACTERS) return this.#reject();
-      if (this.#pending.length + this.#auto.length > MAXIMUM_AUTO_ATOM_CHARACTERS)
-        return this.#reject();
       if (
         this.#bands[this.#band] === "inkbook-images-band" &&
         this.#pending.length + this.#image.length > 4096
@@ -113,17 +95,11 @@ export class StreamingSafeStaticValidator {
   }
 
   public finish(): boolean {
-    return (
-      this.#valid &&
-      this.#closed &&
-      this.#pending.length === 0 &&
-      this.#references.used.size === this.#references.servers.size
-    );
+    return this.#valid && this.#closed && this.#pending.length === 0;
   }
 
   async #consume(token: string): Promise<boolean> {
     if (this.#closed) return false;
-    if (this.#auto.length > 0) return this.#consumeAuto(token);
     if (this.#text.length > 0) return this.#consumeText(token);
     if (this.#image.length > 0) return this.#consumeImage(token);
     if (!this.#insideBand) {
@@ -148,15 +124,6 @@ export class StreamingSafeStaticValidator {
     if (this.#bands[this.#band] === "inkbook-images-band") {
       if (tag.name !== "g") return false;
       this.#image = token;
-      return true;
-    }
-    if (
-      this.#autoEnabled &&
-      this.#bands[this.#band] !== "inkbook-background" &&
-      tag.attributes.get("id")?.startsWith("inkbook-auto-atom-")
-    ) {
-      this.#auto = token;
-      this.#autoDepth = 1;
       return true;
     }
     if (tag.name === "text") {
@@ -219,34 +186,6 @@ export class StreamingSafeStaticValidator {
     return valid;
   }
 
-  async #consumeAuto(token: string): Promise<boolean> {
-    this.#auto += token;
-    const tag = token.startsWith("<g ") ? parseOpeningTag(token, 0) : null;
-    if (tag !== null && !tag.selfClosing) this.#autoDepth++;
-    if (token === "</g>") this.#autoDepth--;
-    if (this.#autoDepth !== 0) return true;
-    try {
-      const atom = await this.#runValidation(
-        parseSafeAutoAtomSteps(this.#auto, 0, {
-          ids: this.#autoIds,
-          totals: this.#totals,
-          references: this.#references,
-        }),
-      );
-      return (
-        atom !== null &&
-        atom.next === this.#auto.length &&
-        (this.#pressurePaths === null || ++this.#pressurePaths <= 1)
-      );
-    } catch (error) {
-      this.#reject();
-      throw error;
-    } finally {
-      this.#auto = "";
-      this.#autoDepth = 0;
-    }
-  }
-
   async #runValidation<T>(validation: Generator<void, T>): Promise<T> {
     let step = validation.next();
     while (!step.done) {
@@ -273,9 +212,6 @@ export class StreamingSafeStaticValidator {
     this.#pending = "";
     this.#text = "";
     this.#image = "";
-    this.#auto = "";
-    this.#autoIds.clear();
-    this.#references.used.clear();
     return false;
   }
 }

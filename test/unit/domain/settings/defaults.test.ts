@@ -6,6 +6,7 @@ import {
   OUTLINE_ONLY_TOOLS,
   createBuiltInDeviceSettings,
   createBuiltInSettings,
+  loadSettings,
 } from "../../../../src/domain/settings";
 
 describe("settings defaults", () => {
@@ -47,6 +48,7 @@ describe("settings defaults", () => {
       width: 8,
       opacity: 0.4,
     });
+    expect(settings.toolDefaults.text.color).toEqual({ type: "theme-text" });
     expect(settings.toolDefaults.straightHighlighter).toEqual(settings.toolDefaults.highlighter);
     expect(settings.toolDefaults.eraser.radius).toBe(20);
     expect(settings.toolDefaults.line).toEqual({ snappingEnabled: true });
@@ -88,19 +90,12 @@ describe("settings defaults", () => {
 });
 
 describe("settings palette and device defaults", () => {
-  it("exposes the exact built-in palette", () => {
-    expect(BUILT_IN_COLORS).toEqual([
-      { type: "theme-text" },
-      { type: "rgba", value: "#EF4444FF" },
-      { type: "rgba", value: "#F97316FF" },
-      { type: "rgba", value: "#EAB308FF" },
-      { type: "rgba", value: "#22C55EFF" },
-      { type: "rgba", value: "#06B6D4FF" },
-      { type: "rgba", value: "#3B82F6FF" },
-      { type: "rgba", value: "#8B5CF6FF" },
-      { type: "rgba", value: "#EC4899FF" },
-      { type: "rgba", value: "#6B7280FF" },
-    ]);
+  it("roundtrips every built-in palette choice through saved pen preferences", () => {
+    for (const color of BUILT_IN_COLORS) {
+      const settings = createBuiltInSettings();
+      settings.toolDefaults.pen.color = { ...color };
+      expect(loadSettings(settings)).toEqual({ value: settings, diagnostics: [] });
+    }
   });
 
   it("exposes the exact device defaults", () => {

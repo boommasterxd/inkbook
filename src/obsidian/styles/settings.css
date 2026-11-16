@@ -145,7 +145,7 @@
 }
 
 .inkbook-settings-tool-controls .inkbook-menu-color-grid {
-  grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
+  grid-template-columns: repeat(5, minmax(40px, 1fr));
 }
 
 .inkbook-settings-tool-controls .inkbook-menu-width-grid {
@@ -323,7 +323,7 @@
   }
 
   .inkbook-settings-tool-controls .inkbook-menu-color-grid {
-    grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+    grid-template-columns: repeat(5, minmax(44px, 1fr));
   }
 
   .inkbook-settings-tool-controls .inkbook-menu-slider-row,

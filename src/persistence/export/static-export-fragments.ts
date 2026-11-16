@@ -18,14 +18,6 @@ import { StaticPathBounds } from "./static-path-bounds";
 import { findStaticSvgTokenSteps } from "./static-svg-scanner";
 import { validateTextElementSteps } from "../documents/safe-svg-text";
 import { validateFontStylesheetSteps } from "../documents/safe-svg-fonts";
-import { parseSafeAutoDefinitionsSteps } from "../documents/safe-svg-auto-definitions";
-import { parseSafeAutoAtomSteps } from "../documents/safe-svg-auto-atoms";
-import { parseSafeAutoPaintDefinitionsSteps } from "../documents/safe-svg-auto-servers";
-import type {
-  SafeAutoPaintReferences,
-  SafeAutoPaintServer,
-} from "../documents/safe-svg-auto-paint";
-
 export interface StaticExportFragment {
   readonly minY: number;
   readonly maxY: number;
@@ -47,9 +39,6 @@ export interface StaticExportTagVisitor {
 
 type SvgTag = StaticExportTag;
 interface FragmentParseContext {
-  readonly references: SafeAutoPaintReferences;
-  readonly autoEnabled: boolean;
-  readonly autoIds: Set<bigint>;
   readonly imageResources: ReadonlyMap<string, ImageResourceV3>;
   readonly band: string;
   readonly totals: SvgTotals;
@@ -93,8 +82,6 @@ function* prepareFragmentSteps(
   if (prefix === undefined) return undefined;
   let cursor = prefix.cursor;
   const totals = { commands: 0, groups: 0, pathBytes: 0, paths: 0 };
-  const autoIds = new Set<bigint>();
-  const references = { servers: prefix.autoPaintServers, used: new Set<string>() };
   const bands = [
     BANDS[0]!,
     ...(hasSafeImageBand(svg, prefix.version) ? ["inkbook-images-band"] : []),
@@ -107,9 +94,6 @@ function* prepareFragmentSteps(
     cursor = skipWhitespace(svg, opening!.next);
     const context = {
       band,
-      autoIds,
-      autoEnabled: prefix.autoEnabled,
-      references,
       imageResources: prefix.imageResources,
       totals,
       exhausted,
@@ -126,11 +110,7 @@ function* prepareFragmentSteps(
     visitor?.close();
     cursor = skipWhitespace(svg, cursor + 4);
   }
-  if (
-    !svg.startsWith("</svg>", cursor) ||
-    skipWhitespace(svg, cursor + 6) !== svg.length ||
-    references.used.size !== references.servers.size
-  )
+  if (!svg.startsWith("</svg>", cursor) || skipWhitespace(svg, cursor + 6) !== svg.length)
     return undefined;
   visitor?.close();
   return fragments;
@@ -142,7 +122,6 @@ function* parseFragmentSteps(
   context: FragmentParseContext,
 ): Generator<void, ParsedFragment | undefined> {
   if (context.band === "inkbook-images-band") return parseImageFragment(svg, cursor, context);
-  if (isAutoAtom(svg, cursor, context)) return yield* parseAutoFragmentSteps(svg, cursor, context);
   if (context.version >= 2 && svg.startsWith("<text", cursor)) {
     const next = yield* validateTextElementSteps(svg, cursor, context.visitor);
     // Font tables may contain glyph overhang beyond nominal em bounds. Without trusted
@@ -175,12 +154,6 @@ function* parseGroupedFragmentSteps(
 ): Generator<void, ParsedFragment | undefined> {
   if (!validPressureGroup(group, context.band, null, context.totals)) return undefined;
   context.visitor?.open(group);
-  if (isAutoAtom(svg, start, context)) {
-    const atom = yield* parseAutoFragmentSteps(svg, start, context);
-    if (atom === undefined || !svg.startsWith("</g>", atom.next)) return undefined;
-    context.visitor?.close();
-    return { ...atom, next: skipWhitespace(svg, atom.next + 4) };
-  }
   const pathEnd = yield* findStaticSvgTokenSteps(svg, ">", start, context.exhausted);
   if (pathEnd < 0) return undefined;
   const tag = parseOpeningTag(svg.slice(start, pathEnd + 1), 0);
@@ -200,11 +173,9 @@ function* parseGroupedFragmentSteps(
 }
 
 interface StaticPrefix {
-  readonly autoPaintServers: ReadonlyMap<string, SafeAutoPaintServer>;
   readonly cursor: number;
   readonly version: number;
   readonly imageResources: ReadonlyMap<string, ImageResourceV3>;
-  readonly autoEnabled: boolean;
 }
 
 function* skipPrefixSteps(
@@ -282,52 +253,7 @@ function* visitResourcePrefixSteps(
     cursor = definitions.next;
     tag = parseOpeningTag(svg, cursor);
   }
-  const autoEnabled = root.version >= 5 && tag?.attributes.get("id") === "inkbook-auto";
-  let autoPaintServers: ReadonlyMap<string, SafeAutoPaintServer> = new Map();
-  if (autoEnabled) {
-    const next = yield* parseSafeAutoDefinitionsSteps(svg, cursor, {
-      height: root.height,
-      resources: [...imageResources.values()],
-      exhausted,
-      ...(visitor === undefined ? {} : { visitor }),
-    });
-    if (next === null) return undefined;
-    cursor = skipWhitespace(svg, next);
-    const paints = yield* parseSafeAutoPaintDefinitionsSteps(svg, cursor, { exhausted, visitor });
-    if (paints === null) return undefined;
-    autoPaintServers = paints.servers;
-    cursor = skipWhitespace(svg, paints.next);
-    tag = parseOpeningTag(svg, cursor);
-  }
-  return { cursor, imageResources, autoEnabled, autoPaintServers, nextTag: tag };
-}
-
-function isAutoAtom(svg: string, cursor: number, context: FragmentParseContext): boolean {
-  return (
-    context.autoEnabled &&
-    context.band !== BANDS[0] &&
-    svg.startsWith('<g id="inkbook-auto-atom-', cursor)
-  );
-}
-
-function* parseAutoFragmentSteps(
-  svg: string,
-  cursor: number,
-  context: FragmentParseContext,
-): Generator<void, ParsedFragment | undefined> {
-  const atom = yield* parseSafeAutoAtomSteps(svg, cursor, {
-    ids: context.autoIds,
-    totals: context.totals,
-    references: context.references,
-    exhausted: context.exhausted,
-    ...(context.visitor === undefined ? {} : { visitor: context.visitor }),
-  });
-  return atom === null
-    ? undefined
-    : {
-        bounds: { minY: atom.minY, maxY: atom.maxY },
-        next: skipWhitespace(svg, atom.next),
-      };
+  return { cursor, imageResources, nextTag: tag };
 }
 
 function* visitFontStylesheetSteps(

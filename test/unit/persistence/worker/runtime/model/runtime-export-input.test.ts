@@ -4,6 +4,7 @@ import { ChunkedInkbookInputParser } from "../../../../../../src/persistence/ser
 import { ChunkedInputHash } from "../../../../../../src/persistence/serialization/input/chunked-input-hash";
 import type { DocumentHashPort } from "../../../../../../src/persistence/serialization/sha256";
 import { parseExportGeometryInput } from "../../../../../../src/persistence/worker/runtime/model/runtime-export-input";
+import { parseRuntimeInput } from "../../../../../../src/persistence/worker/runtime/model/parse-runtime-input";
 import type { PrepareExportGeometryRequest } from "../../../../../../src/persistence/worker/runtime/types";
 import { serializeOneStrokeWorkerSnapshot } from "../../../../../fixtures/persistence/worker-bridge";
 
@@ -24,6 +25,79 @@ function request(
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("runtime unlock input proof binding", () => {
+  it("digests parser-owned bytes while retaining validated snapshot delivery", async () => {
+    const input = new TextEncoder().encode(serialized.svg);
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    const release = vi.spyOn(ChunkedInputHash.prototype, "release");
+    const delivered = vi.fn();
+    const result = await parseRuntimeInput(input, undefined, delivered, "safe");
+    expect(result.ok && result.value.hash).toBe(serialized.hash);
+    expect(delivered).toHaveBeenCalledTimes(1);
+    expect(digest).toHaveBeenCalledTimes(1);
+    const consumed = digest.mock.calls[0]![1] as Uint8Array;
+    expect(consumed).toEqual(input);
+    expect(consumed.buffer).not.toBe(input.buffer);
+    for (const hash of release.mock.contexts) expect(hash).toHaveProperty("retainedBytes", 0);
+  });
+
+  it("rejects fallback bytes changed after the native preview-proof preflight", async () => {
+    const input = new TextEncoder().encode(serialized.svg);
+    const pathOffset = serialized.svg.indexOf("<path ");
+    expect(pathOffset).toBeGreaterThan(32);
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    const release = vi.spyOn(ChunkedInputHash.prototype, "release");
+    let changed = false;
+    const result = await parseRuntimeInput(
+      input,
+      {
+        signal: new AbortController().signal,
+        checkpoint: () => {
+          if (!changed && digest.mock.calls.length === 1) {
+            input.set(new TextEncoder().encode("<evil "), pathOffset);
+            changed = true;
+          }
+          return undefined;
+        },
+        workProfile: { inputByteLimit: 32, nodeLimit: 1, outputByteLimit: 1 },
+      },
+      undefined,
+      "safe",
+      undefined,
+      proof,
+    );
+    expect(changed).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(digest).toHaveBeenCalledTimes(2);
+    for (const hash of release.mock.contexts) expect(hash).toHaveProperty("retainedBytes", 0);
+  });
+
+  it("releases the owned runtime buffer when parsing is cancelled", async () => {
+    const input = new TextEncoder().encode(serialized.svg);
+    const controller = new AbortController();
+    const release = vi.spyOn(ChunkedInputHash.prototype, "release");
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    await expect(
+      parseRuntimeInput(
+        input,
+        {
+          signal: controller.signal,
+          checkpoint: () => {
+            controller.abort();
+            return undefined;
+          },
+          workProfile: { inputByteLimit: 32, nodeLimit: 1, outputByteLimit: 1 },
+        },
+        undefined,
+        "safe",
+      ),
+    ).rejects.toThrow();
+    expect(digest).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalled();
+    for (const hash of release.mock.contexts) expect(hash).toHaveProperty("retainedBytes", 0);
+  });
+});
 
 describe("export input proof binding", () => {
   it("accepts complete actual bytes and falls back safely when authentic evidence is stale", async () => {
@@ -50,7 +124,7 @@ describe("export input proof binding", () => {
     const stale = SafeStaticProof.fromTrustedProducer("a".repeat(64), serialized.totalBytes);
     const changed = await parseExportGeometryInput(request(input, stale));
     expect(changed.ok && changed.value.hash).toBe(serialized.hash);
-    expect(digest).toHaveBeenCalledTimes(2);
+    expect(digest).toHaveBeenCalledTimes(3);
     for (const hash of release.mock.contexts) expect(hash).toHaveProperty("retainedBytes", 0);
   });
 

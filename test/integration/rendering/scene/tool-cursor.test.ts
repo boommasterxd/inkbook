@@ -145,10 +145,10 @@ describe("retained tool cursor", () => {
     scheduler.runAll();
     renderer.requestToolCursorFrame(() => ({
       ...FRAME,
-      cursor: { ...CURSOR, color: { type: "theme-text" } },
+      cursor: { ...CURSOR, color: { type: "rgba" as const, value: "#000000FF" as const } },
     }));
     scheduler.runAll();
-    expect(cursor.nodes[2]!.attributes.get("color")).toBe("var(--inkbook-text)");
+    expect(cursor.nodes[2]!.attributes.get("color")).toBe("#000000FF");
     for (const ring of rings) {
       expect(ring.attributes.get("visibility")).toBe("hidden");
       expect(cursor.nodes).toContain(ring);

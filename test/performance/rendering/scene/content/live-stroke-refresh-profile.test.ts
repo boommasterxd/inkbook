@@ -104,7 +104,8 @@ function coalescedHarness(pointerType: "pen" | "mouse") {
   const liveGroup = camera.nodes.find(
     (node) =>
       node.attributes.get("class") === "inkbook-scene-foreground" &&
-      node.nodes[0]?.nodes[0]?.attributes.get("class") === "inkbook-theme-fill",
+      node.nodes[0]?.nodes[0]?.tagName === "path" &&
+      node.nodes[0]?.nodes[0]?.attributes.get("stroke") === "none",
   );
   const tail = liveGroup?.nodes[0];
   if (tail === undefined) throw new Error("Expected a retained live pressure tail.");

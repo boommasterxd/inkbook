@@ -6,8 +6,7 @@ import { parseInkbookDocumentForTest } from "../../../../fixtures/persistence/pa
 import { operation, persistenceHarness } from "./vault-session-fixtures";
 
 it("admits before mutation and persists/reopens only referenced image resources", async () => {
-  const { asset, element: source } = await validImageFixture();
-  const element = { ...source, contrast: "light" as const };
+  const { asset, element } = await validImageFixture();
   const execute = vi.spyOn(DocumentWorkerRuntime.prototype, "execute");
   const harness = persistenceHarness();
   let reopened: ReturnType<typeof persistenceHarness> | undefined;

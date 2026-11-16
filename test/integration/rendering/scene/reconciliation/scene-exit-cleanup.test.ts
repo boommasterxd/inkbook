@@ -216,7 +216,9 @@ describe("sliced scene exit cleanup", () => {
       harness.scheduler.runAll();
       remove(harness, [...records].reverse(), false);
       let previous = 0;
+      let frames = 0;
       while (harness.scheduler.pendingCount > 0) {
+        expect(frames++).toBeLessThan(Math.ceil(records.length / 64) + 2);
         harness.scheduler.runNext();
         expect(removed.length - previous).toBeLessThanOrEqual(64);
         previous = removed.length;

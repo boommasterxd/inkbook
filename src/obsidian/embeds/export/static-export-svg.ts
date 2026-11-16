@@ -112,11 +112,10 @@ function configureExportElement(element: Element, scheme: InkbookColorScheme): v
       element.setAttribute("fill", palette.text);
       break;
     case "inkbook-theme-stroke-fill":
-      element.setAttribute("fill", palette.text);
       element.setAttribute("stroke", palette.text);
+      element.setAttribute("fill", palette.text);
       break;
   }
   element.removeAttribute("class");
-  if (element.localName !== "image" && !element.getAttribute("id")?.includes("inkbook-auto"))
-    element.removeAttribute("id");
+  if (element.localName !== "image") element.removeAttribute("id");
 }

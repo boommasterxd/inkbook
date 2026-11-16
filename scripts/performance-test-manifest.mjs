@@ -27,9 +27,9 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
   ]),
   invariant: Object.freeze([
     "test/performance/obsidian/text/native-text-ink-work.test.ts",
-    "test/performance/rendering/scene/auto-paint-work.test.ts",
     "test/performance/persistence/image-resource-work.test.ts",
     "test/performance/obsidian/images/image-import-work.test.ts",
+    "test/performance/obsidian/images/image-import-review-work.test.ts",
     "test/performance/domain/image-resource-work.test.ts",
     "test/performance/rendering/scene/image-source-work.test.ts",
     "test/performance/rendering/scene/inline-image-crop-work.test.ts",

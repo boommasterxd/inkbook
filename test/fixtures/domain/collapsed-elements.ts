@@ -3,7 +3,7 @@ import type { InkElementV1, OutlineStyleV1, PointV1 } from "../../../src/domain/
 export function collapsedElements(size: number): InkElementV1[] {
   const origin = { x: 0, y: 0 };
   const outline: OutlineStyleV1 = {
-    outlineColor: { type: "theme-text" },
+    outlineColor: { type: "rgba", value: "#000000FF" },
     outlineWidth: 4,
     outlineOpacity: 1,
     outlineStyle: "solid",
@@ -21,7 +21,7 @@ export function collapsedElements(size: number): InkElementV1[] {
     startNode: "none",
     endNode: "none",
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba", value: "#000000FF" },
       width: 4,
       opacity: 1,
       pressureEnabled: false,

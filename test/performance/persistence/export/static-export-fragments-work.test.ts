@@ -7,7 +7,6 @@ import { StaticPathBounds } from "../../../../src/persistence/export/static-path
 import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 import * as metadata from "../../../../src/persistence/documents/safe-svg-metadata";
-import { autoContrastSvg } from "../../../fixtures/persistence/auto-contrast-svg";
 
 function envelope(content: string[]) {
   return serializeSvgEnvelope(createWorkerSnapshot([]), 100_000, {
@@ -16,45 +15,6 @@ function envelope(content: string[]) {
     highlights: [],
   });
 }
-
-it("validates one source contour and one raster payload while bounded Auto tiles span a long stroke", async () => {
-  const svg = autoContrastSvg({ stroke: { points: [10, 10, 0.5, 2000, 100_000, 0.5] } });
-  const paths = vi.spyOn(validator, "validatePathDataSteps");
-  let geometryPaths = 0;
-  let rasterPayloads = 0;
-  let filters = 0;
-  let totalFilterArea = 0;
-  try {
-    const result = await prepareStaticExportFragments(svg, {
-      workScheduler: createTestWorkScheduler(),
-      visitor: {
-        open: (tag) => {
-          if (tag.name === "image") rasterPayloads++;
-          if (tag.name === "path" && tag.attributes.get("class") === "inkbook-auto-fill")
-            geometryPaths++;
-          if (tag.name === "filter") {
-            const width = Number(tag.attributes.get("width"));
-            const height = Number(tag.attributes.get("height"));
-            expect(width).toBeLessThanOrEqual(2048);
-            expect(height).toBeLessThanOrEqual(2048);
-            totalFilterArea += width * height;
-            filters++;
-          }
-        },
-        close: () => undefined,
-      },
-    });
-    expect(result?.filter((fragment) => !fragment.background)).toHaveLength(2);
-    expect(filters).toBeGreaterThan(40);
-    expect(filters).toBeLessThanOrEqual(100);
-    expect(totalFilterArea).toBeLessThanOrEqual(2048.6 * 100_010);
-    expect(geometryPaths).toBe(1);
-    expect(rasterPayloads).toBe(1);
-    expect(paths).toHaveBeenCalledTimes(2);
-  } finally {
-    paths.mockRestore();
-  }
-});
 
 it("decodes and visits each of 10,000 native text runs once without path geometry work", async () => {
   const text =

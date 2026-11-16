@@ -7,7 +7,6 @@ import { serializeSvgNumber } from "../documents/svg-number";
 import { backgroundFitsStaticLimit } from "./output/background";
 import { boundedSvgBands } from "./output/bounded-svg-bands";
 import { ChunkedOutputLimitError } from "./output/chunked-output-assembler";
-import { UnpreparedAutoTextError } from "./output/auto-contrast-text-bounds";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import type {
   DocumentCodecError,
@@ -67,13 +66,8 @@ export function serializeInkbookDocument(
   }
   let svg: string;
   try {
-    svg = serializeSvgEnvelope(
-      snapshot,
-      lockedHeight,
-      boundedSvgBands(snapshot, lockedHeight, validation.derivations),
-    );
+    svg = serializeSvgEnvelope(snapshot, lockedHeight, boundedSvgBands(snapshot, lockedHeight));
   } catch (error) {
-    if (error instanceof UnpreparedAutoTextError) return failure("snapshot-invalid", error.message);
     if (!(error instanceof ChunkedOutputLimitError)) throw error;
     return failure("static-output-limit-exceeded", "Generated document exceeds file limits.");
   }

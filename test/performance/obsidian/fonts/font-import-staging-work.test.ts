@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { FontImportStaging } from "../../../../src/obsidian/fonts/font-import-staging";
-import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
+import * as binaryResources from "../../../../src/persistence/serialization/binary-resource";
 import { FONT_LIMITS } from "../../../../src/persistence/fonts/font-container";
 import { readBundledFont } from "../../../fixtures/persistence/font-assets";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
@@ -11,26 +11,27 @@ const options = {
   useMetadata: true,
 } as const;
 
-it("hashes each owned binary once and releases the prepared resource without vault work", async () => {
+it("prepares each owned binary once through the shared resource pipeline and releases it without vault work", async () => {
   const bytes = await readBundledFont("inter-400-normal.woff2");
   const staging = new FontImportStaging();
   const sanitize = vi.fn(async () => undefined);
-  const hash = vi.spyOn(ChunkedSha256.prototype, "update");
+  const encode = vi.spyOn(binaryResources, "encodeBinaryResource");
   try {
     const prepared = await staging.prepare(bytes, options, new TestWorkScheduler(), sanitize);
-    expect(hash).toHaveBeenCalledTimes(Math.ceil(bytes.length / 4096));
+    expect(encode).toHaveBeenCalledOnce();
+    expect(encode.mock.calls[0]![0]).toEqual(bytes);
     expect(sanitize).toHaveBeenCalledOnce();
     const owned = staging.bytes(prepared);
     expect(owned).not.toBe(bytes);
     expect(owned).toEqual(bytes);
     staging.bytes(prepared);
-    expect(hash).toHaveBeenCalledTimes(Math.ceil(bytes.length / 4096));
+    expect(encode).toHaveBeenCalledOnce();
     expect(sanitize).toHaveBeenCalledOnce();
     staging.release(prepared);
     expect(() => staging.bytes(prepared)).toThrow("no longer available");
     staging.dispose();
   } finally {
-    hash.mockRestore();
+    encode.mockRestore();
   }
 });
 

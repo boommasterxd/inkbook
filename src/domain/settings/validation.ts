@@ -1,4 +1,5 @@
 import { loadTextDefaults } from "./text-defaults";
+import { BUILT_IN_COLORS } from "./color-palette";
 import {
   ARROW_NODES,
   CLOSED_SHAPE_TOOLS,
@@ -21,19 +22,9 @@ import {
 
 type UnknownRecord = Record<string, unknown>;
 
-const RGBA_COLORS = new Set([
-  "#000000FF",
-  "#FFFFFFFF",
-  "#EF4444FF",
-  "#F97316FF",
-  "#EAB308FF",
-  "#22C55EFF",
-  "#06B6D4FF",
-  "#3B82F6FF",
-  "#8B5CF6FF",
-  "#EC4899FF",
-  "#6B7280FF",
-]);
+const RGBA_COLORS = new Set<string>(
+  BUILT_IN_COLORS.flatMap((color) => (color.type === "rgba" ? [color.value] : [])),
+);
 
 export function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);

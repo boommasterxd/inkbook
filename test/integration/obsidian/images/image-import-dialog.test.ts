@@ -96,7 +96,6 @@ it("reuses source bytes for Ultra, blocks stale preview insertion on failure and
   vi.mocked(prepareRasterImage)
     .mockResolvedValueOnce({ resource: standard, resizedFrom: { width: 5040, height: 5040 } })
     .mockRejectedValueOnce(new ImageImportError("encodedSize", "private"))
-    .mockResolvedValueOnce({ resource: standard })
     .mockResolvedValueOnce({ resource: ultra });
   const { pending, warning } = await beginImageReview();
   expect(warning.hidden).toBe(false);
@@ -113,6 +112,8 @@ it("reuses source bytes for Ultra, blocks stale preview insertion on failure and
   expect(warning.textContent).toBe("");
   change("high");
   await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
+  expect(warning.hidden).toBe(false);
+  expect(prepareRasterImage).toHaveBeenCalledTimes(2);
   change("ultra");
   await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
   expect(prepareRasterImage).toHaveBeenLastCalledWith(
@@ -122,7 +123,7 @@ it("reuses source bytes for Ultra, blocks stale preview insertion on failure and
   change("ultra");
   dialogButton("Insert").click();
   expect(await pending).toEqual({ resources: [ultra], source: "image" });
-  expect(prepareRasterImage).toHaveBeenCalledTimes(4);
+  expect(prepareRasterImage).toHaveBeenCalledTimes(3);
   expect(readImageSource).toHaveBeenCalledOnce();
 });
 

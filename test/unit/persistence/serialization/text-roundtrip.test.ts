@@ -6,7 +6,11 @@ import type {
   TextElementV2,
 } from "../../../../src/domain/schema/public";
 import { textElement } from "../../domain/schema/fixtures";
-import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
+import {
+  expectDocumentRoundTrip,
+  parseInkbookDocumentForTest,
+} from "../../../fixtures/persistence/parse-document";
+import type { SerializedInkbookDocument } from "../../../../src/persistence/serialization/types";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/document-codec";
 import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/output/incremental-document-serializer";
 import { CanonicalMetadataCache } from "../../../../src/persistence/serialization/metadata/canonical-metadata-cache";
@@ -91,6 +95,16 @@ async function fixture(): Promise<InkSnapshotV1> {
   };
 }
 
+async function expectIncrementalExport(snapshot: InkSnapshotV1, saved: SerializedInkbookDocument) {
+  const incremental = new IncrementalDocumentSerializer();
+  expect(incremental.reset(snapshot)).toEqual({ ok: true, value: undefined });
+  expect(await incremental.serializeChunked()).toMatchObject({
+    ok: true,
+    value: { svg: saved.svg, snapshotHash: saved.snapshotHash },
+  });
+  return incremental;
+}
+
 it("keeps unpadded V2 proofs valid and persists optional padding without shifting exported glyphs or math", async () => {
   const snapshot = await fixture();
   const legacy = serializeInkbookDocument(snapshot);
@@ -133,19 +147,10 @@ it("roundtrips table frames through canonical metadata and rejects replaced or m
   if (!saved.ok) throw new Error(saved.error.message);
   const d = finishGeometrySteps(textTableGridPathSteps(element.layout.tables[0]!));
   expect(saved.value.svg).toContain(
-    `d="${d}" class="inkbook-theme-fill" fill="#222222FF" fill-opacity="1" transform="rotate(15 150 125) translate(100 100)"`,
+    `d="${d}" fill="#000000FF" fill-opacity="1" transform="rotate(15 150 125) translate(100 100)"`,
   );
-  expect(validateSafeSvg(saved.value.svg)).not.toBeNull();
-  expect(await parseInkbookDocumentForTest(saved.value.svg)).toMatchObject({
-    ok: true,
-    value: { snapshot: saved.value.snapshot },
-  });
-  const incremental = new IncrementalDocumentSerializer();
-  expect(incremental.reset(snapshot).ok).toBe(true);
-  expect(await incremental.serializeChunked()).toMatchObject({
-    ok: true,
-    value: { svg: saved.value.svg },
-  });
+  await expectDocumentRoundTrip(saved.value);
+  await expectIncrementalExport(snapshot, saved.value);
   expect(await new CanonicalMetadataCache().digest(snapshot, () => undefined)).toBe(
     saved.value.snapshotHash,
   );
@@ -203,6 +208,46 @@ describe("inline text background documents", () => {
   });
 });
 
+describe("portable text theme and fixed paints", () => {
+  it("preserves theme text and fixed inline colors through save, reopen and incremental export", async () => {
+    const snapshot = await fixture();
+    const element = snapshot.elements[0] as TextElementV2;
+    element.style.color = { type: "theme-text" };
+    element.backgroundColor = { type: "theme-text" };
+    element.ranges.push({
+      start: 14,
+      end: 15,
+      style: {
+        color: { type: "rgba", value: "#FFFFFFFF" },
+        backgroundColor: { type: "theme-text" },
+      },
+    });
+    element.layout.lines[0]!.runs[0]!.style = { color: { type: "theme-text" } };
+    const serialized = serializeInkbookDocument(snapshot);
+    if (!serialized.ok) throw new Error(serialized.error.message);
+    expect(serialized.value.svg).toContain('class="inkbook-theme-fill" fill="#222222FF"');
+    expect(serialized.value.svg).not.toMatch(/<(?:filter|mask|pattern)\b/u);
+    expect(validateSafeSvg(serialized.value.svg)).not.toBeNull();
+    const reopened = await parseInkbookDocumentForTest(serialized.value.svg);
+    expect(reopened).toMatchObject({
+      ok: true,
+      value: {
+        snapshot: {
+          elements: [
+            {
+              style: element.style,
+              ranges: element.ranges,
+              backgroundColor: { type: "theme-text" },
+              layout: element.layout,
+            },
+          ],
+        },
+      },
+    });
+    await expectIncrementalExport(snapshot, serialized.value);
+  });
+});
+
 describe("portable text documents", () => {
   it("shares one variable font payload across normal and bold runs after reopening", async () => {
     const font = await loadBuiltinFont("caveat", 400, "normal", new TestWorkScheduler());
@@ -255,13 +300,7 @@ describe("portable text documents", () => {
     expect(serialized.value.totalBytes).toBeLessThan(fontBytes + 16 * 1024);
     const reopened = await parseInkbookDocumentForTest(serialized.value.svg);
     expect(reopened).toMatchObject({ ok: true, value: { snapshot: serialized.value.snapshot } });
-    const incremental = new IncrementalDocumentSerializer();
-    expect(incremental.reset(snapshot)).toEqual({ ok: true, value: undefined });
-    const streamed = await incremental.serializeChunked();
-    expect(streamed).toMatchObject({
-      ok: true,
-      value: { svg: serialized.value.svg, snapshotHash: serialized.value.snapshotHash },
-    });
+    const incremental = await expectIncrementalExport(snapshot, serialized.value);
     expect(await new CanonicalMetadataCache().digest(snapshot, () => undefined)).toBe(
       canonicalMetadataSha256(serialized.value.snapshot),
     );

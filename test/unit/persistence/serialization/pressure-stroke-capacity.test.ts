@@ -26,7 +26,7 @@ function maximumPressureStroke(spacing: number, extreme: boolean): StrokeElement
     pivot: origin,
     points,
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba" as const, value: "#000000FF" as const },
       opacity: 0.5,
       pressureEnabled: true,
       smoothing: 0.5,
@@ -58,7 +58,7 @@ describe("maximum pressure stroke persistence", () => {
       const paths = [...content.matchAll(/<path d="([^"]+)"([^>]*)\/>/gu)];
       expect(paths).toHaveLength(1);
       const [, pathData, attributes] = paths[0]!;
-      expect(attributes).toContain('class="inkbook-theme-fill"');
+      expect(attributes).toContain('fill="#000000FF"');
       expect(attributes).not.toContain("stroke=");
       expect(pathData!.length).toBeLessThan(16 * 1024 * 1024);
       expect(pathData!.match(/[MLQCAZmlqcaz]/g)!.length).toBeLessThanOrEqual(400_000);

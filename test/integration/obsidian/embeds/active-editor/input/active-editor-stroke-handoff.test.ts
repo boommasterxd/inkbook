@@ -200,10 +200,11 @@ describe("canonical pressure handoff", () => {
 });
 
 function pressurePath(renderer: SvgSceneRenderer): string {
-  return paths(fakeNode(renderer.svg))
-    .filter((node) => node.attributes.get("class") === "inkbook-theme-fill")
-    .map((node) => node.attributes.get("d") ?? "")
-    .join("");
+  const ink = paths(fakeNode(renderer.svg)).filter(
+    (node) => node.attributes.get("class") === "inkbook-theme-fill",
+  );
+  expect(ink.length).toBeGreaterThan(0);
+  return ink.map((node) => node.attributes.get("d") ?? "").join("");
 }
 
 function assertContoursCovered(

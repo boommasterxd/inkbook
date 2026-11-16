@@ -2,16 +2,20 @@ import { FILE_SCHEMA_LIMITS } from "../../../../domain/schema/public";
 import { ChunkedSha256 } from "../../../serialization/chunked-output-sha256";
 import type { RuntimeSliceContext } from "../types";
 import { hashConfirmedSvgContent } from "../../../scheduling/trusted-svg-output";
+import {
+  assembleAndHashPreparedUtf8Output,
+  MAX_NATIVE_HASH_BYTES,
+} from "../../../serialization/output/chunked-output-assembler";
 
-/** Save preflight retains the bounded native digest advantage inside the worker. */
+/** Preflight and preview proofs digest bounded private copies inside the executor. */
 export async function hashConfirmedRuntimeInput(
   input: string | Uint8Array,
   context?: RuntimeSliceContext,
   expectedBytes?: number,
 ): Promise<string | null> {
-  if (typeof input !== "string") return hashRuntimeInput(input, context, expectedBytes);
   if (!validExpectedBytes(expectedBytes) || input.length > FILE_SCHEMA_LIMITS.totalInputBytes)
     return null;
+  if (typeof input !== "string") return hashConfirmedRuntimeBytes(input, context, expectedBytes);
   const options = {
     ...(context === undefined ? {} : { checkpoint: context.checkpoint, signal: context.signal }),
     chunkBytes: inputChunkSize(context),
@@ -19,6 +23,36 @@ export async function hashConfirmedRuntimeInput(
   return expectedBytes === undefined
     ? hashConfirmedSvgContent(input, options)
     : hashConfirmedSvgContent(input, { ...options, expectedBytes });
+}
+
+async function hashConfirmedRuntimeBytes(
+  input: Uint8Array,
+  context: RuntimeSliceContext | undefined,
+  expectedBytes: number | undefined,
+): Promise<string | null> {
+  if (expectedBytes !== undefined && input.byteLength !== expectedBytes) return null;
+  if (
+    input.byteLength > MAX_NATIVE_HASH_BYTES ||
+    typeof crypto === "undefined" ||
+    crypto.subtle === undefined
+  )
+    return hashRuntimeInput(input, context, expectedBytes);
+  const size = inputChunkSize(context);
+  const result = await assembleAndHashPreparedUtf8Output(
+    runtimeInputChunks(input, size),
+    input.byteLength,
+    {
+      ...(context === undefined ? {} : { checkpoint: context.checkpoint, signal: context.signal }),
+      maximumBytes: MAX_NATIVE_HASH_BYTES,
+      sliceByteLimit: size,
+    },
+  );
+  return result.hash;
+}
+
+function* runtimeInputChunks(input: Uint8Array, size: number): Generator<Uint8Array> {
+  for (let offset = 0; offset < input.byteLength; offset += size)
+    yield input.subarray(offset, offset + size);
 }
 
 export async function hashRuntimeInput(

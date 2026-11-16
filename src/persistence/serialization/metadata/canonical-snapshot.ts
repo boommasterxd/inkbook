@@ -295,7 +295,6 @@ function canonicalImageElement(
     width: element.width,
     height: element.height,
     assetId: element.assetId,
-    ...(element.contrast === undefined ? {} : { contrast: element.contrast }),
     crop: {
       x: element.crop.x,
       y: element.crop.y,

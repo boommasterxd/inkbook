@@ -13,28 +13,67 @@ import { validatedPreview } from "../../../../fixtures/obsidian/markdown-export"
 import { serializeSvgEnvelope } from "../../../../../src/persistence/documents/svg-envelope";
 import { createWorkerSnapshot } from "../../../../fixtures/persistence/worker-snapshot";
 
+async function buildExportVariants(
+  descriptor: Parameters<typeof createStaticExportSvg>[1],
+  colorScheme: "light" | "dark",
+) {
+  const options = {
+    workScheduler: immediateWorkScheduler(),
+    signal: new AbortController().signal,
+    colorScheme,
+  };
+  const prepared = await createPreparedStaticExportSvg(document, descriptor, options);
+  const complete = await createStaticExportSvg(document, descriptor, options);
+  expect(prepared?.svg.outerHTML).toBe(complete?.outerHTML);
+  return { prepared, complete };
+}
+
+it.each(["light", "dark"] as const)(
+  "resolves theme ink for %s export while preserving fixed black and white",
+  async (colorScheme) => {
+    const descriptor = await validatedPreview();
+    const path = (paint: string) => `<path d="M0 0L20 20" ${paint}/>`;
+    const span = (paint: string) =>
+      `<tspan x="0" y="20" font-family="inkbook-inter" font-size="24" font-weight="400" font-style="normal" text-decoration="none" ${paint} fill-opacity="1">Ink</tspan>`;
+    const safeSvg = serializeSvgEnvelope({ ...createWorkerSnapshot([]), version: 2 }, 1000, {
+      background: [],
+      highlights: [],
+      content: [
+        path('class="inkbook-theme-stroke" fill="none" stroke="#222222FF"'),
+        path('class="inkbook-theme-fill" fill="#222222FF"'),
+        path('class="inkbook-theme-stroke-fill" fill="#222222FF" stroke="#222222FF"'),
+        path('fill="none" stroke="#000000FF"'),
+        path('fill="#FFFFFFFF"'),
+        `<text>${span('class="inkbook-theme-fill" fill="#222222FF"')}${span('fill="#000000FF"')}${span('fill="#FFFFFFFF"')}</text>`,
+      ],
+    });
+    const { complete } = await buildExportVariants({ ...descriptor, safeSvg }, colorScheme);
+    const paths = complete!.querySelectorAll("path");
+    const theme = PORTABLE_PALETTE_V1[colorScheme].text;
+    expect(paths[0]?.getAttribute("stroke")).toBe(theme);
+    expect(paths[1]?.getAttribute("fill")).toBe(theme);
+    expect(paths[2]?.getAttribute("stroke")).toBe(theme);
+    expect(paths[2]?.getAttribute("fill")).toBe(theme);
+    expect(paths[3]?.getAttribute("stroke")).toBe("#000000FF");
+    expect(paths[4]?.getAttribute("fill")).toBe("#FFFFFFFF");
+    expect([...complete!.querySelectorAll("tspan")].map((run) => run.getAttribute("fill"))).toEqual(
+      [theme, "#000000FF", "#FFFFFFFF"],
+    );
+    expect(complete!.querySelector("filter, mask, pattern, [class]")).toBeNull();
+  },
+);
+
 it("builds identical retained text typography and embedded font rules through cold and warm export paths", async () => {
   const descriptor = await validatedPreview();
   const stylesheet =
     '@font-face{font-family:"inkbook-example";font-style:normal;font-weight:400;src:url("data:font/woff2;base64,AA==") format("woff2")}';
-  const text = `<text xml:space="preserve" transform="rotate(15 100 200)"><tspan x="100" y="200" textLength="320.125" lengthAdjust="spacingAndGlyphs" font-family="inkbook-example" font-size="24" font-weight="400" font-style="italic" text-decoration="underline line-through" class="inkbook-theme-fill" fill="${PORTABLE_PALETTE_V1.light.text}" fill-opacity="0.5">  Résumé   &amp; &lt;math&gt;  </tspan></text>`;
+  const text = `<text xml:space="preserve" transform="rotate(15 100 200)"><tspan x="100" y="200" textLength="320.125" lengthAdjust="spacingAndGlyphs" font-family="inkbook-example" font-size="24" font-weight="400" font-style="italic" text-decoration="underline line-through" fill="#000000FF" fill-opacity="0.5">  Résumé   &amp; &lt;math&gt;  </tspan></text>`;
   const safeSvg = serializeSvgEnvelope({ ...createWorkerSnapshot([]), version: 2 }, 1000, {
     background: [],
     highlights: [],
     content: [text],
   }).replace("<metadata ", `<style id="inkbook-fonts">${stylesheet}</style><metadata `);
-  const options = {
-    workScheduler: immediateWorkScheduler(),
-    signal: new AbortController().signal,
-    colorScheme: "dark" as const,
-  };
-  const prepared = await createPreparedStaticExportSvg(
-    document,
-    { ...descriptor, safeSvg },
-    options,
-  );
-  const complete = await createStaticExportSvg(document, { ...descriptor, safeSvg }, options);
-  expect(prepared?.svg.outerHTML).toBe(complete?.outerHTML);
+  const { prepared, complete } = await buildExportVariants({ ...descriptor, safeSvg }, "dark");
   expect(prepared?.fragments).toEqual([{ minY: -Infinity, maxY: Infinity, background: false }]);
   const span = complete?.querySelector("text tspan");
   expect(span?.textContent).toBe("  Résumé   & <math>  ");
@@ -42,7 +81,7 @@ it("builds identical retained text typography and embedded font rules through co
     expect(
       svg.querySelector("text")!.getAttributeNS("http://www.w3.org/XML/1998/namespace", "space"),
     ).toBe("preserve");
-  expect(span?.getAttribute("fill")).toBe(PORTABLE_PALETTE_V1.dark.text);
+  expect(span?.getAttribute("fill")).toBe("#000000FF");
   expect(span?.getAttribute("font-family")).toBe("inkbook-example");
   expect(span?.getAttribute("text-decoration")).toBe("underline line-through");
   expect(span?.getAttribute("textLength")).toBe("320.125");
@@ -252,16 +291,8 @@ function assertPortablePaint(
 ): void {
   const palette = PORTABLE_PALETTE_V1[scheme];
   const theme = source.getAttribute("class");
-  const expectedFill = new Map([
-    ["inkbook-theme-page", palette.page],
-    ["inkbook-theme-fill", palette.text],
-    ["inkbook-theme-stroke-fill", palette.text],
-  ]);
-  const expectedStroke = new Map([
-    ["inkbook-theme-guide", palette.guide],
-    ["inkbook-theme-stroke", palette.text],
-    ["inkbook-theme-stroke-fill", palette.text],
-  ]);
+  const expectedFill = new Map([["inkbook-theme-page", palette.page]]);
+  const expectedStroke = new Map([["inkbook-theme-guide", palette.guide]]);
   expect(exported?.getAttribute("fill")).toBe(
     expectedFill.get(theme ?? "") ?? source.getAttribute("fill"),
   );

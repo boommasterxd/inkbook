@@ -1,14 +1,15 @@
 import type { SceneContentRenderer } from "../content-renderer";
 import { ViewportPreviewSelection } from "./preview-transform-selection";
 import type { PreviewTransform } from "../reconciliation/scene-visibility-reconciler";
-import type {
-  PreviewBoundsTransform,
-  PreviewStrokeWidth,
-  SceneCamera,
-  SceneViewport,
-} from "../types";
+import type { PreviewBoundsTransform, PreviewStrokeWidth, SceneCamera } from "../types";
 import type { Bounds } from "../../../domain/geometry/public";
 import type { ProgressivePreviewTransform } from "./progressive-preview-request";
+import {
+  isSelectionTranslation,
+  type PublishedSelectionTranslation,
+} from "./selection-run-translation";
+import type { ScenePublicationBudget } from "../reconciliation/mount-slice";
+import { PublishedPreviewPose } from "./published-preview-pose";
 
 interface PreviewRequest {
   readonly transformBounds: PreviewBoundsTransform | undefined;
@@ -32,6 +33,7 @@ type PreviewContent = Pick<
       | "publishSelectionFeedback"
       | "clearSelectionFeedback"
       | "refreshSelectionFeedbackZoom"
+      | "selectionTranslation"
     >
   >;
 
@@ -51,6 +53,8 @@ export class SceneTransformPreviewController {
   #shared = false;
   #sharedDirty = false;
   #localIds: readonly string[] = [];
+  #publishedTranslation: PublishedSelectionTranslation | undefined;
+  readonly #publishedPose = new PublishedPreviewPose();
 
   public constructor(content: PreviewContent, camera: SceneCamera) {
     this.#content = content;
@@ -67,6 +71,9 @@ export class SceneTransformPreviewController {
   }
 
   public get values(): ReadonlyMap<string, PreviewTransform> {
+    return this.#shared ? this.#transforms : this.#publishedPose.values;
+  }
+  public get requestedValues(): ReadonlyMap<string, PreviewTransform> {
     return this.#transforms;
   }
 
@@ -74,11 +81,7 @@ export class SceneTransformPreviewController {
     return this.#ids;
   }
 
-  public setContext(
-    camera: SceneCamera,
-    _viewport: SceneViewport | undefined,
-    envelope?: Bounds,
-  ): void {
+  public setContext(camera: SceneCamera, envelope?: Bounds): void {
     this.#camera = camera;
     this.#envelope = envelope;
     this.#contextDirty = true;
@@ -125,6 +128,7 @@ export class SceneTransformPreviewController {
       this.#content.promoteVisible(id);
     }
     this.#contextDirty = false;
+    this.#publishedPose.hold(this.#ids);
   }
 
   public refreshContext(): void {
@@ -148,6 +152,7 @@ export class SceneTransformPreviewController {
 
   public clear(): boolean {
     if (this.#source === undefined) return false;
+    this.#publishedTranslation = undefined;
     this.clearLocalTransforms();
     if (this.#shared) this.#content.clearSelectionFeedback?.();
     this.#shared = false;
@@ -172,15 +177,30 @@ export class SceneTransformPreviewController {
   public write(): void {
     this.#content.flushSelectionContext();
     const request = this.#preview;
+    if (this.publishShared(request)) return;
+    for (const id of this.#dirty) {
+      const preview = this.#transforms.get(id);
+      if (preview !== undefined) {
+        this.applyTransform(id, preview);
+        if (preview.transform === null) this.removeTransform(id);
+      }
+    }
+    this.#dirty.clear();
+    this.publishLocalPose(request);
+  }
+
+  private publishShared(request: PreviewRequest | undefined): boolean {
     if (this.#shared && request?.feedback !== undefined) {
-      if (!this.#sharedDirty) return;
+      if (!this.#sharedDirty) return true;
       if (this.#content.publishSelectionFeedback?.(request.feedback, request.version)) {
         const resolved = this.resolvePreview(request);
         // A common left translation preserves grouped members' existing local bases.
         this.#localIds = this.#content.selectionFeedbackExceptionIds?.(request.feedback) ?? [];
-        for (const id of this.#localIds) this.applyTransform(id, resolved);
+        for (const id of this.#localIds) {
+          this.applyTransform(id, resolved);
+        }
         this.#sharedDirty = false;
-        return;
+        return true;
       }
       this.#shared = false;
       this.clearLocalTransforms();
@@ -194,17 +214,53 @@ export class SceneTransformPreviewController {
         this.#content.promoteVisible(id);
       }
     }
-    for (const id of this.#dirty) {
-      const preview = this.#transforms.get(id);
-      if (preview !== undefined) {
-        this.applyTransform(id, preview);
-        if (preview.transform === null) this.removeTransform(id);
-      }
-    }
+    return false;
+  }
+
+  private publishLocalPose(request: PreviewRequest | undefined): void {
+    if (
+      request?.strokeWidth === "scale" &&
+      isSelectionTranslation(request.feedback) &&
+      this.#ids.length === request.feedback.selectionSize
+    )
+      this.#publishedTranslation = { feedback: request.feedback, version: request.version };
+    else this.#publishedTranslation = undefined;
+    if (request === undefined) this.#publishedPose.clear();
+    else this.#publishedPose.publish(this.#ids, this.resolvePreview(request));
+  }
+
+  /** Admission and the following immediate writer share one synchronous frame. */
+  public prepareTranslation(
+    deadline: number,
+    now: () => number,
+    publication: ScenePublicationBudget,
+  ): void {
+    const request = this.#preview;
+    if (
+      this.#shared ||
+      request?.strokeWidth !== "scale" ||
+      !isSelectionTranslation(request.feedback) ||
+      !this.#content.selectionTranslation?.prepare(
+        { feedback: request.feedback, version: request.version },
+        () => this.#publishedTranslation,
+        deadline,
+        now,
+        publication,
+      )
+    )
+      return;
+    this.#transforms.clear();
+    this.#transformBytes = 0;
     this.#dirty.clear();
+    this.#active.clear();
+    this.#shared = true;
+    this.#sharedDirty = true;
+    this.#ids = this.#content.selectionFeedbackIds?.(request.feedback) ?? this.#ids;
   }
 
   public release(): void {
+    this.#publishedPose.clear();
+    this.#publishedTranslation = undefined;
     this.#localIds = [];
     this.#shared = false;
     this.#sharedDirty = false;
@@ -236,6 +292,7 @@ export class SceneTransformPreviewController {
       this.#active.add(id);
       this.setTransform(id, preview);
       this.applyTransform(id, preview);
+      this.#dirty.add(id);
     }
   }
 

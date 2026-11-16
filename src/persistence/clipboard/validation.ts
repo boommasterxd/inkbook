@@ -375,15 +375,12 @@ function validateClipboardElementVersions(
 ): ClipboardResult<void> {
   if (version >= 5) return { ok: true, value: undefined };
   let locked = false;
-  let imageContrast = false;
   let measuredText = false;
   for (const { element } of entries) {
     locked ||= element.locked === true;
-    imageContrast ||= element.kind === "image" && element.contrast !== undefined;
     measuredText ||= hasMeasuredTextInkBounds(element);
   }
   if (version < 4 && locked) return failure("Locked elements require clipboard version 4.");
-  if (imageContrast) return failure("Image contrast overrides require clipboard version 5.");
   if (measuredText) return failure("Measured text ink bounds require clipboard version 5.");
   return { ok: true, value: undefined };
 }

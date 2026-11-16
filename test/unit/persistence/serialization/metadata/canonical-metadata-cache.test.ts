@@ -8,31 +8,9 @@ import { sha256Hex } from "../../../../../src/persistence/serialization/sha256";
 import * as canonical from "../../../../../src/persistence/serialization/metadata/canonical-snapshot";
 import { createTestStroke } from "../../../../fixtures/persistence/worker-snapshot";
 import { rectangle, snapshot } from "../../worker/runtime/fixtures";
-import { imageElement, imageResource } from "../../../../fixtures/domain/images";
-import {
-  packElements,
-  unpackElementsSteps,
-} from "../../../../../src/persistence/worker/runtime/wire/element-wire-codec";
-import { completeSerializationSteps } from "../../../../../src/persistence/serialization/output/serialization-model-preparation";
 
 const checkpoint = async () => undefined;
 afterEach(() => vi.restoreAllMocks());
-
-it("binds image contrast to canonical metadata and preserves it through worker records", () => {
-  const element = { ...imageElement(), contrast: "light" as const };
-  const value = {
-    ...snapshot(),
-    version: 5 as const,
-    imageResources: [imageResource()],
-    elements: [element],
-  };
-  expect(canonical.canonicalSnapshot(value)).toEqual(value);
-  expect(canonical.canonicalElement(element)).toEqual(element);
-  const automatic = { ...value, elements: [imageElement()] };
-  expect(canonicalMetadataSha256(automatic)).not.toBe(canonicalMetadataSha256(value));
-  const records = completeSerializationSteps(unpackElementsSteps(packElements(value.elements)));
-  expect(records).toEqual(value.elements);
-});
 
 it("checkpoints fallback hashing after canonical metadata assembly completes", async () => {
   const encoder = new TextEncoder();

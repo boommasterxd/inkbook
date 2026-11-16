@@ -39,7 +39,7 @@ const rectangle: BoxShapeElementV1 = {
   width: 20,
   height: 20,
   style: {
-    outlineColor: { type: "theme-text" },
+    outlineColor: { type: "rgba", value: "#000000FF" },
     outlineWidth: 2,
     outlineOpacity: 1,
     outlineStyle: "solid",
@@ -109,7 +109,7 @@ describe("eraser sweep", () => {
       points: [0, 50, 0.5, 100, 50, 0.5],
       rotation: 0,
       style: {
-        color: { type: "theme-text" },
+        color: { type: "rgba", value: "#000000FF" },
         opacity: 1,
         pressureEnabled: true,
         smoothing: 0.5,
@@ -148,7 +148,11 @@ describe("eraser sweep", () => {
 
     const filled = {
       ...rectangle,
-      style: { ...rectangle.style, fillColor: { type: "theme-text" as const }, fillOpacity: 1 },
+      style: {
+        ...rectangle.style,
+        fillColor: { type: "rgba" as const, value: "#000000FF" as const },
+        fillOpacity: 1,
+      },
     };
     expect(sweepTouchesElement({ x: 45, y: 45 }, { x: 55, y: 55 }, 1, filled)).toBe(true);
 
@@ -182,7 +186,7 @@ describe("ellipse eraser intersection", () => {
       ...ellipse,
       style: {
         ...ellipse.style,
-        fillColor: { type: "theme-text" as const },
+        fillColor: { type: "rgba" as const, value: "#000000FF" as const },
         fillOpacity: 0.25,
       },
     };
@@ -208,7 +212,7 @@ describe("ellipse eraser intersection", () => {
       rotation: 90,
       style: {
         ...rectangle.style,
-        fillColor: { type: "theme-text" as const },
+        fillColor: { type: "rgba" as const, value: "#000000FF" as const },
         fillOpacity: 1,
       },
       width: 40,

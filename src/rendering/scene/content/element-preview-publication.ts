@@ -8,9 +8,8 @@ import type { SceneSelectionTraces } from "../presentation/selection-traces";
 import { updateMountedElementPreview, type MountedSceneElement } from "./mounted-element";
 import type { ScenePathCache } from "./path-cache";
 import { sameStrokeShape } from "./stroke-position";
-import type { Bounds } from "../../../domain/geometry/primitives";
 
-interface PreviewPublicationContext {
+export interface PreviewPublicationContext {
   readonly dom: SceneDom;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly selectionRuns: SceneSelectionRuns;
@@ -25,13 +24,11 @@ export function publish(
   element: InkElementV1,
   parts: readonly SvgPathPart[],
   context: PreviewPublicationContext,
-  paintBounds?: Bounds,
 ): boolean {
   updateMountedElementPreview(entry, record, element, parts, {
     instrumentation: context.instrumentation,
     ownerDocument: context.dom.ownerDocument,
     parent: context.dom.group(entry.band),
-    paintBounds,
   });
   context.selectionRuns.update(entry);
   if (entry.text !== undefined) context.onTextPublished?.(entry.id);

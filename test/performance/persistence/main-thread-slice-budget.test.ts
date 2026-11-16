@@ -207,7 +207,8 @@ function createSliceProbe(initialBudget: number, afterSlice?: (count: number) =>
   };
 }
 
-it("rechecks the live budget between actual hash chunks and preserves abort boundaries", async () => {
+it("rechecks the live budget between fallback hash chunks and preserves abort boundaries", async () => {
+  vi.spyOn(crypto.subtle, "digest").mockRejectedValueOnce(new Error("Native digest unavailable"));
   const abort = new AbortController();
   const probe = createSliceProbe(2, (count) => {
     if (count === 3) abort.abort();

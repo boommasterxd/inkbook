@@ -5,6 +5,7 @@ import {
   type PresentationAttachment,
 } from "../presentation/presentation-port";
 import type { ActiveInkbookScene } from "../active-scene/active-scene";
+import { prepareEditorChrome } from "../active-scene/editor-chrome-loader";
 import type { WorkspaceActivation, WorkspaceMountedPresentation } from "./workspace-load-recovery";
 import {
   createWorkspaceActiveScene,
@@ -99,10 +100,12 @@ export function beginWorkspaceActivation(
   }
   mounted.loadError?.close();
   mounted.loadError = undefined;
+  const preparation = prepareEditorChrome(mounted.attachment.root.ownerDocument.defaultView);
   const activation: WorkspaceActivation = {
     autoActivationAttempt,
     feedback: activationFeedback(mounted, autoActivationAttempt),
     release: () => {
+      preparation.release();
       if (mounted.activation === activation) delete mounted.activation;
     },
   };

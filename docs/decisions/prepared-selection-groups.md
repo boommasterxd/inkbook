@@ -40,6 +40,26 @@ per-element path. A ready full-selection Move uses the same group owner and lazy
 transform view as Resize; it does not construct another per-element transform
 map or materialize new model geometry for pointer feedback.
 
+An early Move retains complete individual feedback while the existing central
+frame admission advances pending selection traces and group preparation before
+the immediate input writer. Admission may accept only the same selection's
+fully published finite translation on unchanged mounted geometry, without
+loosening ordinary canonical-member validation. Once the group is ready, its
+last complete local translation `B` remains on the members and the shared parent
+publishes `M * inverse(B)` for the current requested translation `M`. This avoids
+an atomic per-member reset. The temporary local basis is separate from snapshot
+bases and model commits. Commit uses the existing canonical prefix/suffix drain;
+Cancel retains `inverse(B)` until original canonical geometry has replaced each
+local basis. An owned Cancel drain receives the same early admission when a new
+selection starts moving; another local basis is adopted only after that drain
+finishes. Non-translation requests retain the existing admission rules.
+
+Canonical publication adopts complete element geometry with its Auto or fixed RGBA paint.
+Viewport readmission keeps a previously hidden member on the existing geometry
+dirty queue until its canonical pose is ready. Incomplete text and pressure
+geometry preparation resumes under the same central deadline before visibility
+is restored.
+
 A preview owner retains at most one computed feedback transform for members
 without a canonical snapshot basis. Its key includes request identity, version
 and zoom. Individual snapshot bases remain independent; request replacement and

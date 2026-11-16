@@ -9,7 +9,7 @@ import {
 
 export function cursorState(x: number, icon: FakeNode): SceneToolCursor {
   return {
-    color: { type: "theme-text" },
+    color: { type: "rgba" as const, value: "#000000FF" as const },
     kind: "tool",
     opacity: 0.4,
     icon: icon as unknown as SVGSVGElement,

@@ -4,6 +4,7 @@ import {
   createBuiltInDeviceSettings,
   createBuiltInSettings,
 } from "../../../../src/domain/settings";
+import { BUILT_IN_COLORS } from "../../../../src/domain/settings/color-palette";
 import { SettingsControlValues } from "../../../../src/obsidian/settings/control-values";
 import {
   InkbookSettingsStore,
@@ -57,14 +58,27 @@ it("persists text-copy preferences in the vault without changing text styles", a
   expect(values.get("copyTextFieldsAsText")).toBe(true);
 });
 
-it("persists explicit neutral pen colors and restores automatic contrast", async () => {
-  for (const value of ["#000000FF", "#FFFFFFFF", "theme-text"]) {
+it("persists the theme color and every fixed pen color through settings validation", async () => {
+  for (const color of BUILT_IN_COLORS) {
+    const value = color.type === "theme-text" ? "theme-text" : color.value;
     await values.set("toolDefaults.pen.color", value);
     expect(values.get("toolDefaults.pen.color")).toBe(value);
-    expect(vault.saved.toolDefaults.pen.color).toEqual(
-      value === "theme-text" ? { type: "theme-text" } : { type: "rgba", value },
-    );
+    expect(vault.saved.toolDefaults.pen.color).toEqual(color);
   }
+});
+
+it("keeps fixed white and black distinct from Auto in saved text and shape defaults", async () => {
+  for (const key of [
+    "toolDefaults.text.color",
+    "toolDefaults.shapes.rectangle.outlineColor",
+  ] as const) {
+    for (const value of ["#000000FF", "#FFFFFFFF", "theme-text"]) {
+      await values.set(key, value);
+      expect(values.get(key)).toBe(value);
+    }
+  }
+  expect(vault.saved.toolDefaults.text.color).toEqual({ type: "theme-text" });
+  expect(vault.saved.toolDefaults.shapes.rectangle.outlineColor).toEqual({ type: "theme-text" });
 });
 
 describe("SettingsControlValues", () => {

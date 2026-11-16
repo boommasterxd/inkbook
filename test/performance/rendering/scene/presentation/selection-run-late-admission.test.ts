@@ -6,13 +6,188 @@ import {
   contentPaths,
   fixture,
   fixtureElement,
+  moveFeedback,
   observeSelectionInsertions,
   paintedX,
+  publishSelectionMove,
 } from "../../../../fixtures/rendering/selection-runs";
-import { fakeNode } from "../../../../unit/rendering/scene/fakes";
+import {
+  FakeNode,
+  fakeNode,
+  sceneBandNode,
+  sceneNodeWithClass,
+} from "../../../../unit/rendering/scene/fakes";
 import { INTERACTION_REFRESH_PROFILE } from "../../../interaction-refresh-profile";
 
 afterEach(() => vi.restoreAllMocks());
+
+it("drains a cancelled legacy basis before a continuous move of a changed selection", () => {
+  const f = fixture(
+    600,
+    false,
+    false,
+    [],
+    INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
+  );
+  try {
+    const svg = fakeNode(f.renderer.svg),
+      paths = contentPaths(svg);
+    const path = paths[paths.length - 1]!,
+      oldOnly = paths[0]!;
+    const band = sceneBandNode(svg, "content"),
+      before = paintedX(path, band);
+    const oldBefore = paintedX(oldOnly, band);
+    f.renderer.setSelectedElements(f.selection);
+    publishSelectionMove(f, { x: 15, y: 10 });
+    f.scheduler.runAll();
+    expect(svg.getAttribute("data-inkbook-run-feedback")).toBe("true");
+    f.renderer.clearPreviewTransforms();
+    expect(svg.getAttribute("data-inkbook-run-feedback")).toBe("true");
+    f.renderer.setSelectedElements(new Set());
+    const ids = f.elements
+      .filter((element) => element.kind === "rectangle")
+      .map((element) => element.id);
+    const selection = new Set(ids);
+    f.renderer.setSelectedElements(selection);
+    // Actual writes consume the shared slice; geometry must get a fresh admitted slice.
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Forwarded with its DOM receiver.
+    const setAttribute = FakeNode.prototype.setAttribute;
+    const writes = vi.spyOn(FakeNode.prototype, "setAttribute").mockImplementation(function (
+      this: FakeNode,
+      name,
+      value,
+    ) {
+      setAttribute.call(this, name, value);
+      f.scheduler.time += INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs / 32;
+    });
+    const members = new Set(paths);
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Forwarded with its DOM receiver.
+    const insertBefore = FakeNode.prototype.insertBefore;
+    let publications = 0;
+    const insertions = vi.spyOn(FakeNode.prototype, "insertBefore").mockImplementation(function (
+      this: FakeNode,
+      node,
+      reference,
+    ) {
+      const count = (node.fragment ? node.nodes : [node]).filter((member) =>
+        members.has(member),
+      ).length;
+      const result = insertBefore.call(this, node, reference);
+      if (count !== 0 && this.parent === band) {
+        publications += count;
+        f.scheduler.time += (count * INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs) / 4;
+      }
+      return result;
+    });
+    let version = 0;
+    do {
+      version += 1;
+      f.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+      f.renderer.setPreviewTransform(
+        ids,
+        `translate(${version} 10)`,
+        version,
+        "scale",
+        undefined,
+        moveFeedback(selection, version, 10),
+      );
+      f.scheduler.runFrame();
+      expect(paintedX(path, band)).toBeCloseTo(before + version, 6);
+      expect(paintedX(oldOnly, band)).toBeCloseTo(oldBefore, 6);
+      if (version === 1) expect(publications).toBeGreaterThan(1);
+      writes.mockClear();
+      insertions.mockClear();
+    } while (svg.getAttribute("data-inkbook-run-ready") !== "true" && version < 2000);
+    expect(svg.getAttribute("data-inkbook-run-feedback")).toBe("true");
+    f.renderer.clearPreviewTransforms();
+    f.scheduler.runAll(2000);
+    expect(paintedX(path, band)).toBeCloseTo(before, 6);
+    expect(paintedX(oldOnly, band)).toBeCloseTo(oldBefore, 6);
+  } finally {
+    f.renderer.destroy();
+    f.port.release();
+  }
+});
+
+it("advances trace-first admission from input flushes before any deferred scene frame", () => {
+  const f = fixture(
+    600,
+    false,
+    false,
+    [],
+    INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
+  );
+  try {
+    const svg = fakeNode(f.renderer.svg);
+    const paths = contentPaths(svg),
+      path = paths[paths.length - 1]!;
+    const band = sceneBandNode(svg, "content");
+    const before = paintedX(path, band);
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Forwarded with the observed DOM receiver.
+    const setAttribute = FakeNode.prototype.setAttribute;
+    let memberTransforms = 0;
+    vi.spyOn(FakeNode.prototype, "setAttribute").mockImplementation(function (
+      this: FakeNode,
+      name,
+      value,
+    ) {
+      setAttribute.call(this, name, value);
+      if (name === "transform" && this.tagName === "path") memberTransforms += 1;
+      f.scheduler.time += INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs / 256;
+    });
+    f.renderer.setSelectedElements(f.selection);
+    f.renderer.resetInstrumentation();
+    let version = 0;
+    while (svg.getAttribute("data-inkbook-run-feedback") !== "true" && version < 1000) {
+      version += 1;
+      f.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+      f.scheduler.workScheduler.requestFrame(() => {
+        f.renderer.setPreviewTransform(
+          f.ids,
+          `translate(${version} 10)`,
+          version,
+          "scale",
+          undefined,
+          moveFeedback(f.selection, version, 10),
+        );
+        f.renderer.flushPointerFeedbackFrame();
+        expect(f.renderer.instrumentation().frames).toBe(0);
+        if (version === 1)
+          expect(f.renderer.instrumentation().selectionTraceNodesCreated).toBeGreaterThan(0);
+      }, "input");
+      f.scheduler.runFrame();
+      expect(paintedX(path, band)).toBeCloseTo(before + version, 6);
+      const traces = sceneNodeWithClass(svg, "inkbook-selection-traces");
+      const visit = (node: FakeNode): FakeNode | undefined =>
+        node.getAttribute("data-selection-element-id") === f.ids[f.ids.length - 1]
+          ? node
+          : node.nodes.map(visit).find((child) => child !== undefined);
+      const trace = visit(traces);
+      if (trace !== undefined) expect(paintedX(trace, traces)).toBeCloseTo(before + version, 6);
+    }
+    expect(svg.getAttribute("data-inkbook-run-feedback")).toBe("true");
+    memberTransforms = 0;
+    f.renderer.setPreviewTransform(
+      f.ids,
+      "translate(2000 10)",
+      1001,
+      "scale",
+      undefined,
+      moveFeedback(f.selection, 2000, 10),
+    );
+    f.scheduler.runFrame();
+    expect(paintedX(path, band)).toBeCloseTo(before + 2000, 6);
+    // Only the two existing pressure exceptions stay on individual feedback.
+    expect(memberTransforms).toBeLessThanOrEqual(4);
+    f.renderer.clearPreviewTransforms();
+    expect(paintedX(path, band)).toBeCloseTo(before, 6);
+    f.scheduler.runAll(2000);
+    expect(paintedX(path, band)).toBeCloseTo(before, 6);
+  } finally {
+    f.renderer.destroy();
+    f.port.release();
+  }
+});
 
 it("preserves one ordinary geometry admission when camera publication consumes the shared frame", () => {
   const f = fixture(1, false, true, [], INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs);
@@ -64,7 +239,7 @@ it("retains the coalesced preparation successor when the last paint publication 
     if (target.kind !== "rectangle") throw new Error("Expected the fixture's last rectangle.");
     const delta = f.store.updateStyle(target.id, {
       ...target.style,
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
     })!;
     expect(delta.changes[0]!.domains).toEqual(["paint"]);
     f.renderer.applyDelta({ affected: sceneDeltaEntries(delta) });

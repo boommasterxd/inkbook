@@ -145,7 +145,7 @@ The tools are located in the center:
 
 The Straight Highlighter control uses the same marker silhouette as Highlighter with two short, evenly spaced ruler marks inside the body instead of a generic line symbol. Inkbook registers this custom icon through Obsidian's public `addIcon()` API and removes it on plugin deactivation through `removeIcon()`.
 
-The Style control always retains the canonical 19-pixel Palette geometry instead of swapping among stored icon assets. Its SVG attributes update from the active tool defaults: the glyph outline uses the tool color, line-cap-safe dash patterns distinguish solid, dashed, and dotted outlines, and a closed shape fills the palette body with its fill color and exact fill opacity. Text uses its foreground, field-background color, and background opacity without changing the Palette geometry. The four palette wells stay solid and use the outline color. The SVG node and button remain mounted while these attributes change, and Auto color resolves through the owning toolbar's current host color in every window. The Text tool's own glyph and circular background preview follow [Text Fields](text-fields.md#fonts-and-settings). Because Style opens the lifecycle-owned adaptive panel, its trigger exposes `aria-haspopup="dialog"`; Overflow, Shape, and context-menu triggers expose `aria-haspopup="menu"`.
+The Style control always retains the canonical 19-pixel Palette geometry instead of swapping among stored icon assets. Its SVG attributes update from the active tool defaults: the glyph outline uses the tool color, line-cap-safe dash patterns distinguish solid, dashed, and dotted outlines, and a closed shape fills the palette body with its fill color and exact fill opacity. Text uses its foreground, field-background color, and background opacity without changing the Palette geometry. The four palette wells stay solid and use the outline color. The SVG node and button remain mounted while these fixed-color attributes change. The Text tool's own glyph and circular background preview follow [Text Fields](text-fields.md#fonts-and-settings). Because Style opens the lifecycle-owned adaptive panel, its trigger exposes `aria-haspopup="dialog"`; Overflow, Shape, and context-menu triggers expose `aria-haspopup="menu"`.
 
 Pressed toolbar controls transition their foreground color to the host accent over the shared 120-millisecond style-change duration while their pressed semantics update immediately. Selecting a Style choice likewise updates its checked state immediately and animates its selected background, border, and foreground in place; it does not close or recreate the panel.
 
@@ -194,7 +194,6 @@ Canvas menus use the shared lifecycle-owned adaptive surface with host-matching 
 | Select all locked    | `scan`                   |
 | Crop image           | `crop`                   |
 | Import image or PDF  | `image`                  |
-| Image underlay       | `sun-moon`               |
 | Edit text            | `type`                   |
 | Copy, Copy embed     | `copy`                   |
 | Cut                  | `scissors`               |

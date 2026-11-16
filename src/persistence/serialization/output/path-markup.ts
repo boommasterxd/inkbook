@@ -16,36 +16,9 @@ import { serializeSvgNumber, serializeSvgOpacity } from "../../documents/svg-num
 import { DOCUMENT_PALETTE, type ThemeClass } from "../../documents/svg-theme";
 import { serializeImageMarkup } from "./image-markup";
 import { serializeTextMarkup } from "./text-markup";
-import { autoElementMarkupFragments } from "./auto-contrast-markup";
-import { calculateElementBounds, type Bounds } from "../../../domain/geometry/public";
-import type { AutoPaintServerRegistry } from "./auto-contrast-servers";
 
 type AttributeValue = number | string;
 type PathAttributes = Readonly<Record<string, AttributeValue | undefined>>;
-
-/** Canonical version-5 presentation; callers may reuse already validated world bounds. */
-export function* serializeAutoElementPaths(
-  element: InkElementV1,
-  bounds?: Bounds,
-  servers?: AutoPaintServerRegistry,
-): Iterable<string> {
-  const chunks: string[] = [];
-  if (element.kind === "text") {
-    for (const chunk of serializeTextMarkup(element)) {
-      chunks.push(chunk);
-      yield "";
-    }
-  } else chunks.push(...serializeElementPaths(element));
-  const markup = chunks.join("");
-  if (element.kind === "image" || !markup.includes('class="inkbook-theme-')) yield markup;
-  else
-    yield* autoElementMarkupFragments(
-      element,
-      markup,
-      bounds ?? calculateElementBounds(element),
-      servers,
-    );
-}
 
 export function serializeElementPaths(element: InkElementV1): string[] {
   if (element.kind === "image") return [serializeImageMarkup(element)];
@@ -149,9 +122,8 @@ function serializeStrokePart(
 function serializeShapePart(style: ShapeStyleV1, d: string, point: boolean): string {
   const outline = paintValue(style.outlineColor, "stroke");
   const fill = style.fillColor === null ? null : paintValue(style.fillColor, "fill");
-  const className = shapeThemeClass(style);
   return serializePath(d, {
-    class: className,
+    class: shapeThemeClass(style),
     fill: fill?.value ?? "none",
     "fill-opacity": fill === null ? undefined : nonDefaultOpacity(style.fillOpacity),
     stroke: outline.value,
@@ -192,18 +164,21 @@ function outlineStrokeAttributes(style: OutlineStyleV1, point: boolean): PathAtt
   };
 }
 
+function formatAttribute(value: AttributeValue): string {
+  if (typeof value === "string") return value;
+  return serializePaintNumber(value);
+}
+
 function paintValue(
   color: ColorV1,
   paint: "fill" | "stroke",
-): {
-  className?: ThemeClass;
-  value: string;
-} {
-  if (color.type === "rgba") return { value: color.value };
-  return {
-    className: paint === "fill" ? "inkbook-theme-fill" : "inkbook-theme-stroke",
-    value: DOCUMENT_PALETTE.light.text,
-  };
+): { className?: ThemeClass; value: string } {
+  return color.type === "rgba"
+    ? { value: color.value }
+    : {
+        className: paint === "fill" ? "inkbook-theme-fill" : "inkbook-theme-stroke",
+        value: DOCUMENT_PALETTE.light.text,
+      };
 }
 
 function shapeThemeClass(style: ShapeStyleV1): ThemeClass | undefined {
@@ -212,11 +187,6 @@ function shapeThemeClass(style: ShapeStyleV1): ThemeClass | undefined {
   if (outlineTheme && fillTheme) return "inkbook-theme-stroke-fill";
   if (outlineTheme) return "inkbook-theme-stroke";
   return fillTheme ? "inkbook-theme-fill" : undefined;
-}
-
-function formatAttribute(value: AttributeValue): string {
-  if (typeof value === "string") return value;
-  return serializePaintNumber(value);
 }
 
 function serializePaintNumber(value: number): string {

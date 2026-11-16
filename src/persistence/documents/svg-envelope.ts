@@ -1,5 +1,5 @@
 import { imageDefinitionsMarkup } from "../serialization/output/image-markup";
-import type { ImageElementV3, InkSnapshotV1 } from "../../domain/schema/public";
+import type { InkSnapshotV1 } from "../../domain/schema/public";
 import {
   canonicalMetadataText,
   metadataSha256,
@@ -9,15 +9,8 @@ import { serializeSvgNumber } from "./svg-number";
 import { CANONICAL_THEME_STYLESHEET } from "./svg-theme";
 import { escapeXmlText } from "./xml-text";
 import { fontStylesheetMarkup } from "../serialization/output/text-fonts";
-import { autoDefinitionsFragments } from "../serialization/output/auto-contrast-definitions";
-import {
-  autoPaintDefinitionsFragments,
-  type AutoPaintServerRegistry,
-} from "../serialization/output/auto-contrast-servers";
 
 export interface StaticSvgBands {
-  readonly autoPaints?: AutoPaintServerRegistry | undefined;
-  readonly underlayImages?: readonly ImageElementV3[];
   readonly images?: readonly string[];
   readonly background: readonly string[];
   readonly highlights: readonly string[];
@@ -45,8 +38,6 @@ export function serializeSvgEnvelope(
     `<style id="inkbook-theme">${CANONICAL_THEME_STYLESHEET}</style>` +
     fontStylesheetMarkup(snapshot.fontResources ?? []) +
     imageDefinitionsMarkup(snapshot.imageResources ?? []) +
-    [...autoDefinitionsFragments(snapshot, lockedHeight, bands.underlayImages)].join("") +
-    [...autoPaintDefinitionsFragments(snapshot, bands.autoPaints, bands.underlayImages)].join("") +
     `<metadata id="inkbook-snapshot" data-encoding="${COMPACT_METADATA_ENCODING}">${metadata}</metadata>` +
     `<g id="inkbook-background">${joinPaths(bands.background)}</g>` +
     (snapshot.version >= 3

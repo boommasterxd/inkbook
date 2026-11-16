@@ -12,14 +12,17 @@ import { rewriteDocumentMetadata } from "../../../../fixtures/persistence/metada
 import { createSnapshot } from "../fixtures";
 import { parseRuntimeInput } from "../../../../../src/persistence/worker/runtime/model/parse-runtime-input";
 import { ChunkedSha256 } from "../../../../../src/persistence/serialization/chunked-output-sha256";
+import { ChunkedInputHash } from "../../../../../src/persistence/serialization/input/chunked-input-hash";
 
 let svg: string;
 let proof: SafeStaticProof;
+let expectedSnapshot: ReturnType<typeof createSnapshot>;
 
 beforeAll(async () => {
   const serialized = serializeInkbookDocument(createSnapshot());
   if (!serialized.ok) throw new Error(serialized.error.code);
   svg = serialized.value.svg;
+  expectedSnapshot = serialized.value.snapshot;
   proof = (await inspectTrustedSvgOutput(svg)).safeStaticProof;
 });
 afterEach(() => vi.restoreAllMocks());
@@ -226,32 +229,45 @@ describe("executor preview candidate binding", () => {
         undefined,
         proof,
       ),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    ).rejects.toMatchObject({ code: "input-cancelled" });
     expect(adopt).not.toHaveBeenCalled();
     expect(staticWrite).not.toHaveBeenCalled();
   });
+});
 
-  it("retains terminal byte binding when input changes after the candidate hash", async () => {
-    const input = new TextEncoder().encode(svg);
-    const controller = new AbortController();
-    let remainingHashCheckpoints = Math.ceil(input.byteLength / (64 * 1024));
-    const staticWrite = vi.spyOn(StreamingSafeStaticValidator.prototype, "write");
-    const result = await parseRuntimeInput(
-      input,
-      {
-        signal: controller.signal,
-        checkpoint: () => {
-          remainingHashCheckpoints -= 1;
-          if (remainingHashCheckpoints === 0) input[input.length - 1] = 0x20;
-          return undefined;
-        },
+it("keeps parsed private bytes intact when the caller changes already consumed input", async () => {
+  const input = new TextEncoder().encode(svg);
+  const controller = new AbortController();
+  let changed = false;
+  const copies = vi.spyOn(ChunkedInputHash.prototype, "copy");
+  const staticWrite = vi.spyOn(StreamingSafeStaticValidator.prototype, "write");
+  const result = await parseRuntimeInput(
+    input,
+    {
+      signal: controller.signal,
+      checkpoint: () => {
+        const ownedBytes = copies.mock.results.reduce(
+          (bytes, result) =>
+            bytes + (result.type === "return" ? (result.value?.byteLength ?? 0) : 0),
+          0,
+        );
+        if (!changed && ownedBytes === input.byteLength) {
+          input[input.length - 1] = 0x20;
+          changed = true;
+        }
+        return undefined;
       },
-      undefined,
-      "safe",
-      undefined,
-      proof,
-    );
-    expect(result).toMatchObject({ ok: false, error: { code: "invalid-svg" } });
-    expect(staticWrite).not.toHaveBeenCalled();
+    },
+    undefined,
+    "safe",
+    undefined,
+    proof,
+  );
+  expect(changed).toBe(true);
+  expect(input[input.length - 1]).toBe(0x20);
+  expect(result).toMatchObject({
+    ok: true,
+    value: { hash: proof.outputHash, snapshot: expectedSnapshot },
   });
+  expect(staticWrite).not.toHaveBeenCalled();
 });

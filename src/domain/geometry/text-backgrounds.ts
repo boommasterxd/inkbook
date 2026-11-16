@@ -133,7 +133,7 @@ export function appendTextBackgroundPaint(
   d: string,
 ): void {
   if (d === "" || rectangle.color === null || rectangle.opacity <= 0) return;
-  const key = `${rectangle.color.type === "theme-text" ? "theme-text" : rectangle.color.value}:${rectangle.opacity}`;
+  const key = `${rectangle.color.type === "rgba" ? rectangle.color.value : "theme-text"}:${rectangle.opacity}`;
   groups.set(key, {
     color: rectangle.color,
     opacity: rectangle.opacity,

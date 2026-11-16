@@ -21,15 +21,7 @@ it("coalesces crop samples to one mask write without traversing ten thousand ret
   const mask = scene.svg.querySelector("[data-inkbook-crop-preview] path")!;
   const writes = vi.spyOn(mask, "setAttribute");
   const allocated = create.mock.calls.length;
-  // The image presentation now owns its contrast footprint alongside the shared source use.
-  expect(create.mock.calls.map(([, tag]) => tag)).toEqual([
-    "g",
-    "svg",
-    "use",
-    "rect",
-    "path",
-    "style",
-  ]);
+  expect(create.mock.calls.map(([, tag]) => tag)).toEqual(["g", "svg", "use", "path", "style"]);
   for (let sample = 0; sample < 30; sample += 1) {
     crop.update({ x: sample, y: sample, width: 200, height: 100 });
   }

@@ -6,9 +6,6 @@ import {
 } from "../../../domain/schema/public";
 import { normalizeStrokePaint } from "../../../domain/geometry/pressure/pressure-paint";
 import type { SvgPathPart } from "../../../domain/geometry/svg-path-part";
-import type { Bounds } from "../../../domain/geometry/primitives";
-import { writeAutoPaintBounds } from "./auto-paint-bounds";
-import type { SceneAutoPaint } from "../scene-auto-paint";
 import { SVG_NAMESPACE } from "../constants";
 import {
   liveStrokePresentation,
@@ -47,7 +44,6 @@ export class SceneLiveStrokeRenderer {
     group: SVGGElement,
     placeGroup: (band: "content" | "highlight") => void,
     instrumentation: MutableSceneInstrumentation,
-    private readonly autoPaint?: Pick<SceneAutoPaint, "publishLive">,
   ) {
     this.#ownerDocument = ownerDocument;
     this.#host = group;
@@ -74,7 +70,7 @@ export class SceneLiveStrokeRenderer {
     }
     this.validateEntrants(preview);
     this.appendChunks(preview);
-    this.updateTail(preview.tail.geometry, preview.tail.bounds);
+    this.updateTail(preview.tail.geometry);
     this.#lastTail = preview.tail;
     this.#instrumentation.livePreviewUpdates += 1;
     this.#instrumentation.liveMaximumTailNodes = Math.max(
@@ -136,10 +132,9 @@ export class SceneLiveStrokeRenderer {
     for (let index = this.#chunkNodes.length; index < preview.finalizedChunks.length; index += 1) {
       const chunk = preview.finalizedChunks[index];
       if (chunk === undefined) continue;
-      const nodes = chunk.geometry.map((part) => this.createPath(part, chunk.bounds));
+      const nodes = chunk.geometry.map((part) => this.createPath(part));
       for (const node of nodes) {
         this.#group.insertBefore(node, this.#tailNodes[0] ?? null);
-        this.autoPaint?.publishLive(node);
       }
       this.#chunkNodes.push(nodes);
       this.#chunkPathCount += nodes.length;
@@ -152,10 +147,9 @@ export class SceneLiveStrokeRenderer {
     );
   }
 
-  private createPath(part: SvgPathPart, bounds?: Bounds): SVGPathElement {
+  private createPath(part: SvgPathPart): SVGPathElement {
     const node = this.#ownerDocument.createElementNS(SVG_NAMESPACE, "path");
     node.setAttribute("d", part.d);
-    if (bounds !== undefined) writeAutoPaintBounds(node, bounds);
     this.#instrumentation.attributeWrites += 1;
     const presentation = this.#presentation;
     if (presentation === undefined) throw new Error("Live stroke paint is not initialized.");
@@ -220,20 +214,17 @@ export class SceneLiveStrokeRenderer {
     }
   }
 
-  private updateTail(parts: readonly SvgPathPart[], bounds?: Bounds): void {
+  private updateTail(parts: readonly SvgPathPart[]): void {
     for (let index = 0; index < parts.length; index += 1) {
       const part = parts[index]!;
       const node = this.#tailNodes[index];
       if (node === undefined) {
-        const created = this.createPath(part, bounds);
+        const created = this.createPath(part);
         this.#tailNodes.push(created);
         this.#group.append(created);
-        this.autoPaint?.publishLive(created);
         this.#instrumentation.liveTailNodesCreated += 1;
       } else {
         this.updateTailAttribute(node, "d", part.d);
-        if (bounds !== undefined) writeAutoPaintBounds(node, bounds);
-        this.autoPaint?.publishLive(node);
       }
     }
     for (let index = parts.length; index < this.#tailNodes.length; index += 1) {

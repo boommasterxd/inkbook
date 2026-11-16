@@ -1,22 +1,18 @@
 // Only SVG presentation rules belong inside the isolated scene. Host layout and
 // input remain in the plugin stylesheet; inherited tokens retain host appearance.
+export const CANONICAL_PAINT_STYLES = `.inkbook-theme-page { fill: var(--inkbook-page); }
+.inkbook-theme-guide { stroke: var(--inkbook-guide); }
+.inkbook-theme-stroke { stroke: var(--inkbook-text); }
+.inkbook-theme-fill { fill: var(--inkbook-text); }
+.inkbook-theme-stroke-fill { stroke: var(--inkbook-text); fill: var(--inkbook-text); }`;
+
 export const SCENE_SURFACE_STYLES = `
 .inkbook-scene {
   block-size: 100%; box-sizing: border-box; contain: layout; display: block;
   inline-size: 100%; inset: 0; overflow: visible; pointer-events: none;
   position: absolute; transform-origin: top left;
 }
-.inkbook-theme-page { fill: var(--inkbook-page); }
-.inkbook-theme-guide { stroke: var(--inkbook-guide); }
-.inkbook-theme-stroke { stroke: var(--inkbook-text); }
-.inkbook-theme-fill { fill: var(--inkbook-text); }
-.inkbook-theme-stroke-fill { stroke: var(--inkbook-text); fill: var(--inkbook-text); }
-[data-inkbook-auto-enabled] .inkbook-theme-stroke { stroke: var(--inkbook-auto-paint, transparent); }
-[data-inkbook-auto-enabled] .inkbook-theme-fill { fill: var(--inkbook-auto-paint, transparent); }
-[data-inkbook-auto-enabled] .inkbook-theme-stroke-fill { stroke: var(--inkbook-auto-paint, transparent); fill: var(--inkbook-auto-paint, transparent); }
-[data-inkbook-live-handoff] { visibility: hidden !important; }
-[data-inkbook-image-contrast] > svg { opacity: var(--inkbook-image-pixels-opacity, 1); }
-.inkbook-image-substrate { opacity: var(--inkbook-image-substrate-opacity, 0); }
+${CANONICAL_PAINT_STYLES}
 .inkbook-text-editor {
   box-sizing: border-box; width: var(--inkbook-text-editor-width, 100%); height: var(--inkbook-text-editor-height, 100%);
   margin: 0; padding: 0; position: relative;

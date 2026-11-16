@@ -50,7 +50,7 @@ function rotatedTable(): Extract<InkElementV1, { kind: "table" }> {
     pivot: { x: 200, y: 150 },
     rotation: 90,
     style: {
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba", value: "#000000FF" },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 4,

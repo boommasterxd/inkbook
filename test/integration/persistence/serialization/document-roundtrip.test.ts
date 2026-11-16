@@ -46,11 +46,11 @@ describe("document codec integration", () => {
           width: 100,
           height: 100,
           style: {
-            outlineColor: { type: "theme-text" },
+            outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
             outlineWidth: 4,
             outlineOpacity: 1,
             outlineStyle: "solid",
-            fillColor: { type: "theme-text" },
+            fillColor: { type: "rgba" as const, value: "#000000FF" as const },
             fillOpacity: 0.25,
           },
         },
@@ -68,6 +68,6 @@ describe("document codec integration", () => {
     expect(encoded.value.svg.indexOf("inkbook-highlights")).toBeLessThan(
       encoded.value.svg.indexOf("inkbook-content"),
     );
-    expect(encoded.value.svg).toContain('class="inkbook-theme-stroke-fill" fill="#222222FF"');
+    expect(encoded.value.svg).toContain(' fill="#000000FF"');
   });
 });

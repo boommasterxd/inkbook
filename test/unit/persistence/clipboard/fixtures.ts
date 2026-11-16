@@ -92,7 +92,7 @@ async function loadFont(weight: number, style: "normal" | "italic"): Promise<Fon
 }
 
 const outlineStyle = {
-  outlineColor: { type: "theme-text" as const },
+  outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
   outlineWidth: 4 as const,
   outlineOpacity: 1,
   outlineStyle: "solid" as const,

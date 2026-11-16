@@ -22,7 +22,7 @@ function line(): LineElementV1 {
     startConnection: null,
     startNode: "none",
     style: {
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba", value: "#000000FF" },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 4,

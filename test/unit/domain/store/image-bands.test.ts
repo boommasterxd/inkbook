@@ -73,7 +73,7 @@ describe("image render band", () => {
   });
 
   it("retains image membership and crop through append, removal, and replay", async () => {
-    const first = { ...image(), contrast: "dark" as const };
+    const first = image();
     const store = new ElementStore([highlighter(), rectangle()]);
     const appended = await store.prepareElementAppend([first], scheduler);
     const addition = store.commitPreparedElementMutation(appended.token!);
@@ -116,12 +116,12 @@ describe("image render band", () => {
   });
 });
 
-it("treats contrast overrides as paint-only changes and restores them through history", async () => {
+it("treats image asset replacements as paint-only changes and restores them through history", async () => {
   const first = image();
   const store = new ElementStore([first, { ...rectangle(), locked: true }]);
   const previous = store.get(first.id)!;
   const prepared = await store.prepareElementReplacement(
-    [{ ...first, contrast: "light" }],
+    [{ ...first, assetId: "b".repeat(64) }],
     scheduler,
   );
   const committed = store.commitPreparedElementReplacement(prepared.token!);
@@ -142,5 +142,5 @@ it("treats contrast overrides as paint-only changes and restores them through hi
     scheduler,
   );
   store.commitPreparedElementReplacement(redo.token!);
-  expect(store.get(first.id)?.element).toMatchObject({ contrast: "light" });
+  expect(store.get(first.id)?.element).toMatchObject({ assetId: "b".repeat(64) });
 });

@@ -246,7 +246,7 @@ function strokeRecord(rank: number, points: number[]): SceneElementRecord {
     points,
     rotation: 0,
     style: {
-      color: { type: "theme-text" },
+      color: { type: "rgba" as const, value: "#000000FF" as const },
       opacity: highlight ? 0.4 : 1,
       pressureEnabled: !highlight,
       smoothing: 0.5,

@@ -348,7 +348,6 @@ export class ActiveTextSession {
     const editor = TextEditor.createTextSessionEditor({
       surface,
       element,
-      imageBackdrop: this.#options.model.store.bandSize("image") > 0,
       ...(this.#options.tableCellLabel ? { tableCellLabel: this.#options.tableCellLabel } : {}),
       ...(this.#options.tableUi ? { tableUi: this.#options.tableUi } : {}),
       scheduler: this.#options.scheduler,

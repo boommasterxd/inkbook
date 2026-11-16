@@ -48,9 +48,11 @@ it(`bounds 10,000 competing callbacks by one shared ${profile.refreshRate} Hz bu
   host.frameInterval = profile.frameDurationMs;
   const scheduler = new SharedFrameScheduler(host);
   let admitted = 0;
+  const admissions = new Set<number>();
   for (let index = 0; index < 10_000; index += 1) {
     scheduler.requestFrame(() => {
       admitted += 1;
+      admissions.add(scheduler.admissionId());
       host.time += 0.1;
     });
   }
@@ -58,12 +60,17 @@ it(`bounds 10,000 competing callbacks by one shared ${profile.refreshRate} Hz bu
   expect(host.pendingTimers).toBe(1);
   const maxPerFrame = Math.ceil(host.budget / 0.1);
   let frames = 0;
+  let previousAdmission = scheduler.admissionId();
   while (admitted < 10_000) {
     const before = admitted;
+    admissions.clear();
     host.frame();
     frames += 1;
     expect(admitted - before).toBeGreaterThan(0);
     expect(admitted - before).toBeLessThanOrEqual(maxPerFrame);
+    expect(admissions).toEqual(new Set([scheduler.admissionId()]));
+    expect(scheduler.admissionId()).toBeGreaterThan(previousAdmission);
+    previousAdmission = scheduler.admissionId();
     expect(host.pendingFrames).toBeLessThanOrEqual(1);
     expect(host.pendingTimers).toBeLessThanOrEqual(2);
     host.timer(0);

@@ -21,7 +21,7 @@ export const STROKE: StrokeElementV1 = {
   points: [10, 10, 0.5, 20, 20, 1],
   rotation: 0,
   style: {
-    color: { type: "theme-text" },
+    color: { type: "rgba" as const, value: "#000000FF" as const },
     opacity: 1,
     pressureEnabled: false,
     smoothing: 0.5,
@@ -63,7 +63,7 @@ export function rectangle(x = 100): BoxShapeElementV1 {
     style: {
       fillColor: null,
       fillOpacity: 0,
-      outlineColor: { type: "theme-text" },
+      outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
       outlineOpacity: 1,
       outlineStyle: "solid",
       outlineWidth: 2,

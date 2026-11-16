@@ -29,7 +29,6 @@ export interface TextFieldEditorOptions {
   readonly container: HTMLElement;
   readonly surfaceCoordinates?: TextEditingCoordinates;
   readonly element: TextElementV2;
-  readonly imageBackdrop?: boolean;
   readonly scheduler: WorkScheduler;
   readonly renderMath?: (
     latex: string,

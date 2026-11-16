@@ -296,7 +296,6 @@ export interface ImageElementV3 extends ElementBaseV1 {
   height: number;
   assetId: string;
   crop: ImageCropV3;
-  contrast?: "light" | "dark";
 }
 
 export type InkElementV1 =

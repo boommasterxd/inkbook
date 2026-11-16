@@ -90,6 +90,29 @@ describe("active editor keyboard DOM boundary", () => {
 });
 
 describe("active editor keyboard state and clipboard boundary", () => {
+  it("retains the published selection when Select All repeats and publishes membership changes", () => {
+    const harness = createHarness();
+    try {
+      harness.input.focus();
+      expect(harness.key("a", { ctrlKey: true }).defaultPrevented).toBe(true);
+      const published = harness.renderer.setSelectedElements.mock.lastCall?.[0];
+      expect(published?.size).toBe(1);
+      harness.renderer.setSelectedElements.mockClear();
+
+      expect(harness.key("a", { ctrlKey: true }).defaultPrevented).toBe(true);
+      expect(harness.key("A", { metaKey: true }).defaultPrevented).toBe(true);
+      expect(harness.renderer.setSelectedElements).not.toHaveBeenCalled();
+
+      expect(harness.key("Escape").defaultPrevented).toBe(true);
+      expect(harness.renderer.setSelectedElements.mock.lastCall?.[0]).toEqual(new Set());
+      expect(harness.key("a", { ctrlKey: true }).defaultPrevented).toBe(true);
+      expect(harness.renderer.setSelectedElements.mock.lastCall?.[0]).toEqual(published);
+      expect(harness.renderer.setSelectedElements).toHaveBeenCalledTimes(2);
+    } finally {
+      harness.dispose();
+    }
+  });
+
   it("consumes Escape only while it closes the highest-priority active state", () => {
     const harness = createHarness();
     const trigger = createButton();

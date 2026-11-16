@@ -16,7 +16,7 @@ import {
 import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 
 export const outlineStyle: OutlineStyleV1 = {
-  outlineColor: { type: "theme-text" },
+  outlineColor: { type: "rgba", value: "#000000FF" },
   outlineWidth: 2,
   outlineOpacity: 1,
   outlineStyle: "solid",
@@ -177,7 +177,7 @@ export function textElement(index = 8): TextElementV2 {
     style: {
       fontFamily: "sans-serif",
       fontSize: 16.5,
-      color: { type: "theme-text" },
+      color: { type: "rgba", value: "#000000FF" },
       opacity: 1,
       bold: false,
       italic: false,
