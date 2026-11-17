@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,8 @@ const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const directories = [];
 const sourcePaths = [
   "scripts/verify-package.mjs",
+  "scripts/embedded-package-modules.mjs",
+  "src/persistence/worker/runtime/embedded-source.ts",
   "LICENSE",
   "manifest.json",
   "package.json",
@@ -35,7 +37,10 @@ const sources = Object.fromEntries(
   ),
 );
 const license = sources["LICENSE"].trim();
-const runtime = 'void "inkbook-plugin-bootstrap";import("data:text/javascript,");';
+// Encodes activateInkbookPlugin and its nested, dependency-free createPortableMathRenderer module.
+const encodedRuntime =
+  "<Ah!!!!!9-SOdck#m2<Rsm:XItCE68b%o<o;Kk/Ag?&um6_{(m_82<jYD7eFfZyc@<LNrR*[SqlVY9#d8>kS|3%%wavH/}TU<H<uZjx8Ol-@/7Xsf@PAe;No0J~e;HE^2YNLkkwi[5fE3._UrDUP+21]3dVO2a,Xv=r)}BmRG&;DGYS&s;db)O)r>]n:!!!!";
+const runtime = `void "inkbook-plugin-bootstrap";const payload = ${JSON.stringify(encodedRuntime)};import("data:text/javascript,");`;
 const main = `/*!\n${license}\n*/\n${runtime}`;
 
 afterEach(async () => {
@@ -54,6 +59,11 @@ async function verify(overrides = {}) {
     "dist/styles.css": ".inkbook-root {}",
     ...overrides,
   });
+  await symlink(
+    path.join(projectRoot, "node_modules/typescript"),
+    path.join(root, "node_modules/typescript"),
+    "dir",
+  );
   return execute(process.execPath, ["scripts/verify-package.mjs"], {
     cwd: root,
     encoding: "utf8",
