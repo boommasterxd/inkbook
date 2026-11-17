@@ -1,0 +1,79 @@
+.inkbook-image-dialog-container[data-inkbook-modal-platform="phone"] .inkbook-phone-image-review {
+  block-size: var(--inkbook-image-review-height, var(--inkbook-adaptive-panel-maximum-height));
+  inline-size: auto;
+  max-block-size: var(--inkbook-adaptive-panel-maximum-height);
+}
+
+.inkbook-phone-image-review[data-review="single-page"] {
+  --inkbook-image-review-flex-basis: auto;
+}
+
+.inkbook-phone-image-review
+  :is(
+    .inkbook-adaptive-panel-layout-host,
+    .inkbook-adaptive-panel-motion-surface,
+    .inkbook-adaptive-panel-layout-content,
+    .inkbook-adaptive-panel-scroll,
+    .inkbook-adaptive-panel-content
+  ) {
+  display: flex;
+  flex: 1 1 var(--inkbook-image-review-flex-basis, 0px);
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+.inkbook-phone-image-review .inkbook-adaptive-panel-drag-region {
+  flex: none;
+}
+
+.inkbook-image-dialog-container .inkbook-phone-image-review .inkbook-adaptive-panel-scroll {
+  overflow: hidden;
+}
+
+.inkbook-phone-image-review .inkbook-image-import-review,
+.inkbook-phone-image-review .inkbook-image-import-controls {
+  gap: var(--size-4-3);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.inkbook-phone-image-review .inkbook-image-import-pdf .inkbook-image-field {
+  align-items: center;
+  column-gap: var(--size-4-2);
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 5fr);
+}
+
+.inkbook-phone-image-review .inkbook-image-import-stage {
+  block-size: clamp(144px, 20dvh, 200px);
+}
+
+.inkbook-phone-image-review .inkbook-image-import-thumbnails-disclosure {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-normal);
+  font: inherit;
+  padding-inline: 0;
+  text-align: start;
+}
+
+.inkbook-phone-image-review .inkbook-image-import-thumbnails-disclosure:focus-visible {
+  outline-offset: -2px;
+}
+
+.inkbook-phone-image-review .inkbook-image-import-thumbnails-navigation {
+  margin-inline: auto;
+}
+
+.inkbook-phone-image-review .inkbook-image-import-footer .inkbook-dialog-actions {
+  flex-direction: row;
+}
+
+.inkbook-phone-image-review .inkbook-dialog-actions > button:first-child {
+  flex: 1 0 auto;
+  order: 0;
+}
+
+.inkbook-phone-image-review .inkbook-dialog-actions > .mod-cta {
+  flex: 2 0 auto;
+}

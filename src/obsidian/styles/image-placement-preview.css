@@ -1,0 +1,93 @@
+.inkbook-image-import-review,
+.inkbook-image-import-controls {
+  align-content: start;
+  display: grid;
+  gap: var(--size-4-4);
+  min-inline-size: 0;
+}
+
+.inkbook-image-import-review:where(:has(.inkbook-image-import-figure[hidden])):where(
+    :not(:has(.inkbook-image-import-resolution:not([hidden])))
+  ) {
+  display: none;
+}
+
+@container (min-width: 620px) {
+  .inkbook-image-import-review {
+    align-items: start;
+    gap: var(--size-4-6);
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+
+  .inkbook-image-import-surface[data-review="pdf-pages"] .inkbook-image-import-review {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.inkbook-placement-paper {
+  aspect-ratio: var(--inkbook-paper-ratio);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: var(--shadow-s);
+  box-sizing: border-box;
+  container-type: inline-size;
+  inline-size: min(100cqw, calc(100cqh * var(--inkbook-paper-ratio)));
+  overflow: hidden;
+  position: relative;
+}
+
+.inkbook-placement-writing {
+  --inkbook-sheet-rule: var(--background-modifier-border);
+
+  align-items: center;
+  background-size: var(--inkbook-preview-grid) var(--inkbook-preview-grid);
+  display: flex;
+  inset-block: 0;
+  position: absolute;
+}
+
+.inkbook-placement-paper[data-pattern="dots"] > .inkbook-placement-writing {
+  background-image: radial-gradient(circle, var(--inkbook-sheet-rule) 0.7px, transparent 1px);
+}
+
+.inkbook-placement-paper[data-pattern="lines"] > .inkbook-placement-writing,
+.inkbook-placement-paper[data-pattern="squares"] > .inkbook-placement-writing {
+  --inkbook-rule-y: linear-gradient(to bottom, var(--inkbook-sheet-rule) 1px, transparent 1px);
+
+  background-image: var(--inkbook-rule-y);
+}
+
+.inkbook-placement-paper[data-pattern="squares"] > .inkbook-placement-writing {
+  background-image:
+    var(--inkbook-rule-y), linear-gradient(to right, var(--inkbook-sheet-rule) 1px, transparent 1px);
+}
+
+.inkbook-placement-writing > .inkbook-image-import-preview {
+  block-size: auto;
+  display: block;
+  inline-size: 100%;
+  max-block-size: none;
+  transform-origin: left center;
+}
+
+.inkbook-image-import-stage {
+  position: relative;
+}
+
+.inkbook-placement-lock {
+  align-items: center;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  color: var(--text-normal);
+  display: flex;
+  inset-block-start: var(--size-4-2);
+  inset-inline-end: var(--size-4-2);
+  padding: var(--size-4-1);
+  position: absolute;
+}
+
+.inkbook-placement-lock svg {
+  block-size: var(--icon-s);
+  inline-size: var(--icon-s);
+}

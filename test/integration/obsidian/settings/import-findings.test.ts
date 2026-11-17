@@ -10,6 +10,43 @@ import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 beforeEach(installObsidianDomHelpers);
 afterEach(() => document.body.replaceChildren());
 
+it("opens affected paths together and pages files independently of notes", () => {
+  const container = document.body.createDiv();
+  const disposers: Array<() => void> = [];
+  const sources = Array.from({ length: 26 }, (_, index) => `file-${index}.svg`);
+  const notes = Array.from({ length: 26 }, (_, index) => `note-${index}.md`);
+  renderPreviewFindings(
+    container,
+    [{ category: "difference", message: "Brush difference", sources, notes }],
+    {
+      localization: new Localization(),
+      mutate: (update) => update(),
+      readMotion: () => "reduced",
+      own: (dispose) => disposers.push(dispose),
+    },
+  );
+  try {
+    container.querySelector("button")!.click();
+    expect(container.textContent).not.toContain(sources[0]);
+    const origins = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("26 handwriting files · 26 notes"),
+    );
+    expect(origins).toBeDefined();
+    origins!.click();
+    expect(container.textContent).toContain(sources[0]);
+    expect(container.textContent).toContain(notes[0]);
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Next page: Affected handwriting files"]')!
+      .click();
+    expect(container.textContent).toContain(sources[25]);
+    expect(container.textContent).not.toContain(sources[0]);
+    expect(container.textContent).toContain(notes[0]);
+    expect(container.textContent).not.toContain(notes[25]);
+  } finally {
+    for (const dispose of disposers) dispose();
+  }
+});
+
 it("releases nested finding subscriptions on every page turn and all remaining ownership on disposal", () => {
   const container = document.body.createDiv();
   const subscriptions = new Set<() => void>();
@@ -48,8 +85,8 @@ it("releases nested finding subscriptions on every page turn and all remaining o
     const pageSubscriptions = subscriptions.size;
     expect(pageSubscriptions).toBeGreaterThan(rootSubscriptions.size);
     const repeatedOpen = (): void => {
-      button("Affected notes (4)").click();
-      button("Affected notes (4)").click();
+      button("4 notes").click();
+      button("4 notes").click();
       button("Warnings (50)").click();
       button("Warnings (50)").click();
       expect(subscriptions.size).toBe(pageSubscriptions);

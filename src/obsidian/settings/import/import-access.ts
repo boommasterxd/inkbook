@@ -8,6 +8,7 @@ export interface InkImportSettingsAccess {
     ownerWindow: Window | null,
     journal?: InkImportJournal,
     signal?: AbortSignal,
+    closeOwnerOnNoteOpen?: () => void,
   ) => Promise<void>;
   readonly history: (
     ownerWindow: Window | null,
@@ -16,7 +17,10 @@ export interface InkImportSettingsAccess {
   readonly subscribe: (listener: () => void) => () => void;
 }
 
-interface InkImportAccessOptions extends Omit<InkImportDialogOptions, "service" | "signal"> {
+interface InkImportAccessOptions extends Omit<
+  InkImportDialogOptions,
+  "service" | "signal" | "closeOwnerOnNoteOpen"
+> {
   readonly app: App;
   readonly signal: AbortSignal;
   readonly createService: (ownerWindow: Window) => InkImportDialogOptions["service"];
@@ -40,6 +44,7 @@ export class InkImportAccess implements InkImportSettingsAccess {
     ownerWindow: Window | null,
     journal?: InkImportJournal,
     signal?: AbortSignal,
+    closeOwnerOnNoteOpen?: () => void,
   ): Promise<void> {
     if (
       ownerWindow === null ||
@@ -58,6 +63,7 @@ export class InkImportAccess implements InkImportSettingsAccess {
         service: this.#options.createService(ownerWindow),
         localization: this.#options.localization,
         signal: this.#options.signal,
+        closeOwnerOnNoteOpen,
         readMotion: this.#options.readMotion,
         workScheduler: this.#options.workScheduler,
         ...(this.#options.observeMotion === undefined

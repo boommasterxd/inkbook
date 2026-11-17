@@ -2,7 +2,7 @@ import type { Localization } from "../../../domain/localization";
 
 export function quantity(
   count: number,
-  noun: "handwriting" | "affectedNote" | "file" | "note" | "conflict" | "original",
+  noun: "handwriting" | "affectedNote" | "copy" | "file" | "note" | "conflict" | "original",
   localization: Localization,
 ): string {
   return localization.t(

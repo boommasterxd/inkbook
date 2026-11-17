@@ -5,7 +5,7 @@
   min-inline-size: 0;
 }
 
-.inkbook-font-import :is(h3, h4, p) {
+.inkbook-font-import :is(h3, p) {
   margin: 0;
 }
 
@@ -13,34 +13,8 @@
   font-size: var(--font-ui-large);
 }
 
-.inkbook-font-import :is(h4, .inkbook-font-import-name) {
+.inkbook-font-import-name {
   font-size: var(--font-ui-medium);
-}
-
-.inkbook-font-import-progress {
-  display: flex;
-  gap: var(--size-4-2);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.inkbook-font-import-progress > li {
-  align-items: center;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 50%;
-  block-size: var(--size-4-8, 32px);
-  color: var(--text-muted);
-  display: flex;
-  justify-content: center;
-  inline-size: var(--size-4-8, 32px);
-  flex: 0 0 var(--size-4-8, 32px);
-}
-
-.inkbook-font-import-progress > [aria-current="step"] {
-  border-color: var(--text-accent);
-  color: var(--text-normal);
-  font-weight: var(--font-semibold);
 }
 
 .inkbook-font-import-field,
@@ -67,6 +41,11 @@
   font-size: var(--font-ui-smaller);
 }
 
+.inkbook-font-import-issue {
+  color: var(--inkbook-tone-danger, var(--text-error));
+  font-size: var(--font-ui-smaller);
+}
+
 .inkbook-font-import-files {
   list-style: none;
   margin: 0;
@@ -90,26 +69,14 @@
 .inkbook-font-import-action {
   align-items: center;
   display: inline-flex;
-  gap: var(--size-4-1);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-m);
-  box-shadow: none;
-  color: var(--text-normal);
-  min-block-size: 44px;
+  gap: var(--size-4-2);
+  justify-content: center;
   min-inline-size: 0;
-  padding: var(--size-4-2);
+  padding: var(--size-4-2) var(--size-4-4);
+  transition: none;
 }
 
-.inkbook-font-import-action > span {
-  font-size: var(--font-ui-small);
-}
-
-.inkbook-font-import-action:disabled {
-  color: var(--text-muted);
-}
-
-.inkbook-font-import-files > li > button {
+.inkbook-font-import-files > li > .inkbook-dialog-actions {
   flex: 0 0 44px;
 }
 
@@ -148,26 +115,126 @@
   outline-offset: -2px;
 }
 
-.inkbook-font-import-navigation {
-  align-items: center;
+.inkbook-font-import-footer {
+  background: var(--modal-background);
+  flex: 0 0 auto;
+  min-inline-size: 0;
+}
+
+.inkbook-font-import-footer:empty {
+  display: none;
+}
+
+.inkbook-font-import-footer-content {
   border-block-start: 1px solid var(--background-modifier-border);
-  display: flex;
-  gap: var(--size-4-3);
-  justify-content: space-between;
+}
+
+.inkbook-dialog-actions.inkbook-font-import-navigation {
+  align-items: center;
+  flex-direction: row;
+  margin-block-start: var(--size-4-2);
+  padding-block: var(--size-4-3);
+}
+
+.inkbook-font-import-footer
+  :is(.inkbook-font-import-navigation, .inkbook-font-import-review-notice) {
+  margin-block-start: 0;
+  padding-inline: var(--inkbook-font-import-footer-inset, var(--size-4-5));
+}
+
+.inkbook-font-import-review-notice {
+  align-items: center;
+  display: grid;
+  gap: var(--size-4-2);
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.inkbook-font-import-review-notice:has(> p:not(:empty)) {
   padding-block-start: var(--size-4-2);
 }
 
-.inkbook-font-import-preview {
-  display: flex;
-  flex-direction: column;
-  gap: var(--size-4-2);
+.inkbook-font-import-review-notice > p {
+  margin: 0;
 }
 
-.inkbook-font-import-preview > .inkbook-font-sample {
+.inkbook-font-import-review-notice > button {
+  block-size: auto;
+  min-block-size: 44px;
+  padding-inline: var(--size-4-2);
+  white-space: normal;
+}
+
+.inkbook-font-import-review-notice > [hidden] {
+  display: none;
+}
+
+.inkbook-font-import-specimen {
   background: var(--setting-items-background, var(--background-secondary));
   border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
-  margin: 0;
+  border-radius: var(--radius-l);
+  display: grid;
+  grid-template-areas: "specimen";
+  min-inline-size: 0;
   overflow-wrap: anywhere;
-  padding: var(--size-4-3);
+  padding: var(--size-4-4);
+}
+
+.inkbook-font-import-specimen > * {
+  grid-area: specimen;
+  min-inline-size: 0;
+}
+
+.inkbook-font-import-specimen-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  place-self: center;
+  text-align: center;
+}
+
+.inkbook-font-import-specimen-sample {
+  font-size: var(--font-ui-medium);
+  font-synthesis: none;
+  line-height: 1.45;
+}
+
+/* Keep the two text lines in the layout while the next face loads. */
+.inkbook-font-import-specimen > .inkbook-font-import-specimen-sample[hidden] {
+  display: block;
+  visibility: hidden;
+}
+
+.inkbook-font-import-glyphs {
+  font-size: clamp(2em, 6vw, 2.75em);
+  line-height: 1.2;
+  margin-block-end: var(--size-4-2);
+}
+
+.inkbook-font-library-container[data-inkbook-modal-platform="phone"] .inkbook-font-import-footer {
+  padding-block-end: max(
+    0px,
+    calc(var(--safe-area-inset-bottom, 0px) - var(--keyboard-height, 0px))
+  );
+}
+
+.inkbook-font-library-container[data-inkbook-modal-platform="phone"]
+  .inkbook-font-library-dialog:has(.inkbook-font-import-footer-content)
+  .inkbook-font-library-content {
+  padding-block-end: var(--size-4-3);
+}
+
+@media (width <= 600px) {
+  .inkbook-font-import-footer {
+    --inkbook-font-import-footer-inset: var(--size-4-3);
+  }
+}
+
+@media (width <= 480px) {
+  .inkbook-dialog-actions.inkbook-font-import-navigation > button:first-child {
+    align-self: center;
+    order: 0;
+  }
+
+  .inkbook-dialog-actions.inkbook-font-import-navigation > .mod-cta {
+    flex: 1;
+  }
 }

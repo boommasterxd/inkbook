@@ -196,7 +196,7 @@ function createRuntime(
     readonly settingsModal: InkbookSettingsModalController;
     readonly settingTab: {
       readonly fontLibrary?: TextFontLibraryPort | undefined;
-      readonly openFontManager?: ((trigger: HTMLButtonElement) => void) | undefined;
+      readonly openFontManager?: ((trigger: HTMLElement) => void) | undefined;
     };
   },
 ): ObsidianWorkspaceRuntime {

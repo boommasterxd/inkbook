@@ -10,6 +10,7 @@ export interface FontLibrarySettingsOptions extends NativeControlFeedbackOptions
   readonly changed: () => void;
   readonly confirmRemove: (face: LibraryFontFace, signal: AbortSignal) => Promise<boolean>;
   readonly mutateDialogLayout?: (update: () => void) => void;
+  readonly importFooter?: HTMLElement;
 }
 
 /** Keeps nested font controls inside their dialog's single intrinsic-height transaction. */

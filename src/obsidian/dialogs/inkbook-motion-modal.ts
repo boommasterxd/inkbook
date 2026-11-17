@@ -1,4 +1,5 @@
 import { Platform, setIcon, type App } from "obsidian";
+import type { Localization } from "../../domain/localization";
 import { observeEffectiveMotion, type ObserveMotion } from "../runtime/effective-motion";
 import { animateOwnedElements } from "../runtime/element-motion";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
@@ -38,17 +39,22 @@ export class InkbookMotionModal {
     readMotion: () => MotionPreference = () => "system",
     workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
     observeMotion?: ObserveMotion,
+    localization?: Localization,
   ) {
     this.app = app;
     this.#readMotion = readMotion;
     this.#workScheduler = workScheduler;
     this.#observeMotion = observeMotion;
     if (!Platform.isPhone) {
-      this.#native = new NativeDialogShell(app, {
-        open: () => this.onOpen(),
-        close: () => this.close(),
-        closed: () => this.onClose(),
-      });
+      this.#native = new NativeDialogShell(
+        app,
+        {
+          open: () => this.onOpen(),
+          close: () => this.close(),
+          closed: () => this.onClose(),
+        },
+        localization,
+      );
       this.containerEl = this.#native.containerEl;
       this.modalEl = this.#native.modalEl;
       this.titleEl = this.#native.titleEl;

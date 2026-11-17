@@ -19,6 +19,7 @@ export function renderImportResult(
   result: InkImportResult,
   context: ImportViewContext,
   operation: ImportOperation = "import",
+  openNote?: (path: string) => void,
 ): void {
   const presentation = resultPresentation(result, operation, context);
   const hero = container.createDiv({ cls: "inkbook-import-result" });
@@ -32,7 +33,7 @@ export function renderImportResult(
   const next = container.createEl("section", { cls: "inkbook-import-next-step" });
   next.createEl("h4", { text: presentation.nextTitle });
   next.createEl("p", { text: presentation.next });
-  renderResultNotes(next, result, context, operation);
+  if (operation === "import") renderResultNotes(next, result, context, openNote);
   const recovery = container.createDiv({ cls: "inkbook-import-result-recovery" });
   renderImportIcon(recovery, "undo-2", "inkbook-import-file-icon");
   recovery.createEl("p", { text: presentation.recovery });
@@ -66,9 +67,8 @@ function renderResultNotes(
   container: HTMLElement,
   result: InkImportResult,
   context: ImportViewContext,
-  operation: ImportOperation,
+  openNote: ((path: string) => void) | undefined,
 ): void {
-  if (operation !== "import") return;
   const notes = result.journal.notes.filter((note) => note.status === "applied");
   renderImportFindings(
     container,
@@ -77,7 +77,21 @@ function renderResultNotes(
       label: context.localization.t("import.notesToReview"),
       count: notes.length,
       icon: "files",
-      entry: (row, index) => row.createSpan({ text: notes[index]!.path }),
+      entry: (row, index, pageContext) => {
+        const { path } = notes[index]!;
+        row.classList.add("inkbook-import-result-note");
+        row.createSpan({ text: path });
+        if (openNote === undefined) return;
+        const button = row.createEl("button", {
+          cls: "inkbook-import-open-note",
+          text: context.localization.t("import.openNote"),
+        });
+        button.type = "button";
+        button.setAttribute("aria-label", context.localization.t("import.openNoteAria", { path }));
+        const open = (): void => openNote(path);
+        button.addEventListener("click", open);
+        pageContext.own(() => button.removeEventListener("click", open));
+      },
     },
     context,
   );

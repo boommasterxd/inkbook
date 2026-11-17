@@ -1,6 +1,6 @@
 import type { Localization, MessageKey } from "../../../domain/localization";
 import { bindElementLanguage } from "../../../rendering/localization/element-language";
-import { Setting, type App } from "obsidian";
+import { Setting, type App, type WorkspaceLeaf } from "obsidian";
 
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { MotionPreference } from "../../../rendering/motion/transitions";
@@ -15,6 +15,7 @@ import {
 } from "../../runtime/effective-motion";
 import {
   renderImportEntry,
+  renderImportImpact,
   renderImportJournal,
   renderImportPreview,
   renderImportResult,
@@ -24,6 +25,7 @@ import {
 import { renderImportStatus, type PendingImportOperation } from "./import-status";
 import { renderImportFailure } from "./import-failure";
 import type { ImportViewState } from "./import-findings";
+import { finishImportNoteHandoff, openImportNote } from "./open-import-note";
 
 export interface InkImportDialogOptions {
   readonly localization: Localization;
@@ -37,6 +39,7 @@ export interface InkImportDialogOptions {
   readonly signal?: AbortSignal | undefined;
   readonly initialJournal?: InkImportJournal | undefined;
   readonly onClose?: () => void;
+  readonly closeOwnerOnNoteOpen?: (() => void) | undefined;
 }
 
 /** One settings-owned import surface; all writes go through the journaled service. */
@@ -57,9 +60,12 @@ export class InkImportDialog extends InkbookModal {
   #viewState: ImportViewState = { findings: new Map() };
   #releaseLocalization: (() => void) | undefined;
   #statusKey: MessageKey | undefined;
+  #openingNote = false;
+  #openedNote: WorkspaceLeaf | undefined;
 
   public constructor(app: App, options: InkImportDialogOptions) {
-    super(app, options.readMotion, options.workScheduler, options.observeMotion);
+    const { readMotion, workScheduler, observeMotion, localization } = options;
+    super(app, readMotion, workScheduler, observeMotion, localization);
     this.#options = options;
   }
 
@@ -87,11 +93,12 @@ export class InkImportDialog extends InkbookModal {
     this.containerEl.classList.add("inkbook-import-container");
     this.modalEl.classList.remove("inkbook-action-dialog");
     this.modalEl.classList.add("inkbook-settings-modal", "inkbook-import-dialog");
-    this.titleEl.classList.add("inkbook-import-title");
     this.contentEl.classList.add("inkbook-import-content");
     const active = this.contentEl.ownerDocument.activeElement;
     if (active !== null && "focus" in active) this.#returnFocus = active as HTMLElement;
-    this.#status = this.contentEl.createDiv({ cls: "inkbook-menu-visually-hidden" });
+    this.#status = this.contentEl.createDiv({
+      cls: "inkbook-import-status-message inkbook-menu-visually-hidden",
+    });
     this.#status.setAttribute("role", "status");
     this.#status.setAttribute("aria-live", "polite");
     this.#status.setAttribute("aria-atomic", "true");
@@ -141,15 +148,22 @@ export class InkImportDialog extends InkbookModal {
     this.#renderView = undefined;
     this.#viewState = { findings: new Map() };
     super.onClose();
+    if (this.#openedNote !== undefined) {
+      void finishImportNoteHandoff(this.app.workspace, this.#openedNote, this.#options).then(
+        this.#notifyClosed,
+        this.#notifyClosed,
+      );
+      return;
+    }
     if (this.#returnFocus?.isConnected === true) this.#returnFocus.focus();
     this.#notifyClosed();
   }
 
-  #notifyClosed(): void {
+  #notifyClosed = (): void => {
     if (!this.closed || this.busy || this.#closedNotified) return;
     this.#closedNotified = true;
     this.#options.onClose?.();
-  }
+  };
 
   #ownerClosed = (): void => this.closeImmediately();
 
@@ -189,7 +203,7 @@ export class InkImportDialog extends InkbookModal {
     this.#status.textContent = "";
     this.#view(() => {
       renderImportEntry(this.#body, this.#context());
-      this.#button(this.#options.localization.t("import.close"), () => this.close());
+      this.#button(this.#options.localization.t("host.dialog.close"), () => this.close());
       this.#button(
         this.#options.localization.t("import.scan"),
         () => this.#scan(),
@@ -204,35 +218,39 @@ export class InkImportDialog extends InkbookModal {
       "import.scanPending",
       (signal) => this.#options.service.scan(signal),
       (preview) => {
-        this.#view(() => {
-          const selectedPreview = renderImportPreview(
-            this.#body,
-            preview,
-            this.#context(),
-            (count) => {
-              this.#actions.querySelector<HTMLButtonElement>(".mod-cta")!.disabled = count === 0;
-            },
-          );
-          this.#button(this.#options.localization.t("import.back"), () => this.#entry());
-          if (preview.sources.length > 0)
-            this.#button(
-              this.#options.localization.t("import.import"),
-              () => {
-                const selected = selectedPreview();
-                if (selected.sources.length > 0) this.#apply(selected);
-              },
-              true,
-            ).disabled = (this.#viewState.selection?.size ?? preview.sources.length) === 0;
-          else
-            this.#button(
-              this.#options.localization.t("import.scanAgain"),
-              () => this.#scan(),
-              true,
-            );
-        });
+        this.#view(() => this.#review(preview));
         this.#announce(
           preview.sources.length === 0 ? "import.scanEmptyStatus" : "import.scanComplete",
         );
+      },
+    );
+  }
+
+  #review(preview: InkImportPreview): void {
+    const localization = this.#options.localization;
+    if (preview.sources.length === 0) {
+      renderImportPreview(this.#body, preview, this.#context());
+      this.#button(localization.t("import.back"), () => this.#entry());
+      this.#button(localization.t("import.scanAgain"), () => this.#scan(), true);
+      return;
+    }
+    const updateImpact = renderImportImpact(this.#actions, localization);
+    this.#button(localization.t("import.back"), () => this.#entry());
+    const button = this.#button(
+      localization.t("import.import"),
+      () => {
+        const selected = selectedPreview();
+        if (selected.sources.length > 0) this.#apply(selected);
+      },
+      true,
+    );
+    const selectedPreview = renderImportPreview(
+      this.#body,
+      preview,
+      this.#context(),
+      (count, notes) => {
+        updateImpact(count, notes);
+        button.disabled = count === 0;
       },
     );
   }
@@ -263,7 +281,7 @@ export class InkImportDialog extends InkbookModal {
           () => this.#confirm(journal, "cleanup"),
         );
       }
-      this.#button(this.#options.localization.t("import.close"), () => this.close());
+      this.#button(this.#options.localization.t("host.dialog.close"), () => this.close());
     });
     this.#focusHeading();
   }
@@ -311,7 +329,9 @@ export class InkImportDialog extends InkbookModal {
 
   #result(result: InkImportResult, operation: ImportOperation = "import"): void {
     this.#view(() => {
-      renderImportResult(this.#body, result, this.#context(), operation);
+      renderImportResult(this.#body, result, this.#context(), operation, (path) => {
+        void this.#openNote(path);
+      });
       this.#button(this.#options.localization.t("import.view"), () =>
         this.#journal(result.journal),
       );
@@ -320,9 +340,32 @@ export class InkImportDialog extends InkbookModal {
     this.#announce(result.cancelled ? "import.stoppedStatus" : "import.finishedStatus");
   }
 
+  async #openNote(path: string): Promise<void> {
+    const owner = this.contentEl.ownerDocument.defaultView;
+    if (owner === null || this.closed || this.closing || this.#openingNote) return;
+    this.#openingNote = true;
+    const view = this.#renderView;
+    this.#announce("import.openNotePending");
+    try {
+      const leaf = await openImportNote(this.app, path, owner);
+      if (this.#renderView !== view || this.closed || this.closing) return;
+      if (leaf === undefined) this.#announce("import.openNoteFailure");
+      else {
+        this.#openedNote = leaf;
+        this.close();
+      }
+    } catch {
+      if (this.#renderView === view && !this.closed && !this.closing)
+        this.#announce("import.openNoteFailure");
+    } finally {
+      this.#openingNote = false;
+    }
+  }
+
   #announce(key: MessageKey): void {
     this.#statusKey = key;
     this.#status.textContent = this.#options.localization.t(key);
+    this.#status.classList.toggle("inkbook-menu-visually-hidden", key !== "import.openNoteFailure");
   }
 
   #refreshLanguage = (): void => {
@@ -345,7 +388,17 @@ export class InkImportDialog extends InkbookModal {
 
   #view(render: () => void, preserve = false): void {
     this.#renderView = render;
-    if (!preserve) this.#viewState = { findings: new Map() };
+    if (!preserve) {
+      this.#viewState = { findings: new Map() };
+      this.#status.classList.add("inkbook-menu-visually-hidden");
+      if (
+        this.#statusKey === "import.openNotePending" ||
+        this.#statusKey === "import.openNoteFailure"
+      ) {
+        this.#statusKey = undefined;
+        this.#status.textContent = "";
+      }
+    }
     this.#finishViewMotion();
     this.#mutatePage(() => {
       this.#disposeView();
@@ -373,7 +426,7 @@ export class InkImportDialog extends InkbookModal {
     const target = this.#body.querySelector<HTMLElement>("h3") ?? this.#status;
     target.tabIndex = -1;
     target.focus({ preventScroll: true });
-    target.scrollIntoView({ block: "nearest", behavior: "instant" });
+    this.#body.scrollTop = 0;
   }
 
   #pending(
@@ -440,7 +493,7 @@ export class InkImportDialog extends InkbookModal {
         this.#options.localization,
       );
       this.#button(this.#options.localization.t("import.back"), () => this.#entry());
-      this.#button(this.#options.localization.t("import.close"), () => this.close(), true);
+      this.#button(this.#options.localization.t("host.dialog.close"), () => this.close(), true);
     });
   }
 }

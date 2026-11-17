@@ -7,6 +7,10 @@ import {
 } from "../../../src/obsidian/embeds/active-editor/image-session";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-session/document-model-port";
+import type {
+  EditorChromeOpenings,
+  ImportedImageBatch,
+} from "../../../src/obsidian/embeds/active-scene/editor-chrome-openings";
 import type { PreparedImageResources } from "../../../src/obsidian/embeds/document-session/session-image-resources";
 import { elementMutationPorts, elementReplacementPorts } from "./element-mutation-ports";
 import { imageElement, imageResource } from "../domain/images";
@@ -18,6 +22,14 @@ export function deferredImageSession<T>() {
     resolve = done;
   });
   return { promise, resolve };
+}
+
+export function submitImageBatch(
+  batch: ImportedImageBatch,
+): NonNullable<EditorChromeOpenings["onImportImages"]> {
+  return async (signal, _window, request) => {
+    await request.submit(batch, signal);
+  };
 }
 
 export const sessionImageResource: ImageResourceV3 = {
@@ -76,7 +88,7 @@ export function imageSessionFixture(
       selection = next;
     },
     visibleCenter: () => ({ x: 2000, y: 300 }),
-    onImportImages: async () => ({
+    onImportImages: submitImageBatch({
       resources: [
         sessionImageResource,
         { ...sessionImageResource, id: "b".repeat(64), width: 100, height: 100 },

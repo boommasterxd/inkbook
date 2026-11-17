@@ -15,11 +15,25 @@ import { renderImportIntroduction, renderImportStep } from "./import-journey";
 import { createImportSelection, type ImportSelectionChange } from "./import-selection";
 import { buildImportPreviewFindings, prepareImportPreviewFindings } from "./preview-findings";
 import { createPreviewFindingsView, renderPreviewFindings } from "./import-review-findings";
-import { renderImportExamples } from "./import-examples";
+import { prepareImportExamples, renderImportExamples } from "./import-examples";
 
 export type { ImportViewContext } from "./import-findings";
 
 export { renderImportResult, type ImportOperation } from "./import-result";
+
+export function renderImportImpact(container: HTMLElement, localization: Localization) {
+  const summary = container.createDiv({ cls: "inkbook-import-action-summary" });
+  const impact = summary.createEl("strong");
+  impact.setAttribute("aria-live", "polite");
+  impact.setAttribute("aria-atomic", "true");
+  summary.createSpan({ text: localization.t("import.originalsKept") });
+  return (copies: number, notes: number): void => {
+    impact.textContent = localization.t("import.selectionImpact", {
+      copies: quantity(copies, "copy", localization),
+      notes: quantity(notes, "affectedNote", localization),
+    });
+  };
+}
 
 export function renderImportEntry(container: HTMLElement, context: ImportViewContext): void {
   renderSummary(container, {
@@ -33,8 +47,9 @@ export function renderImportEntry(container: HTMLElement, context: ImportViewCon
       title: context.localization.t("import.entryHelp"),
       description: context.localization.t("import.entryHelpDescription"),
       icon: "info",
+      prepare: prepareImportExamples,
       populate: (content, scope) => {
-        renderImportExamples(content, scope.context);
+        renderImportExamples(content, scope.context, "diagram");
         renderImportIntroduction(content, context.localization);
         renderNotice(content, {
           title: context.localization.t("import.controlTitle"),
@@ -51,7 +66,7 @@ export function renderImportPreview(
   container: HTMLElement,
   preview: InkImportPreview,
   context: ImportViewContext,
-  selectionChanged: (count: number) => void = () => undefined,
+  selectionChanged: (count: number, notes: number) => void = () => undefined,
 ): () => InkImportPreview {
   renderImportStep(container, 2, context.localization);
   if (preview.sources.length === 0) {
@@ -63,29 +78,17 @@ export function renderImportPreview(
     renderPreviewFindings(container, buildImportPreviewFindings(preview), context);
     return () => preview;
   }
-  const summary = renderSummary(container, {
+  renderSummary(container, {
     heading: context.localization.t("import.found", {
       files: quantity(preview.sources.length, "handwriting", context.localization),
     }),
-    summary: "",
   });
   let updateFindings: ((change: ImportSelectionChange) => void) | undefined;
-  const updateSummary = (count: number, notes: number, change: ImportSelectionChange): void => {
-    summary.textContent = context.localization.t("import.selected", {
-      count: context.localization.number(count),
-      total: context.localization.number(preview.sources.length),
-      notes: quantity(notes, "affectedNote", context.localization),
-    });
+  const selection = createImportSelection(preview, context, (count, notes, change) => {
     updateFindings?.(change);
-    selectionChanged(count);
-  };
-  const selection = createImportSelection(preview, context, updateSummary);
-  summary.textContent = context.localization.t("import.selected", {
-    count: context.localization.number(selection.selectedCount),
-    total: context.localization.number(preview.sources.length),
-    notes: quantity(selection.noteCount, "affectedNote", context.localization),
+    selectionChanged(count, notes);
   });
-  summary.setAttribute("aria-live", "polite");
+  selectionChanged(selection.selectedCount, selection.noteCount);
   container.createEl("p", {
     cls: "inkbook-import-guidance",
     text: context.localization.t("import.previewGuidance"),
@@ -113,7 +116,8 @@ export function renderImportPreview(
     selection.selectedPaths,
     selection.sourceNotes,
   );
-  const publishFindings = createPreviewFindingsView(container, context);
+  const gallery = renderImportExamples(container, context);
+  const publishFindings = createPreviewFindingsView(container, context, gallery);
   updateFindings = (change) => {
     if (change.kind === "all") findings.setAllSelected(change.selected);
     else findings.setSelected(change.path, change.selected);
@@ -274,13 +278,14 @@ function renderSummary(
   container: HTMLElement,
   presentation: {
     readonly heading: string;
-    readonly summary: string;
+    readonly summary?: string;
   },
-): HTMLElement {
+): void {
   const block = container.createDiv({ cls: "inkbook-import-summary-block" });
   const copy = block.createDiv({ cls: "inkbook-import-summary-copy" });
   copy.createEl("h3", { text: presentation.heading, cls: "inkbook-import-heading" });
-  return copy.createEl("p", { text: presentation.summary, cls: "inkbook-import-summary" });
+  if (presentation.summary !== undefined)
+    copy.createEl("p", { text: presentation.summary, cls: "inkbook-import-summary" });
 }
 
 function renderNotice(

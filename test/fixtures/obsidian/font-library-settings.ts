@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 import { createEnglishLocalization } from "../../../src/domain/localization";
-import { mountFontLibraryContent } from "../../../src/obsidian/settings/fonts/font-library-settings";
+import { FontLibraryContent } from "../../../src/obsidian/settings/fonts/font-library-settings";
 import type {
   LibraryFontFace,
   VaultFontLibrary,
@@ -44,7 +44,7 @@ export function fontLibrarySettingsFixture(count: number) {
     resource: vi.fn(async () => prepared().resource),
   } as unknown as VaultFontLibrary;
   const section = document.body.createDiv();
-  const dispose = mountFontLibraryContent(section, {
+  const content = new FontLibraryContent(section, {
     localization: createEnglishLocalization(),
     library,
     changed,
@@ -62,7 +62,7 @@ export function fontLibrarySettingsFixture(count: number) {
     renamed,
     changed,
     confirmRemove,
-    dispose,
+    dispose: () => content.dispose(),
   };
 }
 

@@ -76,7 +76,3 @@
   flex-direction: column;
   min-block-size: 0;
 }
-
-.inkbook-image-dialog-container .inkbook-phone-dialog-header {
-  flex-shrink: 0;
-}

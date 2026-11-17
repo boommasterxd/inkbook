@@ -65,6 +65,9 @@ export class InkbookSettingsModalController {
           store: this.#store,
           view,
           lifecycle,
+          closeOwnerOnNoteOpen: () => {
+            if (this.#page === page) navigation.close("immediate");
+          },
         });
         return fragment;
       },
@@ -103,6 +106,7 @@ class InkbookSettingsModal extends InkbookMotionModal {
       () => store.getDeviceSettings().motion,
       (ownerWindow) => settingTab.scheduler(ownerWindow),
       (listener) => store.subscribeDeviceSettings(listener),
+      store.localization,
     );
     this.#onClosed = onClosed;
     this.#settingTab = settingTab;
@@ -127,6 +131,7 @@ class InkbookSettingsModal extends InkbookMotionModal {
       settingTab: this.#settingTab,
       store: this.#store,
       view: this.#view,
+      closeOwnerOnNoteOpen: () => this.closeImmediately(),
     });
   }
 

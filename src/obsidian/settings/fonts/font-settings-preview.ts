@@ -3,23 +3,26 @@ import {
   loadNativeFontPreview,
   type NativeFontPreview,
 } from "../../fonts/native-font-preview";
-import type { LibraryFontFace } from "../../fonts/vault-font-library";
+import type { FontResourceV2 } from "../../../domain/schema/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
-import type { VaultFontLibrary } from "../../fonts/vault-font-library";
 
 /** Retains at most one native font and cancels stale preview publication. */
-export class FontSettingsPreview {
+export class FontSettingsPreview<Face> {
   #native: NativeFontPreview | undefined;
   #generation = 0;
   #disposed = false;
-  #pending: LibraryFontFace | undefined;
+  #pending: Face | undefined;
   #running: Promise<void> | undefined;
   #cancellation: AbortController | undefined;
 
   public constructor(
     private readonly sample: HTMLElement,
     private readonly options: {
-      readonly library: VaultFontLibrary;
+      readonly resource: (
+        face: Face,
+        signal: AbortSignal,
+        scheduler: WorkScheduler,
+      ) => FontResourceV2 | Promise<FontResourceV2>;
       readonly scheduler: WorkScheduler | ((ownerWindow: Window | null) => WorkScheduler);
     },
     private readonly mutate: (update: () => void) => void,
@@ -42,37 +45,41 @@ export class FontSettingsPreview {
     this.sample.hidden = true;
   }
 
-  public show(face: LibraryFontFace): Promise<void> {
+  public show(face: Face): Promise<void> {
     if (this.#disposed) return Promise.resolve();
     this.clear();
     this.#pending = face;
-    this.#running ??= this.#drain().finally(() => {
-      this.#running = undefined;
-    });
+    this.#running ??= this.#drain();
     return this.#running;
   }
 
   async #drain(): Promise<void> {
-    while (this.#pending !== undefined && !this.#disposed) {
-      const face = this.#pending;
-      this.#pending = undefined;
-      const cancellation = new AbortController();
-      this.#cancellation = cancellation;
-      try {
-        await this.#load(face, cancellation.signal);
-      } catch (error) {
-        if (!cancellation.signal.aborted) throw error;
+    try {
+      while (this.#pending !== undefined && !this.#disposed) {
+        const face = this.#pending;
+        this.#pending = undefined;
+        const cancellation = new AbortController();
+        this.#cancellation = cancellation;
+        try {
+          await this.#load(face, cancellation.signal);
+        } catch (error) {
+          if (!cancellation.signal.aborted) throw error;
+        }
       }
+    } finally {
+      this.#running = undefined;
+      this.#cancellation = undefined;
     }
   }
 
-  async #load(face: LibraryFontFace, signal: AbortSignal): Promise<void> {
+  async #load(face: Face, signal: AbortSignal): Promise<void> {
     const generation = this.#generation;
     const scheduler =
       typeof this.options.scheduler === "function"
         ? this.options.scheduler(this.sample.ownerDocument.defaultView)
         : this.options.scheduler;
-    const resource = await this.options.library.resource(face, signal, scheduler);
+    const resource = await this.options.resource(face, signal, scheduler);
+    signal.throwIfAborted();
     const native = await loadNativeFontPreview(resource, {
       document: this.sample.ownerDocument,
       scheduler,

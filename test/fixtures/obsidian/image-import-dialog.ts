@@ -1,17 +1,25 @@
 import "./menu-motion";
 import type { App } from "obsidian";
-import { beforeEach, expect, vi } from "vitest";
+import { afterEach, beforeEach, expect, vi } from "vitest";
 import { Localization } from "../../../src/domain/localization";
 import { TestWorkScheduler } from "../persistence/work-scheduler";
 import { validImageResource } from "../persistence/images";
+import { PAGE } from "../../unit/domain/store/fixtures";
 import { dialogButton, installDialogTestLifecycle } from "./dialog";
+import type {
+  ImageImportRequest,
+  ImportedImageBatch,
+} from "../../../src/obsidian/embeds/active-scene/editor-chrome-openings";
 
 vi.mock("../../../src/obsidian/images/image-import", async (load) => ({
   ...(await load<object>()),
   readImageSource: vi.fn(),
   prepareRasterImage: vi.fn(),
 }));
-vi.mock("../../../src/obsidian/images/pdf-image-source", () => ({ openPdfImageSource: vi.fn() }));
+vi.mock("../../../src/obsidian/images/pdf-image-source", async (load) => ({
+  ...(await load<object>()),
+  openPdfImageSource: vi.fn(),
+}));
 
 import { openImageImportDialog } from "../../../src/obsidian/images/image-import-dialog";
 import { prepareRasterImage, readImageSource } from "../../../src/obsidian/images/image-import";
@@ -22,38 +30,90 @@ import {
 
 export const imageImportMocks = { prepareRasterImage, readImageSource, openPdfImageSource };
 
+const observedThumbnails = new Map<Element, (visible: boolean) => void>();
+let thumbnailsVisible = true;
+
+export function setImportThumbnailVisibility(visible: boolean): void {
+  thumbnailsVisible = visible;
+  for (const notify of observedThumbnails.values()) notify(visible);
+}
+
+class ImageImportIntersectionObserver {
+  #target: Element | undefined;
+
+  public constructor(private readonly notify: (entries: { isIntersecting: boolean }[]) => void) {}
+
+  public observe(target: Element): void {
+    this.#target = target;
+    const publish = (isIntersecting: boolean): void => this.notify([{ isIntersecting }]);
+    observedThumbnails.set(target, publish);
+    publish(thumbnailsVisible);
+  }
+
+  public disconnect(): void {
+    if (this.#target !== undefined) observedThumbnails.delete(this.#target);
+  }
+
+  public takeRecords(): readonly unknown[] {
+    return [];
+  }
+}
+
 export function installImageImportTestLifecycle(): void {
   installDialogTestLifecycle();
   beforeEach(() => {
+    thumbnailsVisible = true;
+    vi.stubGlobal("IntersectionObserver", ImageImportIntersectionObserver);
     vi.mocked(readImageSource)
       .mockReset()
       .mockResolvedValue(new Uint8Array([1]));
     vi.mocked(prepareRasterImage).mockReset();
     vi.mocked(openPdfImageSource).mockReset();
   });
+  afterEach(() => {
+    observedThumbnails.clear();
+    vi.unstubAllGlobals();
+  });
 }
 
-export function setupImageImport() {
+export function setupImageImport(complete: ImageImportRequest["submit"] = async () => "committed") {
   const abort = new AbortController();
+  let imported: ImportedImageBatch | undefined;
+  const submit = vi.fn<ImageImportRequest["submit"]>(async (batch, signal) => {
+    const status = await complete(batch, signal);
+    if (status === "committed" && !signal.aborted) imported = batch;
+    return status;
+  });
   const pending = openImageImportDialog({
     app: { workspace: { containerEl: document.body } } as App,
     localization: new Localization(),
     scheduler: new TestWorkScheduler(),
     readMotion: () => "reduced",
     signal: abort.signal,
-  });
-  return { pending, abort };
+    page: PAGE,
+    centerX: PAGE.margin + PAGE.innerWidth / 2,
+    submit,
+  }).then(() => imported);
+  return { pending, abort, submit };
 }
 
 /** Opens a fresh PDF review using one valid raster and an independently owned source. */
-export async function setupPdfImport(pageCount = 5) {
+export async function setupPdfImport(pageCount = 5, submit?: ImageImportRequest["submit"]) {
   const resource = await validImageResource();
   const render = vi.fn(async (_page: number) => resource);
+  const renderThumbnail = vi.fn(renderImportThumbnail);
   const dispose = vi.fn(async () => undefined);
   vi.mocked(readImageSource).mockResolvedValue(new TextEncoder().encode("%PDF-1.7"));
-  vi.mocked(openPdfImageSource).mockResolvedValue({ pageCount, render, dispose });
-  return { ...setupImageImport(), resource, render, dispose };
+  vi.mocked(openPdfImageSource).mockResolvedValue({ pageCount, render, renderThumbnail, dispose });
+  return { ...setupImageImport(submit), resource, render, renderThumbnail, dispose };
 }
+
+export const renderImportThumbnail: PdfImageSource["renderThumbnail"] = async (_page, options) => {
+  const canvas = options.document.createElement("canvas");
+  canvas.width = 104;
+  canvas.height = 144;
+  return canvas;
+};
 
 export function selectImportFile(name = "source.png"): void {
   const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
@@ -93,7 +153,12 @@ export async function beginPdfBatch(
   dispose: PdfImageSource["dispose"] = vi.fn(async () => undefined),
 ) {
   vi.mocked(readImageSource).mockResolvedValue(new TextEncoder().encode("%PDF-1.7"));
-  vi.mocked(openPdfImageSource).mockResolvedValue({ pageCount: 20, render, dispose });
+  vi.mocked(openPdfImageSource).mockResolvedValue({
+    pageCount: 20,
+    render,
+    renderThumbnail: vi.fn(renderImportThumbnail),
+    dispose,
+  });
   const state = setupImageImport();
   selectImportFile();
   await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));

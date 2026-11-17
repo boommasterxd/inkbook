@@ -2,12 +2,13 @@
 import { expect, it, vi } from "vitest";
 import { ElementStore } from "../../../../../src/domain/store/public";
 import type { ImageCropV3, ImageElementV3 } from "../../../../../src/domain/schema/public";
-import type { ImportedImageBatch } from "../../../../../src/obsidian/embeds/active-scene/editor-chrome-openings";
+import type { ImageImportRequest } from "../../../../../src/obsidian/embeds/active-scene/editor-chrome-openings";
 import {
   imageSessionFixture as harness,
   deferredImageSession as deferred,
   sessionImage as image,
   sessionImageResource as resource,
+  submitImageBatch,
 } from "../../../../fixtures/obsidian/image-session";
 import { PAGE } from "../../../../unit/domain/store/fixtures";
 import {
@@ -18,23 +19,17 @@ import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { applyImageCrop } from "../../../../../src/domain/images/image-crop";
 import { SvgSceneRenderer } from "../../../../../src/rendering/scene/scene-renderer";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
-import { ImageResourceCapacityError } from "../../../../../src/obsidian/embeds/document-session/session-image-resources";
 import { FakeScheduler } from "../../../../unit/rendering/scene/fakes";
 import { sceneDeltaEntries } from "../../../../fixtures/rendering/scene";
 import { useImageSceneCleanup } from "../../../../fixtures/rendering/image-scene";
 
 const ownScene = useImageSceneCleanup();
 
-it.each([
-  {
-    reason: "unexpected",
-    error: new Error("Image admission failed."),
-    code: "image-change-failed",
-  },
-  { reason: "capacity", error: new ImageResourceCapacityError(), code: "image-capacity-exceeded" },
-])("reports an $reason image failure instead of an Undo failure", async ({ error, code }) => {
+it("delivers unexpected admission failures to the open toolbar dialog", async () => {
   installObsidianDomHelpers();
   const onFeedback = vi.fn();
+  const error = new Error("Image admission failed.");
+  const failure = deferred<unknown>();
   const model = {
     ...createActiveEditorModel(new ElementStore()),
     prepareImageResources: vi.fn(async () => {
@@ -44,11 +39,16 @@ it.each([
   const editor = createHarness({
     model,
     onFeedback,
-    onImportImages: async () => ({ resources: [resource], source: "image" }),
+    onImportImages: async (signal, _window, request) => {
+      await request
+        .submit({ resources: [resource], source: "image" }, signal)
+        .catch(failure.resolve);
+    },
   });
   try {
     editor.controller.handleToolbarAction("image");
-    await vi.waitFor(() => expect(onFeedback).toHaveBeenCalledExactlyOnceWith(code));
+    expect(await failure.promise).toBe(error);
+    expect(onFeedback).not.toHaveBeenCalled();
     expect(model.store.size).toBe(0);
   } finally {
     editor.dispose();
@@ -70,26 +70,34 @@ async function assertReversibleImport(
 
 it("cancels a toolbar import when the active editor is disabled", async () => {
   installObsidianDomHelpers();
-  const imported = deferred<ImportedImageBatch | undefined>();
+  const opened = deferred<ImageImportRequest>();
+  const closed = deferred<void>();
   let signal: AbortSignal | undefined;
-  const onImportImages = vi.fn((current: AbortSignal) => {
-    signal = current;
-    return imported.promise;
-  });
+  const onImportImages = vi.fn(
+    (current: AbortSignal, _window: Window, request: ImageImportRequest) => {
+      signal = current;
+      opened.resolve(request);
+      return closed.promise;
+    },
+  );
   const prepareImageResources = vi.fn(async () => null);
   const model = { ...createActiveEditorModel(new ElementStore()), prepareImageResources };
   const editor = createHarness({ model, onImportImages });
   try {
     editor.controller.handleToolbarAction("image");
-    await vi.waitFor(() => expect(onImportImages).toHaveBeenCalledOnce());
+    const request = await opened.promise;
     editor.controller.setEnabled(false);
     expect(signal?.aborted).toBe(true);
-    imported.resolve({ resources: [resource], source: "image" });
-    await imported.promise;
-    await Promise.resolve();
+    expect(
+      await request.submit(
+        { resources: [resource], source: "image" },
+        new AbortController().signal,
+      ),
+    ).toBe("unavailable");
     expect(prepareImageResources).not.toHaveBeenCalled();
     expect(model.store.size).toBe(0);
   } finally {
+    closed.resolve();
     editor.dispose();
   }
 });
@@ -110,7 +118,7 @@ it("imports PDF pages as a bounded vertical sequence and one reversible command"
 
 it("imports an image compactly with its full crop and preserves placement through undo and redo", async () => {
   const owner = harness({
-    onImportImages: async () => ({ resources: [resource], source: "image" }),
+    onImportImages: submitImageBatch({ resources: [resource], source: "image" }),
   });
   owner.session.import();
   await vi.waitFor(() => expect(owner.onCommitted).toHaveBeenCalledOnce());
@@ -135,7 +143,7 @@ it("imports an image compactly with its full crop and preserves placement throug
 
 it("keeps a single PDF page at the existing writing-width placement", async () => {
   const owner = harness({
-    onImportImages: async () => ({ resources: [resource], source: "pdf" }),
+    onImportImages: submitImageBatch({ resources: [resource], source: "pdf" }),
   });
   owner.session.import();
   await vi.waitFor(() => expect(owner.onCommitted).toHaveBeenCalledOnce());
@@ -158,7 +166,7 @@ it.each(["image", "pdf"] as const)(
         ? [resource, { ...resource, id: "b".repeat(64), width: 100, height: 200 }]
         : [{ ...resource, width: 100, height: 200 }];
     const owner = harness({
-      onImportImages: async () => ({ resources, source, placement: "page-width-locked" }),
+      onImportImages: submitImageBatch({ resources, source, placement: "page-width-locked" }),
     });
     owner.session.import({ x: 700, y: 300 });
     await vi.waitFor(() => expect(owner.onCommitted).toHaveBeenCalledOnce());
@@ -205,7 +213,7 @@ it.each(["default", "page-width-locked"] as const)(
     };
     const editor = createHarness({
       model,
-      onImportImages: async () => ({ resources: [resource], source: "image", placement }),
+      onImportImages: submitImageBatch({ resources: [resource], source: "image", placement }),
     });
     try {
       editor.controller.handleToolbarAction("image");
@@ -407,22 +415,26 @@ it("releases unchanged crop feedback without preparing a document or adding hist
   owner.session.dispose();
 });
 
-it("aborts the owning dialog on disable/dispose and admits no late resource result", async () => {
-  const imported = deferred<ImportedImageBatch | undefined>();
-  let signal: AbortSignal | undefined;
-  const onImportImages = vi.fn((current: AbortSignal) => {
-    signal = current;
-    return imported.promise;
-  });
+it("rejects late work from a dismissed dialog and opens only one review at a time", async () => {
+  const closed = deferred<void>();
+  const opened = deferred<ImageImportRequest>();
+  const onImportImages = vi.fn(
+    (_signal: AbortSignal, _window: Window, request: ImageImportRequest) => {
+      opened.resolve(request);
+      return closed.promise;
+    },
+  );
   const owner = harness({ onImportImages });
   owner.session.import();
   owner.session.import();
-  await vi.waitFor(() => expect(onImportImages).toHaveBeenCalledOnce());
-  owner.session.cancel();
-  expect(signal?.aborted).toBe(true);
-  imported.resolve({ resources: [resource], source: "image" });
-  await imported.promise;
+  const request = await opened.promise;
+  expect(onImportImages).toHaveBeenCalledOnce();
+  closed.resolve();
+  await closed.promise;
   await Promise.resolve();
+  expect(
+    await request.submit({ resources: [resource], source: "image" }, new AbortController().signal),
+  ).toBe("unavailable");
   expect(owner.prepareImageResources).not.toHaveBeenCalled();
   expect(owner.history.commandCount).toBe(0);
   owner.session.dispose();

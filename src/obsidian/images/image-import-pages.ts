@@ -1,11 +1,20 @@
 import { setIcon } from "obsidian";
 import { IMAGE_LIMITS } from "../../domain/images/image-limits";
 import type { Localization } from "../../domain/localization";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
+import type { MotionPreference } from "../../rendering/motion/transitions";
+import type { ObserveMotion } from "../runtime/effective-motion";
 import { parsePdfPages } from "./image-import";
+import { ImageImportThumbnails } from "./image-import-thumbnails";
+import type { PdfImageSource } from "./pdf-image-source";
 
 interface PdfPagesOptions {
   readonly localization: Localization;
   readonly signal: AbortSignal;
+  readonly scheduler: WorkScheduler;
+  readonly readMotion: () => MotionPreference;
+  readonly observeMotion?: ObserveMotion | undefined;
+  readonly displayedRaster: (page: number) => HTMLImageElement | undefined;
   readonly changed: (previewPage?: number) => void;
   readonly mutate: (update: () => void) => void;
 }
@@ -21,7 +30,7 @@ export class ImageImportPages {
   readonly #previous: HTMLButtonElement;
   readonly #next: HTMLButtonElement;
   readonly #total: HTMLElement;
-  readonly #unselected: HTMLElement;
+  readonly #thumbnails: ImageImportThumbnails;
   #pageCount: number | undefined;
   #selection: readonly number[] | undefined = [1];
   #selectionKey = "1";
@@ -35,6 +44,10 @@ export class ImageImportPages {
     private readonly options: PdfPagesOptions,
   ) {
     const { t } = options.localization;
+    this.#thumbnails = new ImageImportThumbnails(preview, {
+      ...options,
+      select: (page, selected) => this.#togglePage(page, selected),
+    });
     this.element = parent.createEl("fieldset", { cls: "inkbook-image-import-pdf" });
     this.element.createEl("legend", {
       cls: "inkbook-menu-visually-hidden",
@@ -61,10 +74,6 @@ export class ImageImportPages {
     this.#total = pageLabel.createSpan();
     this.#next = this.#button(row, "chevron-right", t("images.nextPage"), 1);
     this.#pageError = this.#error(this.navigation, this.#page);
-    this.#unselected = this.navigation.createDiv({
-      cls: "inkbook-image-import-preview-unselected",
-      text: t("images.previewNotSelected"),
-    });
     this.#listen(this.#range, "input", () => this.#readSelection(false));
     this.#listen(this.#range, "change", () => this.#changeSelection());
     this.#listen(this.#page, "input", () => this.#readPage(false));
@@ -84,17 +93,8 @@ export class ImageImportPages {
   public get previewValid(): boolean {
     return this.#validPage;
   }
-  public get focused(): HTMLInputElement | HTMLButtonElement | undefined {
-    const active = this.element.ownerDocument.activeElement;
-    return [this.#range, this.#page, this.#previous, this.#next].find(
-      (control) => control === active,
-    );
-  }
-  public get navigationFocusTarget(): HTMLButtonElement {
-    return this.#previous.disabled ? this.#next : this.#previous;
-  }
-
   public setSource(pageCount: number | undefined): void {
+    this.#thumbnails.setSource(undefined);
     this.#pageCount = pageCount;
     const lastPage = Math.min(pageCount ?? 1, IMAGE_LIMITS.pdfSelectedPages);
     this.#range.value = lastPage === 1 ? "1" : `1-${lastPage}`;
@@ -112,6 +112,14 @@ export class ImageImportPages {
     this.#showError(this.#range, this.#rangeError, "");
     this.#showError(this.#page, this.#pageError, "");
     this.#updateNavigation();
+  }
+
+  public setThumbnailSource(source: PdfImageSource): void {
+    this.#thumbnails.setSource(source);
+  }
+
+  public setPreviewPreparing(preparing: boolean): void {
+    this.#thumbnails.setPreviewPreparing(preparing);
   }
 
   public setBusy(busy: boolean): void {
@@ -172,14 +180,34 @@ export class ImageImportPages {
     this.#updateNavigation();
   }
 
+  #goToPage(page: number): void {
+    this.#page.value = String(page);
+    this.#changePage();
+  }
+
+  #togglePage(page: number, selected: boolean): void {
+    const current = this.#selection;
+    if (current === undefined) return;
+    const next = selected
+      ? [...current, page].sort((left, right) => left - right)
+      : current.filter((number) => number !== page);
+    if (next.length === 0 || next.length > IMAGE_LIMITS.pdfSelectedPages) return;
+    this.#selection = next;
+    this.#selectionKey = next.join(",");
+    this.#range.value = next.join(", ");
+    this.#updateNavigation();
+    this.options.changed();
+  }
+
   #updateNavigation(): void {
+    const active = this.navigation.ownerDocument.activeElement;
     this.#previous.disabled = this.#busy || this.#previewPage <= 1;
     this.#next.disabled = this.#busy || this.#previewPage >= (this.#pageCount ?? 1);
-    const hidden = this.#selection === undefined || this.#selection.includes(this.#previewPage);
-    if (this.#unselected.hidden !== hidden)
-      this.options.mutate(() => {
-        this.#unselected.hidden = hidden;
-      });
+    if (this.#previous.disabled && !this.#next.disabled && active === this.#previous)
+      this.#next.focus({ preventScroll: true });
+    if (this.#next.disabled && !this.#previous.disabled && active === this.#next)
+      this.#previous.focus({ preventScroll: true });
+    this.#thumbnails.update(this.#previewPage, this.#selection, this.#busy);
   }
 
   #button(parent: HTMLElement, icon: string, label: string, step: number): HTMLButtonElement {
@@ -191,10 +219,7 @@ export class ImageImportPages {
     button.title = label;
     setIcon(button, icon);
     button.querySelector("svg")?.setAttribute("aria-hidden", "true");
-    this.#listen(button, "click", () => {
-      this.#page.value = String(this.#previewPage + step);
-      this.#changePage();
-    });
+    this.#listen(button, "click", () => this.#goToPage(this.#previewPage + step));
     return button;
   }
 

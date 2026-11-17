@@ -9,8 +9,6 @@ export class InkbookModal extends InkbookMotionModal {
     super.onOpen();
     this.containerEl.classList.add("inkbook-dialog-container");
     this.modalEl.classList.add("inkbook-action-dialog");
-    this.titleEl.classList.add("inkbook-dialog-content-spacing");
-    this.contentEl.classList.add("inkbook-dialog-content-spacing");
   }
 
   public override onClose(): void {

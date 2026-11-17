@@ -49,7 +49,7 @@ export interface CustomFolderPort {
 }
 
 interface SettingsScheduling {
-  readonly openFontManager?: (trigger: HTMLButtonElement) => void;
+  readonly openFontManager?: (trigger: HTMLElement) => void;
   readonly lifetime?: AbortSignal;
   readonly inkImport?: InkImportSettingsAccess;
   readonly fontLibrary?: PluginFontLibrary;
@@ -103,7 +103,7 @@ export class InkbookSettingTab extends PluginSettingTab {
     return this.scheduling?.fontLibrary;
   }
 
-  public get openFontManager(): ((trigger: HTMLButtonElement) => void) | undefined {
+  public get openFontManager(): ((trigger: HTMLElement) => void) | undefined {
     return this.scheduling?.openFontManager;
   }
 
@@ -135,6 +135,7 @@ export class InkbookSettingTab extends PluginSettingTab {
 
   public getControlDefinitions(
     viewState = this.nativeViewState,
+    closeOwnerOnNoteOpen?: () => void,
   ): SettingDefinitionItem<SettingsControlKey>[] {
     const pageValues = {
       t: this.store.localization.t,
@@ -159,6 +160,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       appearanceGroup(
         this.store.localization.t,
         withSettingsActionFeedback(() => this.resetAppearance(), this.settingsFeedback),
+        this.openFontManager,
       ),
       this.inputGroup(createBuiltInDeviceSettings()),
       pageDefaultsGroup(
@@ -214,6 +216,7 @@ export class InkbookSettingTab extends PluginSettingTab {
               state: this.importHistoryState,
               localization: this.store.localization,
               signal: this.scheduling.lifetime,
+              closeOwnerOnNoteOpen,
               ...this.settingsFeedback,
             }),
           ]),
@@ -233,7 +236,7 @@ export class InkbookSettingTab extends PluginSettingTab {
         ? {}
         : {
             fontManagementAction: {
-              label: () => this.store.localization.t("fonts.manage"),
+              label: () => this.store.localization.t("fonts.add"),
               onActivate: this.openFontManager,
             },
           }),

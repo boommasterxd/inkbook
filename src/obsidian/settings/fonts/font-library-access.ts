@@ -19,7 +19,7 @@ export class FontLibraryAccess {
 
   public constructor(private readonly options: FontLibraryAccessOptions) {}
 
-  public readonly open = (trigger: HTMLButtonElement): void => {
+  public readonly open = (trigger: HTMLElement): void => {
     if (this.options.signal.aborted || this.#dialog !== undefined) return;
     const { settings } = this.options;
     const label = trigger.getAttribute("aria-label");
@@ -43,10 +43,12 @@ export class FontLibraryAccess {
         this.#dialog = undefined;
         if (!changed || this.options.signal.aborted) return;
         this.options.onChanged();
-        const replacement = [
-          ...trigger.ownerDocument.querySelectorAll<HTMLButtonElement>('[role="combobox"]'),
-        ].find((button) => button.getAttribute("aria-label") === label);
-        if (!trigger.isConnected) replacement?.focus({ preventScroll: true });
+        if (!trigger.isConnected && label !== null) {
+          const replacement = [
+            ...trigger.ownerDocument.querySelectorAll<HTMLButtonElement>('[role="combobox"]'),
+          ].find((button) => button.getAttribute("aria-label") === label);
+          replacement?.focus({ preventScroll: true });
+        }
       },
     });
     this.#dialog = dialog;

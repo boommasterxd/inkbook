@@ -73,15 +73,7 @@ export function fixture(
 ) {
   const anchor = document.body.createEl("button", { text: "Open import" });
   anchor.focus();
-  const service = {
-    scan: vi.fn<InkImportDialogOptions["service"]["scan"]>().mockResolvedValue(preview()),
-    apply: vi.fn<InkImportDialogOptions["service"]["apply"]>().mockResolvedValue(result()),
-    history: vi.fn<InkImportDialogOptions["service"]["history"]>().mockResolvedValue([journal()]),
-    undo: vi
-      .fn<InkImportDialogOptions["service"]["undo"]>()
-      .mockResolvedValue({ ...result(), journal: { ...journal(), status: "undone" } }),
-    cleanup: vi.fn<InkImportDialogOptions["service"]["cleanup"]>().mockResolvedValue(result()),
-  };
+  const service = importDialogService();
   const app = { keymap: new Keymap(), workspace: { containerEl: document.body } } as App;
   const localization = new Localization(language);
   const dialog = new InkImportDialog(app, {
@@ -93,7 +85,19 @@ export function fixture(
     workScheduler: () => workSchedulerFromFrames(window),
   });
   dialog.open();
-  return { dialog, service, anchor, localization };
+  return { app, dialog, service, anchor, localization };
+}
+
+export function importDialogService() {
+  return {
+    scan: vi.fn<InkImportDialogOptions["service"]["scan"]>().mockResolvedValue(preview()),
+    apply: vi.fn<InkImportDialogOptions["service"]["apply"]>().mockResolvedValue(result()),
+    history: vi.fn<InkImportDialogOptions["service"]["history"]>().mockResolvedValue([journal()]),
+    undo: vi
+      .fn<InkImportDialogOptions["service"]["undo"]>()
+      .mockResolvedValue({ ...result(), journal: { ...journal(), status: "undone" } }),
+    cleanup: vi.fn<InkImportDialogOptions["service"]["cleanup"]>().mockResolvedValue(result()),
+  };
 }
 
 export async function settle(status: string): Promise<void> {

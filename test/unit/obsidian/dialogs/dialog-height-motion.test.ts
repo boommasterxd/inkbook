@@ -79,12 +79,14 @@ describe("dialog intrinsic height ownership", () => {
       expect(view.reads).toHaveBeenCalledOnce();
       const animation = view.surface.getAnimations()[0]!;
       expect(view.surface.getAnimations()).toHaveLength(1);
+      expect(view.surface.hasAttribute("data-inkbook-dialog-resizing")).toBe(true);
       expect((animation.effect as KeyframeEffect).getKeyframes()).toMatchObject([
         { height: "240px" },
         { height: "auto" },
       ]);
       animation.finish();
       expect(view.surface.getAnimations()).toHaveLength(0);
+      expect(view.surface.hasAttribute("data-inkbook-dialog-resizing")).toBe(false);
       expect(view.surface.style.height).toBe("");
     },
   );
@@ -117,6 +119,7 @@ describe("dialog intrinsic height ownership", () => {
     view.setHeight("280px");
     view.motion.freeze();
     expect(view.surface.getAnimations()).toHaveLength(0);
+    expect(view.surface.hasAttribute("data-inkbook-dialog-resizing")).toBe(true);
     expect(view.surface.style.height).toBe("280px");
     view.reads.mockClear();
     view.motion.mutate(() => view.surface.replaceChildren());
@@ -126,6 +129,7 @@ describe("dialog intrinsic height ownership", () => {
     expect(view.surface.getAnimations()).toHaveLength(0);
     view.motion.dispose();
     view.motion.dispose();
+    expect(view.surface.hasAttribute("data-inkbook-dialog-resizing")).toBe(false);
     expect(view.surface.style.height).toBe("");
     expect(view.unsubscribe).toHaveBeenCalledOnce();
     const update = vi.fn();
@@ -153,6 +157,7 @@ describe("dialog height immediate paths", () => {
     view.motion.mutate(() => view.surface.append("Review"));
     view.setReduced();
     expect(view.surface.getAnimations()).toHaveLength(0);
+    expect(view.surface.hasAttribute("data-inkbook-dialog-resizing")).toBe(false);
     expect(view.surface.style.height).toBe("");
     view.reads.mockClear();
     view.motion.mutate(() => view.surface.replaceChildren("Library"));

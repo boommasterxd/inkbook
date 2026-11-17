@@ -14,16 +14,8 @@ import { mutateFontLibraryDialog, type FontLibrarySettingsOptions } from "./font
 
 const PAGE_SIZE = 8;
 
-/** Mounts a bounded library directly in a dialog body, independently of a setting row. */
-export function mountFontLibraryContent(
-  container: HTMLElement,
-  options: FontLibrarySettingsOptions,
-): () => void {
-  const content = new FontLibraryContent(container, options);
-  return () => content.dispose();
-}
-
-class FontLibraryContent {
+/** Mounts a bounded library or its import step directly in the dialog body. */
+export class FontLibraryContent {
   readonly #options: FontLibrarySettingsOptions;
   readonly #root: HTMLElement;
   readonly #controls: HTMLElement;

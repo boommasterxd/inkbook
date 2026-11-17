@@ -21,6 +21,7 @@ interface SettingsModalContentOptions {
   readonly store: InkbookSettingsStore;
   readonly view: InkbookSettingsView;
   readonly lifecycle?: AdaptivePanelContentLifecycle;
+  readonly closeOwnerOnNoteOpen?: () => void;
 }
 
 /** Owns settings controls independently of the modal or sheet that presents them. */
@@ -73,7 +74,10 @@ export class SettingsModalContent {
         this.#renderPreservingScroll();
       }
     });
-    this.#definitionRenderer.render(body, settingTab.getControlDefinitions(this.#viewState));
+    this.#definitionRenderer.render(
+      body,
+      settingTab.getControlDefinitions(this.#viewState, this.#options.closeOwnerOnNoteOpen),
+    );
   }
 
   #renderPreservingScroll(): void {

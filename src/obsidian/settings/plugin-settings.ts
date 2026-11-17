@@ -71,7 +71,13 @@ export function addPluginSettingsTab(
       getRuntime()?.refreshRateProfiles.status(
         plugin.app.workspace.containerEl.ownerDocument.defaultView,
       ),
-    { lifetime: signal, workScheduler, inkImport, fontLibrary, openFontManager: fonts.open },
+    {
+      lifetime: signal,
+      workScheduler,
+      inkImport,
+      fontLibrary,
+      openFontManager: fonts.open,
+    },
   );
   plugin.addSettingTab(tab);
   return tab;

@@ -4,8 +4,12 @@ import type { SettingsControlKey } from "../control-values";
 import { settingsAction, withSettingsActionFeedback } from "../definitions/definition-helpers";
 import { ImportHistory, type ImportHistoryOptions } from "./import-history";
 
+interface ImportSettingsOptions extends ImportHistoryOptions {
+  readonly closeOwnerOnNoteOpen?: (() => void) | undefined;
+}
+
 export function importSettingsGroup(
-  options: ImportHistoryOptions,
+  options: ImportSettingsOptions,
 ): SettingDefinitionGroup<SettingsControlKey> {
   return {
     type: "group",
@@ -22,7 +26,7 @@ export function importSettingsGroup(
   };
 }
 
-function startImportAction(options: ImportHistoryOptions): SettingDefinitionRender {
+function startImportAction(options: ImportSettingsOptions): SettingDefinitionRender {
   const name = options.localization.t("import.start");
   const desc = options.localization.t("import.startDescription");
   return {
@@ -36,7 +40,12 @@ function startImportAction(options: ImportHistoryOptions): SettingDefinitionRend
         undefined,
         withSettingsActionFeedback(
           (element) =>
-            options.access.open(element.ownerDocument.defaultView, undefined, lifetime.signal),
+            options.access.open(
+              element.ownerDocument.defaultView,
+              undefined,
+              lifetime.signal,
+              options.closeOwnerOnNoteOpen,
+            ),
           options,
         ),
       ).render(setting, group);

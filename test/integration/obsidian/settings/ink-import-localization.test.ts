@@ -19,14 +19,14 @@ it("localizes the reviewed import and recovery flow without changing vault paths
   dialogButton("Vault durchsuchen").click();
   await settle("Suche abgeschlossen");
   expect(dialog.contentEl.textContent).toContain("2 Handschriftdateien gefunden");
-  expect(dialog.contentEl.textContent).toContain("2 von 2 ausgewählt · 1 betroffene Notiz");
+  expect(dialog.contentEl.textContent).toContain("2 Inkbook-Kopien · 1 betroffene Notiz");
   disclosure("Handschriftdateien (2)").click();
   const source = dialog.contentEl.querySelector<HTMLInputElement>(
     'input[aria-label="drawing-0.svg importieren"]',
   )!;
   source.click();
-  expect(dialog.contentEl.textContent).toContain("1 von 2 ausgewählt");
-  dialogButton("Handschrift importieren").click();
+  expect(dialog.contentEl.textContent).toContain("1 Inkbook-Kopie · 1 betroffene Notiz");
+  dialogButton("Importieren").click();
   await settle("Vorgang abgeschlossen");
   expect(service.apply).toHaveBeenCalledWith(
     { ...reviewed, sources: [reviewed.sources[1]] },
@@ -66,14 +66,14 @@ it("keeps selection, expanded findings, pagination, focus and scroll when langua
   expect(dialog.modalEl.lang).toBe("de");
   expect(disclosure("Handschriftdateien (30)").getAttribute("aria-expanded")).toBe("true");
   expect(dialog.contentEl.textContent).toContain("26–30 von 30");
-  expect(dialog.contentEl.textContent).toContain("28 von 30 ausgewählt");
+  expect(dialog.contentEl.textContent).toContain("28 Inkbook-Kopien · 1 betroffene Notiz");
   expect((document.activeElement as HTMLElement).dataset.inkbookImportSource).toBe(
     "drawing-26.svg",
   );
   expect((document.activeElement as HTMLInputElement).checked).toBe(false);
   expect(body.scrollTop).toBe(180);
   expect(service.scan).toHaveBeenCalledTimes(1);
-  dialogButton("Handschrift importieren").click();
+  dialogButton("Importieren").click();
   await settle("Vorgang abgeschlossen");
   const selected = service.apply.mock.calls[0]![0].sources.map((source) => source.path);
   expect(selected).toHaveLength(28);

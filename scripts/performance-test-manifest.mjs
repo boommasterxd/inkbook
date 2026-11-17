@@ -35,6 +35,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/inline-image-crop-work.test.ts",
     "test/performance/obsidian/images/canvas-crop-work.test.ts",
     "test/performance/obsidian/fonts/font-import-staging-work.test.ts",
+    "test/performance/obsidian/fonts/font-import-specimen-work.test.ts",
     "test/performance/obsidian/embeds/active-editor/text-caret-occlusion-work.test.ts",
     "test/performance/obsidian/embeds/active-editor/selected-text-activation-work.test.ts",
     "test/performance/obsidian/embeds/active-editor/text-copy-work.test.ts",

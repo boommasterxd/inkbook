@@ -48,7 +48,7 @@ function mount(definition: SettingDefinitionRender, container = document.body): 
   return definition.render(setting, group) ?? (() => undefined);
 }
 
-it("opens font management from Text defaults", async () => {
+it("opens the same font library from Appearance and the Text defaults picker", () => {
   const store = new InkbookSettingsStore(
     { loadData: async () => createBuiltInSettings(), saveData: vi.fn() },
     { loadLocalStorage: () => createBuiltInDeviceSettings(), saveLocalStorage: vi.fn() },
@@ -70,30 +70,36 @@ it("opens font management from Text defaults", async () => {
     },
   );
   const definitions = tab.getSettingDefinitions();
-  expect(
-    definitions.some(
-      (item) => "heading" in item && item.heading === store.localization.t("fonts.group"),
-    ),
-  ).toBe(false);
+  const manage = document.body.createDiv();
+  const disposeManage = mount(
+    findRender(definitions, store.localization.t("fonts.manage")),
+    manage,
+  );
   const dispose = mount(findRender(definitions, store.localization.t("settings.controls.text")));
   try {
+    expect(manage.getAttribute("role")).toBe("button");
+    manage.focus();
+    manage.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(openFontManager).toHaveBeenCalledExactlyOnceWith(manage);
     document.querySelector<HTMLButtonElement>(".inkbook-settings-tool-trigger")!.click();
     expect(document.querySelector('input[aria-label="Copy text fields as text"]')).toBeNull();
     const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
     const confirmedFamily = tab.getControlValue("toolDefaults.text.fontFamily");
     trigger.click();
     const action = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.getAttribute("aria-label") === store.localization.t("fonts.manage"),
+      (button) => button.getAttribute("aria-label") === store.localization.t("fonts.add"),
     )!;
     expect(action.closest('[role="listbox"]')).toBeNull();
     action.click();
-    expect(openFontManager).toHaveBeenCalledExactlyOnceWith(trigger);
+    expect(openFontManager).toHaveBeenCalledTimes(2);
+    expect(openFontManager).toHaveBeenLastCalledWith(trigger);
     expect(trigger.isConnected).toBe(true);
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(trigger);
     expect(tab.getControlValue("toolDefaults.text.fontFamily")).toBe(confirmedFamily);
   } finally {
     dispose();
+    disposeManage();
   }
 });
 

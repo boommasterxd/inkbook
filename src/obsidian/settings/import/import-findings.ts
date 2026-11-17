@@ -4,11 +4,13 @@ import { isReducedMotion, type MotionPreference } from "../../../rendering/motio
 import type { ObserveMotion } from "../../runtime/effective-motion";
 import { createSettingsDisclosure } from "../settings-disclosure";
 import { SettingsPanelMotion } from "../settings-panel-motion";
+import type { ImportExampleId } from "./import-example-images";
 import { renderPagedItems } from "./paged-findings";
 
 export interface ImportViewState {
   selection?: Set<string>;
-  example?: number;
+  example?: ImportExampleId;
+  exampleSides?: Map<string, "before" | "after">;
   readonly findings: Map<string, { expanded: boolean; page?: number }>;
 }
 
@@ -67,14 +69,14 @@ export function renderImportFinding(
   row: HTMLElement,
   message: string,
   paths: readonly string[],
-  presentation: { readonly icon: string; readonly tone: "caution" | "neutral" } = {
+  presentation: { readonly icon?: string; readonly tone: "caution" | "neutral" } = {
     icon: "triangle-alert",
     tone: "caution",
   },
 ): HTMLElement {
   row.classList.add("inkbook-import-finding-row");
   row.dataset.tone = presentation.tone;
-  renderImportIcon(row, presentation.icon, "inkbook-import-file-icon");
+  if (presentation.icon) renderImportIcon(row, presentation.icon, "inkbook-import-file-icon");
   const copy = row.createDiv({ cls: "inkbook-import-finding-copy" });
   const source = paths.find((path) => message.startsWith(`${path}: `));
   copy.createSpan({
@@ -136,6 +138,7 @@ export function renderImportDisclosure(
     readonly title: string;
     readonly description: string;
     readonly icon: string;
+    readonly prepare?: () => void;
     readonly populate: (
       content: HTMLElement,
       scope: {
@@ -159,6 +162,7 @@ export function renderImportDisclosure(
     contentClass: "inkbook-import-disclosure-content",
     triggerClass: "inkbook-import-disclosure-trigger",
     readMotion: context.readMotion,
+    ...(options.prepare === undefined ? {} : { prepareContent: options.prepare }),
     ...(context.observeMotion === undefined ? {} : { observeMotion: context.observeMotion }),
   });
   const leading = renderImportIcon(

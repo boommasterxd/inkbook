@@ -2,7 +2,9 @@
 import { expect, it, onTestFinished, vi } from "vitest";
 import { ActiveImageSession } from "../../../../../src/obsidian/embeds/active-editor/image-session";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
-import { validImageFixture } from "../../../../fixtures/persistence/images";
+import type { PointV1 } from "../../../../../src/domain/schema/public";
+import type { ImageImportRequest } from "../../../../../src/obsidian/embeds/active-scene/editor-chrome-openings";
+import { capacityImageResource, validImageFixture } from "../../../../fixtures/persistence/images";
 import { deferredImageSession } from "../../../../fixtures/obsidian/image-session";
 import { operation, persistenceHarness } from "../document-session/vault-session-fixtures";
 
@@ -14,6 +16,9 @@ async function fixture() {
   const history = new ActiveEditorHistory(model);
   const committed = vi.fn();
   const failed = vi.fn();
+  const opened = deferredImageSession<ImageImportRequest>();
+  const closed = deferredImageSession<void>();
+  const dialog = new AbortController();
   const session = new ActiveImageSession({
     model,
     history,
@@ -23,26 +28,25 @@ async function fixture() {
     selection: () => new Set(),
     select: () => undefined,
     visibleCenter: () => ({ x: 300, y: 300 }),
-    onImportImages: async () => ({ resources: [asset], source: "image" }),
+    onImportImages: (_signal, _window, request) => {
+      opened.resolve(request);
+      return closed.promise;
+    },
     onCommitted: committed,
     onFailed: failed,
   });
   onTestFinished(() => {
+    closed.resolve();
     session.dispose();
     history.dispose();
     host.session.dispose();
   });
-  return { asset, host, model, history, session, committed, failed };
-}
-
-async function releasePreparation(
-  gate: ReturnType<typeof deferredImageSession<void>>,
-  settledType: () => string | undefined,
-): Promise<void> {
-  gate.resolve();
-  await gate.promise;
-  await vi.waitFor(() => expect(settledType()).toBe("fulfilled"));
-  await Promise.resolve();
+  const beginImport = async (point?: PointV1) => {
+    session.import(point);
+    const { submit } = await opened.promise;
+    return (resources = [asset]) => submit({ resources, source: "pdf" }, dialog.signal);
+  };
+  return { asset, host, model, history, beginImport, dialog, committed, failed };
 }
 
 function expectUnpublishedImage(f: Awaited<ReturnType<typeof fixture>>, revision: number): void {
@@ -54,58 +58,71 @@ function expectUnpublishedImage(f: Awaited<ReturnType<typeof fixture>>, revision
   expect(f.committed).not.toHaveBeenCalled();
 }
 
-it("discards a completed resource preparation when its importing operation was cancelled", async () => {
+it("discards a completed resource preparation when the dialog is cancelled", async () => {
   const f = await fixture();
   const gate = deferredImageSession<void>();
   const ready = deferredImageSession<void>();
   const prepare = f.model.prepareImageResources!.bind(f.model);
-  const staged = vi.spyOn(f.model, "prepareImageResources").mockImplementation(async (...args) => {
+  vi.spyOn(f.model, "prepareImageResources").mockImplementation(async (...args) => {
     const token = await prepare(...args);
     expect(token).not.toBeNull();
     ready.resolve();
     await gate.promise;
     return token;
   });
-  f.session.import();
+  const submit = await f.beginImport();
+  const pending = submit();
   await ready.promise;
-  f.session.cancel();
-  await releasePreparation(gate, () => staged.mock.settledResults[0]?.type);
+  f.dialog.abort();
+  gate.resolve();
+  expect(await pending).toBe("unavailable");
   expectUnpublishedImage(f, 7);
   expect(f.failed).not.toHaveBeenCalled();
 });
 
 it("does not retain an image when append geometry is rejected", async () => {
   const f = await fixture();
-  f.session.import({ x: 300, y: 1_000_000 });
-  await vi.waitFor(() => expect(f.failed).toHaveBeenCalledOnce());
+  const submit = await f.beginImport({ x: 300, y: 1_000_000 });
+  await expect(submit()).rejects.toThrow();
   expectUnpublishedImage(f, 7);
 });
 
-it("keeps a staged image private when later document changes invalidate append preparation", async () => {
+it("keeps a staged image private after a revision change and allows a fresh submission", async () => {
   const f = await fixture();
   const gate = deferredImageSession<void>();
   const ready = deferredImageSession<void>();
   const prepare = f.model.prepareElementAppend.bind(f.model);
-  const staged = vi.spyOn(f.model, "prepareElementAppend").mockImplementation(async (...args) => {
+  vi.spyOn(f.model, "prepareElementAppend").mockImplementationOnce(async (...args) => {
     const result = await prepare(...args);
     expect(result.token).not.toBeNull();
     ready.resolve();
     await gate.promise;
     return result;
   });
-  f.session.import();
+  const submit = await f.beginImport();
+  const pending = submit();
   await ready.promise;
   f.model.commitPage({ ...f.model.page, activeBufferLines: 4 });
   expect(f.model.revision).toBe(8);
-  await releasePreparation(gate, () => staged.mock.settledResults[0]?.type);
+  gate.resolve();
+  expect(await pending).toBe("unavailable");
   expectUnpublishedImage(f, 8);
+  expect(await submit()).toBe("committed");
+  expect(f.history.commandCount).toBe(1);
+  expect(f.model.revision).toBe(9);
   expect(f.failed).not.toHaveBeenCalled();
 });
 
-it("publishes a successful import once and retains its resource across undo and redo", async () => {
+it("rejects competing submissions and retains one successful import across undo and redo", async () => {
   const f = await fixture();
-  f.session.import();
-  await vi.waitFor(() => expect(f.committed).toHaveBeenCalledOnce());
+  const prepare = vi.spyOn(f.model, "prepareImageResources");
+  const submit = await f.beginImport();
+  const pending = submit();
+  expect(await submit()).toBe("unavailable");
+  expect(await pending).toBe("committed");
+  expect(await submit()).toBe("unavailable");
+  expect(prepare).toHaveBeenCalledOnce();
+  expect(f.committed).toHaveBeenCalledOnce();
   expect(f.model.imageResource!(f.asset.id)).toBe(f.asset);
   expect(f.model.revision).toBe(8);
   expect(f.history.commandCount).toBe(1);
@@ -117,4 +134,29 @@ it("publishes a successful import once and retains its resource across undo and 
   expect(f.model.store.size).toBe(1);
   expect(f.model.imageResource!(f.asset.id)).toBe(f.asset);
   expect(f.failed).not.toHaveBeenCalled();
+});
+
+it("checks available document capacity atomically and accepts a smaller retry", async () => {
+  const f = await fixture();
+  const [retained, first, second] = await Promise.all([
+    capacityImageResource(1, 4000),
+    capacityImageResource(2, 4000),
+    capacityImageResource(3, 4000),
+  ]);
+  await f.model.addImageResources!([retained]);
+  const prepare = vi.spyOn(f.model, "prepareElementAppend");
+  const submit = await f.beginImport();
+  expect(await submit([first, second])).toBe("capacity");
+  expect(prepare).not.toHaveBeenCalled();
+  expect(f.model.imageResources).toEqual([retained]);
+  expect(f.model.store.size).toBe(0);
+  expect(f.model.revision).toBe(7);
+  expect(f.history.commandCount).toBe(0);
+  expect(f.failed).not.toHaveBeenCalled();
+  expect(await submit([first])).toBe("committed");
+  expect(prepare).toHaveBeenCalledOnce();
+  expect(f.model.imageResources).toEqual([retained, first]);
+  expect(f.model.store.size).toBe(1);
+  expect(f.model.revision).toBe(8);
+  expect(f.history.commandCount).toBe(1);
 });

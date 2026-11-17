@@ -34,13 +34,40 @@ interface PdfLibrary {
   getDocument(options: Record<string, unknown>): unknown;
 }
 
+export const PDF_THUMBNAIL_EDGE = 144;
+
+/** The main page already holds decoded pixels when it can supply a thumbnail. */
+export function copyPdfThumbnail(image: HTMLImageElement): HTMLCanvasElement | undefined {
+  if (!image.complete || image.naturalWidth < 1 || image.naturalHeight < 1) return undefined;
+  const scale = Math.min(1, PDF_THUMBNAIL_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = thumbnailCanvas(image.ownerDocument, {
+    width: image.naturalWidth * scale,
+    height: image.naturalHeight * scale,
+  });
+  try {
+    const context = canvas.getContext("2d");
+    if (context === null) throw new Error("PDF thumbnail rasterization is unavailable.");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  } catch {
+    canvas.width = 0;
+    canvas.height = 0;
+    return undefined;
+  }
+}
+
+interface PdfThumbnailOptions {
+  readonly document: Document;
+  readonly signal: AbortSignal;
+}
+
 export interface PdfImageResolution {
   readonly page: number;
   readonly dpi: number;
   readonly limited: boolean;
 }
 
-/** A single owned PDF loading task. Rendering is serialized by the caller. */
+/** One owned PDF document with foreground rasterization ahead of speculative thumbnails. */
 export interface PdfImageSource {
   readonly pageCount: number;
   readonly resolution?: PdfImageResolution | undefined;
@@ -48,6 +75,7 @@ export interface PdfImageSource {
     page: number,
     options: ImageRasterOptions & { readonly scale?: number },
   ): Promise<ImageResourceV3>;
+  renderThumbnail(page: number, options: PdfThumbnailOptions): Promise<HTMLCanvasElement>;
   dispose(): Promise<void>;
 }
 
@@ -103,13 +131,12 @@ export async function openPdfImageSource(
     throw new Error("The host PDF loader is incompatible.");
   const task = rawTask as unknown as PdfLoadingTask;
   let disposed = false;
-  let rendering: PdfRenderTask | undefined;
-  let resolution: PdfImageResolution | undefined;
+  let pages: PdfPagesRasterizer | undefined;
   const dispose = async (): Promise<void> => {
     if (disposed) return;
     disposed = true;
     signal.removeEventListener("abort", abort);
-    rendering?.cancel();
+    pages?.close();
     await task.destroy();
   };
   const abort = (): void => {
@@ -126,65 +153,109 @@ export async function openPdfImageSource(
       Number(rawDocument.numPages) > 10_000
     )
       throw new RangeError("PDF page capacity exceeded.");
-    const document = rawDocument as unknown as PdfDocument;
-    return {
-      pageCount: document.numPages,
-      get resolution() {
-        return resolution;
-      },
-      dispose,
-      render: async (number, options) => {
-        if (disposed || rendering !== undefined)
-          throw new Error("PDF source is unavailable or busy.");
-        if (!Number.isInteger(number) || number < 1 || number > document.numPages)
-          throw new RangeError("Invalid PDF page.");
-        const rawPage = await document.getPage(number);
-        if (!objectWithMethods(rawPage, ["getViewport", "render", "cleanup"]))
-          throw new Error("The host PDF page is incompatible.");
-        const page = rawPage as unknown as PdfPage;
-        try {
-          const prepared = await rasterizePdfPage(
-            page,
-            options,
-            (active) => {
-              rendering = active;
-            },
-            () => disposed,
-          );
-          resolution = { page: number, dpi: prepared.dpi, limited: prepared.limited };
-          return prepared.resource;
-        } finally {
-          rendering = undefined;
-          page.cleanup();
-        }
-      },
-    };
+    pages = new PdfPagesRasterizer(rawDocument as unknown as PdfDocument, dispose);
+    return pages;
   } catch (error) {
     await dispose();
     throw error;
   }
 }
 
+class PdfPagesRasterizer implements PdfImageSource {
+  readonly #lifetime = new AbortController();
+  #busy = false;
+  #resolution: PdfImageResolution | undefined;
+  #thumbnail:
+    { readonly abort: AbortController; readonly done: Promise<HTMLCanvasElement> } | undefined;
+
+  public constructor(
+    private readonly pdf: PdfDocument,
+    public readonly dispose: () => Promise<void>,
+  ) {}
+
+  public get pageCount(): number {
+    return this.pdf.numPages;
+  }
+
+  public get resolution(): PdfImageResolution | undefined {
+    return this.#resolution;
+  }
+
+  public close(): void {
+    this.#lifetime.abort();
+  }
+
+  public async render(
+    number: number,
+    options: ImageRasterOptions & { readonly scale?: number },
+  ): Promise<ImageResourceV3> {
+    options.signal.throwIfAborted();
+    const thumbnail = this.#thumbnail;
+    if (thumbnail !== undefined) {
+      thumbnail.abort.abort();
+      await thumbnail.done.catch(() => undefined);
+    }
+    return this.#withPage(number, options.signal, async (page, signal) => {
+      const prepared = await rasterizePdfPage(page, { ...options, signal });
+      this.#resolution = { page: number, dpi: prepared.dpi, limited: prepared.limited };
+      return prepared.resource;
+    });
+  }
+
+  public async renderThumbnail(
+    number: number,
+    options: PdfThumbnailOptions,
+  ): Promise<HTMLCanvasElement> {
+    const abort = new AbortController();
+    const done = this.#withPage(
+      number,
+      AbortSignal.any([options.signal, abort.signal]),
+      (page, signal) => rasterizePdfThumbnail(page, { ...options, signal }),
+    );
+    if (this.#thumbnail !== undefined) return done;
+    this.#thumbnail = { abort, done };
+    try {
+      return await done;
+    } finally {
+      this.#thumbnail = undefined;
+    }
+  }
+
+  async #withPage<T>(
+    number: number,
+    signal: AbortSignal,
+    work: (page: PdfPage, signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    const lifetime = AbortSignal.any([signal, this.#lifetime.signal]);
+    lifetime.throwIfAborted();
+    if (this.#busy) throw new Error("PDF source is busy.");
+    if (!Number.isInteger(number) || number < 1 || number > this.pageCount)
+      throw new RangeError("Invalid PDF page.");
+    this.#busy = true;
+    let page: PdfPage | undefined;
+    try {
+      const rawPage = await this.pdf.getPage(number);
+      if (!objectWithMethods(rawPage, ["getViewport", "render", "cleanup"]))
+        throw new Error("The host PDF page is incompatible.");
+      page = rawPage as unknown as PdfPage;
+      lifetime.throwIfAborted();
+      return await work(page, lifetime);
+    } finally {
+      this.#busy = false;
+      page?.cleanup();
+    }
+  }
+}
+
 async function rasterizePdfPage(
   page: PdfPage,
   options: ImageRasterOptions & { readonly scale?: number },
-  active: (task: PdfRenderTask | undefined) => void,
-  disposed: () => boolean,
 ): Promise<{
   readonly resource: ImageResourceV3;
   readonly dpi: number;
   readonly limited: boolean;
 }> {
-  options.signal.throwIfAborted();
-  if (disposed()) throw new Error("PDF source is closed.");
-  const unit = page.getViewport({ scale: 1 });
-  if (
-    !Number.isFinite(unit.width) ||
-    !Number.isFinite(unit.height) ||
-    unit.width <= 0 ||
-    unit.height <= 0
-  )
-    throw new RangeError("Invalid PDF page dimensions.");
+  const unit = unitViewport(page);
   const requestedScale = options.scale ?? 2;
   const { scale } = fitImageRasterSize(
     unit.width,
@@ -194,28 +265,80 @@ async function rasterizePdfPage(
   );
   const viewport = page.getViewport({ scale });
   const canvas = options.document.createElement("canvas");
-  let task: PdfRenderTask | undefined;
-  const abort = (): void => task?.cancel();
-  options.signal.addEventListener("abort", abort, { once: true });
   try {
     canvas.width = Math.floor(viewport.width);
     canvas.height = Math.floor(viewport.height);
     assertRasterDimensions(canvas.width, canvas.height);
-    const context = canvas.getContext("2d");
-    if (context === null) throw new Error("PDF rasterization is unavailable.");
-    const rawTask: unknown = page.render({ canvas, canvasContext: context, viewport });
-    if (!objectWithMethods(rawTask, ["cancel"]) || !promise(rawTask.promise))
-      throw new Error("The host PDF render task is incompatible.");
-    task = rawTask as unknown as PdfRenderTask;
-    active(task);
-    await task.promise;
-    options.signal.throwIfAborted();
+    await paintPdfCanvas(page, canvas, viewport, options.signal);
     const resource = await encodeImageCanvas(canvas, "image/png", options);
     return { resource, dpi: 72 * scale, limited: scale + 1e-9 < requestedScale };
   } finally {
-    options.signal.removeEventListener("abort", abort);
-    active(undefined);
     canvas.width = 0;
     canvas.height = 0;
+  }
+}
+
+async function rasterizePdfThumbnail(
+  page: PdfPage,
+  options: PdfThumbnailOptions,
+): Promise<HTMLCanvasElement> {
+  const unit = unitViewport(page);
+  const scale = PDF_THUMBNAIL_EDGE / Math.max(unit.width, unit.height);
+  const viewport = page.getViewport({ scale });
+  const canvas = thumbnailCanvas(options.document, viewport);
+  try {
+    await paintPdfCanvas(page, canvas, viewport, options.signal);
+    return canvas;
+  } catch (error) {
+    canvas.width = 0;
+    canvas.height = 0;
+    throw error;
+  }
+}
+
+function thumbnailCanvas(document: Document, viewport: PdfViewport): HTMLCanvasElement {
+  const width = Math.max(1, Math.floor(viewport.width));
+  const height = Math.max(1, Math.floor(viewport.height));
+  assertRasterDimensions(width, height, PDF_THUMBNAIL_EDGE ** 2);
+  if (Math.max(width, height) > PDF_THUMBNAIL_EDGE)
+    throw new RangeError("Invalid PDF thumbnail dimensions.");
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  return canvas;
+}
+
+function unitViewport(page: PdfPage): PdfViewport {
+  const unit = page.getViewport({ scale: 1 });
+  if (
+    !Number.isFinite(unit.width) ||
+    !Number.isFinite(unit.height) ||
+    unit.width <= 0 ||
+    unit.height <= 0
+  )
+    throw new RangeError("Invalid PDF page dimensions.");
+  return unit;
+}
+
+async function paintPdfCanvas(
+  page: PdfPage,
+  canvas: HTMLCanvasElement,
+  viewport: PdfViewport,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const context = canvas.getContext("2d");
+  if (context === null) throw new Error("PDF rasterization is unavailable.");
+  const rawTask: unknown = page.render({ canvas, canvasContext: context, viewport });
+  if (!objectWithMethods(rawTask, ["cancel"]) || !promise(rawTask.promise))
+    throw new Error("The host PDF render task is incompatible.");
+  const task = rawTask as unknown as PdfRenderTask;
+  const abort = (): void => task.cancel();
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    await task.promise;
+    signal.throwIfAborted();
+  } finally {
+    signal.removeEventListener("abort", abort);
   }
 }

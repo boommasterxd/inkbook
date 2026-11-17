@@ -44,6 +44,8 @@ export function installObsidianDomHelpers(): void {
     if (typeof normalized?.text === "string") element.textContent = normalized.text;
     if (normalized?.type !== undefined) element.setAttribute("type", normalized.type);
     if (normalized?.value !== undefined) element.setAttribute("value", normalized.value);
+    for (const [name, value] of Object.entries(normalized?.attr ?? {}))
+      if (value !== null) element.setAttribute(name, String(value));
     return element;
   };
   nodePrototype.createEl = function (tag, options) {
