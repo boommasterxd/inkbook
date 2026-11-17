@@ -67,9 +67,9 @@ IDs. Detached retention does not guarantee an instant revisit or eliminate brows
 publication costs. This byte budget bounds retained ownership; it does not establish
 an optimum for browser memory or revisit speed.
 
-A smaller fade-start quota was rejected: the paired selection-delete diagnostic
-did not reduce long native tasks and increased layerization work. Keep the
-existing deadline-checked fade allowance and full duration. Eraser and selection
+A smaller fade-start quota is not adopted because it provides no established
+reduction in long native tasks and adds layerization work. Keep the existing
+deadline-checked fade allowance and full duration. Eraser and selection
 Delete share retained-node opacity feedback without blur. Avoid filter work that
 the central scheduler cannot interrupt inside browser rendering; preserve the
 paint and group composition rules in the [canonical fade contract](../rendering-and-performance.md#imperative-scene-ownership).

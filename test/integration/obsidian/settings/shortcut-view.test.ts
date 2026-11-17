@@ -30,6 +30,8 @@ describe("localized shortcut settings", () => {
     const { container, store, view } = createView();
     try {
       expand(container, "Canvas shortcuts");
+      expand(container, "Fixed system shortcuts");
+      expand(container, "Obsidian commands");
       const copy = required<HTMLButtonElement>(container, 'button[data-shortcut-action="copy"]');
       const binding = store.getDeviceSettings().keyboardShortcuts.copy;
       copy.click();
@@ -79,6 +81,9 @@ describe("shortcut settings view", () => {
         (section) => required<HTMLElement>(section, ".inkbook-settings-tool-panel").hidden,
       ),
     ).toBe(true);
+    expect(container.querySelectorAll(".inkbook-shortcut-row")).toHaveLength(0);
+    expect(container.querySelectorAll(".inkbook-shortcut-readonly-row")).toHaveLength(0);
+    for (const trigger of triggers) trigger.click();
     expect(container.querySelectorAll(".inkbook-shortcut-row")).toHaveLength(10);
     expect(container.querySelector('button[data-shortcut-action="copy"]')).toBeTruthy();
     expect(container.textContent).toContain("Fixed system shortcuts");

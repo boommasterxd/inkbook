@@ -1,5 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 
+import { verifyPortableMathPayload } from "./embedded-package-modules.mjs";
+
 const parseJson = async (path) => JSON.parse(await readFile(path, "utf8"));
 const manifest = await parseJson("manifest.json");
 const packageManifest = await parseJson("package.json");
@@ -108,6 +110,8 @@ if (
 ) {
   throw new Error("dist/main.js must contain the embedded Inkbook runtime module.");
 }
+
+await verifyPortableMathPayload(outputMain);
 
 if (!outputStyles.includes(".inkbook-root")) {
   throw new Error("dist/styles.css does not contain the scoped Inkbook root styles.");

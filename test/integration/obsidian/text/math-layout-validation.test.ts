@@ -22,6 +22,13 @@ import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snaps
 import { textElement } from "../../../fixtures/rendering/text";
 import { parseTextMarkdown } from "../../../fixtures/domain/text-source";
 
+vi.mock("../../../../src/obsidian/text/portable-math-source", () => ({
+  PORTABLE_MATH_GZIP:
+    "<Ah!!!!!9-SOx5;6=n}85SXsqn,*>3h^H>}Exb9V{|jvA7Y:d=.UqU,ZbU-W<0z#{mr4#O5Q(g)*!!!!",
+}));
+
+import { createPortableMathLoader } from "../../../fixtures/obsidian/portable-math-loader";
+
 const scheduler = createTestWorkScheduler();
 let fonts: FontResourceV2[];
 beforeAll(async () => {
@@ -76,7 +83,7 @@ describe("portable math source and strict runtime validation", () => {
       const math =
         engine === "portable"
           ? new PortableMathRenderer(scheduler)
-          : new ObsidianTextMathRenderer(scheduler);
+          : new ObsidianTextMathRenderer(scheduler, createPortableMathLoader());
       try {
         const prepared = await prepareSource(source, math);
         expect(prepared.source).toBe(source);
@@ -116,7 +123,7 @@ describe("recoverable mathematical source", () => {
       const math =
         engine === "portable"
           ? new PortableMathRenderer(scheduler)
-          : new ObsidianTextMathRenderer(scheduler);
+          : new ObsidianTextMathRenderer(scheduler, createPortableMathLoader());
       const literal = `$${String.fromCharCode(92)}frac{a}{$`;
       const source = `Before $x$.\nUngültige Formel ${literal}\nAfter $y$.`;
       try {

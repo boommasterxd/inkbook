@@ -49,10 +49,17 @@ describe("Inkbook settings modal", () => {
       "Keyboard shortcuts",
     );
     expect(document.querySelector(".inkbook-settings-modal-tabs")).toBeNull();
-    expect(document.querySelectorAll(".inkbook-shortcut-row")).toHaveLength(10);
+    expect(document.querySelectorAll(".inkbook-shortcut-row")).toHaveLength(0);
     expect(
       document.querySelectorAll('.inkbook-shortcut-section-trigger[aria-expanded="false"]'),
     ).toHaveLength(4);
+    const canvasTrigger = [
+      ...document.querySelectorAll<HTMLButtonElement>(".inkbook-shortcut-section-trigger"),
+    ].find((trigger) => trigger.textContent?.startsWith("Canvas shortcuts"));
+    expect(canvasTrigger).toBeDefined();
+    canvasTrigger!.click();
+    expect(document.querySelectorAll(".inkbook-shortcut-row")).toHaveLength(10);
+    expect(document.querySelectorAll("button[data-shortcut-action]")).toHaveLength(10);
     controller.open("settings");
     const settingsDialog = required('.inkbook-settings-modal[role="dialog"][aria-modal="true"]');
     const settingsTitle = document.getElementById(

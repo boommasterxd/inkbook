@@ -124,6 +124,7 @@ it("keeps shortcut DOM, focus and active recording on unrelated device changes",
 
 it("refreshes changed bindings, ignores equivalent clones and releases its subscription", () => {
   const { container, store, view } = createShortcuts();
+  container.querySelector<HTMLButtonElement>(".inkbook-shortcut-section-trigger")!.click();
   const replace = vi.spyOn(container, "replaceChildren");
   store.updateDeviceSettings((settings) => ({
     ...settings,
@@ -145,6 +146,37 @@ it("refreshes changed bindings, ignores equivalent clones and releases its subsc
   }));
   expect(replace).not.toHaveBeenCalled();
 });
+
+it.each(["pointerenter", "focus", "pointerdown"])(
+  "prepares tool DOM on %s and activates current defaults",
+  async (intent) => {
+    const { container, trigger, panel, store, readDefaults, cleanup } = createTool();
+    trigger.dispatchEvent(new Event(intent));
+    const preparedInput = container.querySelector<HTMLInputElement>("input[type=number]");
+    expect(preparedInput?.value).toBe("20");
+    expect(panel.hidden).toBe(true);
+    expect(panel.inert).toBe(true);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    trigger.dispatchEvent(new Event(intent));
+    expect(readDefaults).toHaveBeenCalledOnce();
+    expect(container.querySelector("input[type=number]")).toBe(preparedInput);
+    await store.updateVaultSettings((settings) => {
+      settings.toolDefaults.eraser.radius = 32;
+      return settings;
+    });
+    trigger.click();
+    expect(container.querySelector<HTMLInputElement>("input[type=number]")?.value).toBe("32");
+    const input = container.querySelector("input[type=number]");
+    trigger.click();
+    trigger.click();
+    expect(container.querySelector("input[type=number]")).toBe(input);
+    cleanup();
+    readDefaults.mockClear();
+    trigger.dispatchEvent(new Event(intent));
+    trigger.click();
+    expect(readDefaults).not.toHaveBeenCalled();
+  },
+);
 
 function createShortcuts(viewState?: SettingsViewState, store = createTestSettingsStore()) {
   const container = document.body.createDiv();

@@ -27,6 +27,7 @@ export interface SettingsDisclosureOptions {
   readonly expanded: boolean;
   readonly panelId: string;
   readonly observeMotion?: ObserveMotion;
+  readonly prepareContent?: () => void;
   readonly readMotion?: () => MotionPreference;
   readonly sectionClass?: string;
   readonly title: string;
@@ -73,6 +74,10 @@ export function createSettingsDisclosure(
   };
   if (options.expanded || options.deferDescriptionUntilExpanded !== true) initializeDescription();
   const motion = bindDisclosureMotion(trigger, chevron, options);
+  const prepare = (): void => options.prepareContent?.();
+  trigger.addEventListener("pointerenter", prepare);
+  trigger.addEventListener("focus", prepare);
+  trigger.addEventListener("pointerdown", prepare);
   return {
     content,
     panel,
@@ -81,7 +86,12 @@ export function createSettingsDisclosure(
       if (expanded) initializeDescription();
       motion.setExpanded(expanded, reducedMotion);
     },
-    dispose: motion.dispose,
+    dispose: () => {
+      trigger.removeEventListener("pointerenter", prepare);
+      trigger.removeEventListener("focus", prepare);
+      trigger.removeEventListener("pointerdown", prepare);
+      motion.dispose();
+    },
   };
 }
 

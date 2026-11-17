@@ -39,11 +39,10 @@ syntax parser, migration command, generation fallback, and export branch.
 
 ## Verification Boundary
 
-The initial feasibility check used the installed Flatpak Obsidian 1.15.0 in an
-isolated X11 session and the dedicated QA vault. Public postprocessor section ranges,
-whole-section replacement with lifecycle restoration, and CodeMirror block
-replacement alongside native image decorations were exercised before implementation.
-This does not establish physical mobile behavior or other plugins' compatibility.
+Acceptance must cover public postprocessor section ranges, whole-section replacement
+with lifecycle restoration, and CodeMirror block replacement alongside native image
+decorations. Virtual-display checks do not establish physical mobile behavior or
+other plugins' compatibility.
 Native references use the sectionless export path after safe source and
 semantic-image correlation, including export finalization and pagination. Its
 host timing and width rules are canonical in [Native PDF Export Pagination](../export-pagination.md).

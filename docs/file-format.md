@@ -492,10 +492,5 @@ Readers continue to accept `data-encoding="json"` with flat numeric triples. Ope
 
 ## Related Documentation
 
-- [Implementation specification](specification.md)
-- [Core model](core-model.md)
-- [Editor tools](editor-tools.md)
-- [Rendering and performance](rendering-and-performance.md)
-- [Standalone SVG envelope and theme rendering](svg-envelope.md)
-- [Settings](settings.md)
-- [Quality and testing](quality-and-testing.md)
+See the [implementation specification](specification.md), [core model](core-model.md), and [editor tools](editor-tools.md) for the surrounding product contracts.
+See [rendering and performance](rendering-and-performance.md), [standalone SVG envelope and theme rendering](svg-envelope.md), [settings](settings.md), and [quality and testing](quality-and-testing.md) for their respective boundaries.

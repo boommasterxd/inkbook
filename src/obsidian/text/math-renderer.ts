@@ -8,21 +8,40 @@ import {
   type TextMathResolver,
   type TextMathStyle,
 } from "../../rendering/text/text-layout-types";
+import { assertTextMathInput, textMathSource } from "./math-input";
 import {
-  assertTextMathInput,
-  PortableMathRenderer,
-  textMathSource,
-} from "./portable-math-renderer";
+  portableMathLoader,
+  type PortableMathEngine,
+  type PortableMathModuleLoader,
+} from "./portable-math-loader";
 
 /** Public host SVG is reused when available. CHTML uses the same local paths as saved SVG. */
 export class ObsidianTextMathRenderer implements TextMathResolver {
-  #portable: PortableMathRenderer | undefined;
+  #portable: PortableMathEngine | undefined;
+  readonly #loader: PortableMathModuleLoader;
+  readonly #lifetime = new AbortController();
   readonly #scheduler: WorkScheduler;
   #nativeSvg: boolean | undefined;
   #disposed = false;
 
-  public constructor(scheduler: WorkScheduler) {
+  public constructor(
+    scheduler: WorkScheduler,
+    loader: PortableMathModuleLoader = portableMathLoader,
+  ) {
     this.#scheduler = scheduler;
+    this.#loader = loader;
+  }
+
+  /** Known formula source may prepare code while independent font work proceeds. */
+  public async prepare(signal?: FrameCancellation): Promise<boolean> {
+    if (this.#disposed) return false;
+    try {
+      assertTextLayoutActive(signal);
+      await this.#loadModule(signal);
+      return !this.#disposed;
+    } catch {
+      return false;
+    }
   }
 
   public async resolve(
@@ -45,14 +64,41 @@ export class ObsidianTextMathRenderer implements TextMathResolver {
       );
       if (native) return native;
     }
-    this.#portable ??= new PortableMathRenderer(this.#scheduler);
+    if (this.#portable === undefined) {
+      const module = await this.#loadModule(signal);
+      assertTextLayoutActive(signal);
+      if (this.#disposed) throw new Error("Math renderer disposed.");
+      this.#portable ??= module.createPortableMathRenderer(this.#scheduler);
+    }
     return this.#portable.resolve(latex, display, fontSize, signal, availableWidth, options);
   }
 
   public dispose(): void {
     this.#disposed = true;
+    this.#lifetime.abort(new Error("Math renderer disposed."));
     this.#portable?.dispose();
     this.#portable = undefined;
+  }
+
+  async #loadModule(signal?: FrameCancellation) {
+    const lease = this.#loader.acquire();
+    let cancel = (): void => undefined;
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      cancel = () => {
+        const reason: unknown = signal?.aborted ? signal.reason : this.#lifetime.signal.reason;
+        reject(reason instanceof Error ? reason : new Error("Text layout cancelled."));
+      };
+      this.#lifetime.signal.addEventListener("abort", cancel, { once: true });
+      signal?.addEventListener("abort", cancel, { once: true });
+      if (this.#lifetime.signal.aborted || signal?.aborted) cancel();
+    });
+    try {
+      return await Promise.race([lease.module, cancelled]);
+    } finally {
+      this.#lifetime.signal.removeEventListener("abort", cancel);
+      signal?.removeEventListener("abort", cancel);
+      lease.release();
+    }
   }
 
   async #resolveNative(

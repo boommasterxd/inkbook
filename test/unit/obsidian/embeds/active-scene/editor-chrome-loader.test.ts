@@ -1,3 +1,8 @@
+import type { EmbeddedModuleWindow } from "../../../../../src/obsidian/runtime/embedded-module-loader";
+import {
+  createEmbeddedModuleWindow,
+  type EmbeddedModuleWindowFixture,
+} from "../../../../fixtures/obsidian/embedded-module-window";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../../../src/rendering/ui/editor-chrome-source", () => ({
@@ -10,52 +15,7 @@ import {
   beginEditorChromeMount,
   prepareEditorChrome,
   EditorChromeModuleLoader,
-  type EditorChromeWindow,
 } from "../../../../../src/obsidian/embeds/active-scene/editor-chrome-loader";
-
-interface WindowFixture {
-  readonly blobs: Blob[];
-  readonly document: Document;
-  readonly revoked: string[];
-  readonly runTimers: () => void;
-  readonly window: EditorChromeWindow;
-}
-
-function createWindowFixture(name: string): WindowFixture {
-  const blobs: Blob[] = [];
-  const revoked: string[] = [];
-  const timers = new Map<number, () => void>();
-  let nextTimer = 0;
-  const objectUrlApi = Object.assign(function URL() {}, {
-    createObjectURL: (blob: Blob) => {
-      blobs.push(blob);
-      return `blob:${name}`;
-    },
-    revokeObjectURL: (url: string) => revoked.push(url),
-  });
-  const window: EditorChromeWindow = {
-    Blob,
-    clearTimeout: (handle) => timers.delete(handle),
-    DecompressionStream,
-    Response,
-    setTimeout: (callback) => {
-      const handle = ++nextTimer;
-      timers.set(handle, callback);
-      return handle;
-    },
-    URL: objectUrlApi,
-  };
-  const document = { defaultView: window } as unknown as Document;
-  return {
-    blobs,
-    document,
-    revoked,
-    runTimers: () => {
-      for (const callback of [...timers.values()]) callback();
-    },
-    window,
-  };
-}
 
 function createProps(ownerDocument: Document, layout: "scrollable" | "wide" = "wide") {
   return { ...createEditorChromeProps(ownerDocument), layout };
@@ -79,7 +39,7 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
-function startDeferredMount(fixture: WindowFixture) {
+function startDeferredMount(fixture: EmbeddedModuleWindowFixture) {
   const module = deferred<unknown>();
   const importer = vi.fn(() => module.promise);
   const loader = new EditorChromeModuleLoader(importer);
@@ -93,7 +53,7 @@ function startDeferredMount(fixture: WindowFixture) {
 
 describe("embedded editor chrome preparation", () => {
   it("prepares a shared module on intent without mounting or duplicating activation work", async () => {
-    const fixture = createWindowFixture("intent");
+    const fixture = createEmbeddedModuleWindow("intent");
     const mounted = vi.fn(createMountedChrome);
     const module = deferred<unknown>();
     const importer = vi.fn(() => module.promise);
@@ -115,7 +75,7 @@ describe("embedded editor chrome preparation", () => {
   });
 
   it("releases abandoned intent and recovers a rejected preparation without blocking activation", async () => {
-    const fixture = createWindowFixture("abandoned-intent");
+    const fixture = createEmbeddedModuleWindow("abandoned-intent");
     const firstModule = deferred<unknown>();
     const mounted = vi.fn(createMountedChrome);
     const importer = vi
@@ -143,8 +103,8 @@ describe("embedded editor chrome preparation", () => {
 
 describe("embedded editor chrome loader", () => {
   it("deduplicates one module per owning Window and mounts each root with its latest props", async () => {
-    const first = createWindowFixture("first");
-    const second = createWindowFixture("second");
+    const first = createEmbeddedModuleWindow("first");
+    const second = createEmbeddedModuleWindow("second");
     const firstMount = vi.fn(() => ({
       ready: Promise.resolve(true),
       unmount: vi.fn(),
@@ -155,7 +115,7 @@ describe("embedded editor chrome loader", () => {
       unmount: vi.fn(),
       update: vi.fn(),
     }));
-    const importer = vi.fn(async (_url: string, owningWindow: EditorChromeWindow) => ({
+    const importer = vi.fn(async (_url: string, owningWindow: EmbeddedModuleWindow) => ({
       mountEditorChrome: owningWindow === first.window ? firstMount : secondMount,
     }));
     const loader = new EditorChromeModuleLoader(importer);
@@ -192,7 +152,7 @@ describe("embedded editor chrome loader", () => {
   });
 
   it("does not mount after cancellation while a shared module is loading", async () => {
-    const fixture = createWindowFixture("cancelled");
+    const fixture = createEmbeddedModuleWindow("cancelled");
     const mounted = vi.fn(() => ({
       ready: Promise.resolve(true),
       unmount: vi.fn(),
@@ -210,7 +170,7 @@ describe("embedded editor chrome loader", () => {
   });
 
   it("waits for the React commit hook and cancels a root that detaches before commit", async () => {
-    const fixture = createWindowFixture("commit");
+    const fixture = createEmbeddedModuleWindow("commit");
     const committed = deferred<boolean>();
     const unmount = vi.fn();
     const mount = vi.fn(() => ({ ready: committed.promise, unmount, update: vi.fn() }));
@@ -232,7 +192,7 @@ describe("embedded editor chrome loader", () => {
 
 describe("embedded editor chrome loader failures", () => {
   it("revokes a failed import and permits an explicit retry", async () => {
-    const fixture = createWindowFixture("retry");
+    const fixture = createEmbeddedModuleWindow("retry");
     const mounted = vi.fn(() => ({
       ready: Promise.resolve(true),
       unmount: vi.fn(),
@@ -262,7 +222,7 @@ describe("embedded editor chrome loader failures", () => {
   });
 
   it("rejects a missing decompression API asynchronously before creating a Blob URL", async () => {
-    const fixture = createWindowFixture("unsupported");
+    const fixture = createEmbeddedModuleWindow("unsupported");
     const loader = new EditorChromeModuleLoader(vi.fn());
     const unsupported = { ...fixture.window, DecompressionStream: undefined };
     const document = { defaultView: unsupported } as unknown as Document;
@@ -278,7 +238,7 @@ describe("embedded editor chrome loader failures", () => {
   });
 
   it("bounds a hung import and releases its Blob URL", async () => {
-    const fixture = createWindowFixture("timeout");
+    const fixture = createEmbeddedModuleWindow("timeout");
     const { importer, module, pending } = startDeferredMount(fixture);
 
     await vi.waitFor(() => expect(importer).toHaveBeenCalledOnce());
@@ -290,10 +250,10 @@ describe("embedded editor chrome loader failures", () => {
   });
 
   it("rejects and revokes an object URL outside the Blob scheme", async () => {
-    const fixture = createWindowFixture("invalid");
+    const fixture = createEmbeddedModuleWindow("invalid");
     const importer = vi.fn();
     const loader = new EditorChromeModuleLoader(importer);
-    const invalidWindow: EditorChromeWindow = {
+    const invalidWindow: EmbeddedModuleWindow = {
       ...fixture.window,
       URL: {
         createObjectURL: () => "https://example.invalid/editor.js",

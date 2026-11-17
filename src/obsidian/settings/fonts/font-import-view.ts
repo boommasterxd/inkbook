@@ -92,6 +92,7 @@ function renderChoose(
   t: Translator,
 ): void {
   const upload = root.createDiv({ cls: "inkbook-font-import-upload" });
+  upload.dataset.inkbookSettingIdentity = "font-import-upload";
   const button = renderIconButton(upload, {
     label: t("fonts.chooseFiles"),
     icon: "upload",
@@ -152,6 +153,7 @@ function renderCheck(
   t: Translator,
 ): Pick<FontImportViewHandle, "preview" | "nameInput"> {
   const label = root.createEl("label", { cls: "inkbook-font-import-field" });
+  label.dataset.inkbookSettingIdentity = "font-import-name";
   label.createSpan({ text: t("fonts.pickerName") });
   const nameInput = label.createEl("input", { type: "text" });
   nameInput.value = model.name;
@@ -179,6 +181,7 @@ function renderTarget(
   t: Translator,
 ): void {
   const label = root.createEl("label", { cls: "inkbook-font-import-field" });
+  label.dataset.inkbookSettingIdentity = "font-import-family";
   label.createSpan({ text: t("fonts.addToExisting") });
   const select = label.createEl("select");
   select.createEl("option", { value: "", text: t("fonts.newFont") });
@@ -197,6 +200,7 @@ function renderPreviewChoice(
   t: Translator,
 ): void {
   const label = root.createEl("label", { cls: "inkbook-font-import-field" });
+  label.dataset.inkbookSettingIdentity = "font-import-preview";
   label.createSpan({ text: t("fonts.previewStyle") });
   const select = label.createEl("select");
   for (const face of model.files) {
@@ -227,6 +231,7 @@ function renderFiles(
   list.setAttribute("aria-label", t("fonts.selectedFiles"));
   for (const face of model.files) {
     const item = list.createEl("li");
+    item.dataset.inkbookSettingIdentity = `font-import-file:${face.id}`;
     const copy = item.createDiv({ cls: "inkbook-font-import-file-copy" });
     copy.createSpan({ text: face.fileName });
     copy.createSpan({ text: friendlyFontVariant(face, t), cls: "inkbook-font-import-hint" });

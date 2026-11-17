@@ -72,23 +72,40 @@ export class ShortcutSettingsView {
     this.#disposePanelMotions();
     this.#container.replaceChildren();
     this.#container.classList.add("inkbook-shortcuts-view");
-    const canvas = this.#renderSection(
+    this.#renderSection(
       "canvas",
       this.#store.localization.t("settings.shortcuts.canvas"),
       this.#store.localization.t("settings.shortcuts.canvasHelp"),
+      (canvas) => {
+        canvas.classList.add("inkbook-shortcut-section-content-canvas");
+        this.#recordingView.renderActions(canvas.createDiv({ cls: "inkbook-shortcuts-list" }));
+        return () => this.#recordingView.activateActions();
+      },
     );
-    canvas.classList.add("inkbook-shortcut-section-content-canvas");
-    this.#recordingView.renderActions(canvas.createDiv({ cls: "inkbook-shortcuts-list" }));
     this.#renderFixedSection();
     this.#renderGestureSection();
     this.#renderCommandSection();
     this.#recordingView.renderGroupResetAction(this.#container);
   }
 
-  #renderSection(id: ShortcutSectionId, name: string, description: string): HTMLElement {
+  #renderSection(
+    id: ShortcutSectionId,
+    name: string,
+    description: string,
+    render: (content: HTMLElement) => (() => void) | void,
+  ): void {
     const panelId = `${this.#idPrefix}-${id}`;
     const stateKey = `shortcut:${id}`;
     const expanded = this.#viewState.expandedSections.has(stateKey);
+    let initialized = false;
+    let activate: (() => void) | undefined;
+    const prepareContent = (): (() => void) | undefined => {
+      if (!initialized) {
+        activate = render(content) ?? undefined;
+        initialized = true;
+      }
+      return activate;
+    };
     const { content, panel, trigger, setExpanded, dispose } = createSettingsDisclosure(
       this.#container,
       {
@@ -102,6 +119,7 @@ export class ShortcutSettingsView {
         sectionClass: "inkbook-shortcut-section",
         title: name,
         triggerClass: "inkbook-shortcut-section-trigger",
+        prepareContent,
       },
     );
     const motion = new SettingsPanelMotion(
@@ -112,8 +130,14 @@ export class ShortcutSettingsView {
     trigger.dataset.inkbookSettingIdentity = JSON.stringify(["shortcut-section", id]);
     this.#panelMotions.push(motion);
     this.#disposeDisclosures.push(dispose);
-    trigger.addEventListener("click", () => {
+    if (expanded) {
+      prepareContent()?.();
+    }
+    const toggle = (): void => {
       const nextExpanded = trigger.getAttribute("aria-expanded") !== "true";
+      if (nextExpanded) {
+        prepareContent()?.();
+      }
       trigger.setAttribute("aria-expanded", String(nextExpanded));
       setExpanded(
         nextExpanded,
@@ -125,41 +149,48 @@ export class ShortcutSettingsView {
       if (nextExpanded) this.#viewState.expandedSections.add(stateKey);
       else this.#viewState.expandedSections.delete(stateKey);
       motion.setExpanded(nextExpanded);
-    });
-    return content;
+    };
+    trigger.addEventListener("click", toggle);
+    this.#disposeDisclosures.push(() => trigger.removeEventListener("click", toggle));
   }
 
   #renderFixedSection(): void {
-    const content = this.#renderReferenceSection(
+    this.#renderReferenceSection(
       "fixed",
       this.#store.localization.t("settings.shortcuts.fixed"),
       this.#store.localization.t("settings.shortcuts.fixedHelp"),
+      (content) => this.#referenceView.renderFixed(content),
     );
-    this.#referenceView.renderFixed(content);
   }
 
   #renderGestureSection(): void {
-    const content = this.#renderReferenceSection(
+    this.#renderReferenceSection(
       "gestures",
       this.#store.localization.t("settings.shortcuts.gestures"),
       this.#store.localization.t("settings.shortcuts.gesturesHelp"),
+      (content) => this.#referenceView.renderGestures(content),
     );
-    this.#referenceView.renderGestures(content);
   }
 
   #renderCommandSection(): void {
-    const content = this.#renderReferenceSection(
+    this.#renderReferenceSection(
       "commands",
       this.#store.localization.t("settings.shortcuts.commands"),
       this.#store.localization.t("settings.shortcuts.commandsHelp"),
+      (content) => this.#referenceView.prepareCommands(content),
     );
-    this.#referenceView.renderCommands(content);
   }
 
-  #renderReferenceSection(id: ShortcutSectionId, name: string, description: string): HTMLElement {
-    const content = this.#renderSection(id, name, description);
-    content.classList.add("inkbook-shortcut-section-content-reference");
-    return content;
+  #renderReferenceSection(
+    id: ShortcutSectionId,
+    name: string,
+    description: string,
+    render: (content: HTMLElement) => (() => void) | void,
+  ): void {
+    this.#renderSection(id, name, description, (content) => {
+      content.classList.add("inkbook-shortcut-section-content-reference");
+      return render(content);
+    });
   }
 
   #disposePanelMotions(): void {

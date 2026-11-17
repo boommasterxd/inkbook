@@ -477,3 +477,19 @@ describe("active text preparation work", () => {
     prepare.dispose();
   });
 });
+
+it("prepares code once for known formulas and reuses it across a parsed reflow", async () => {
+  const { prepare } = fixture();
+  const warm = vi.spyOn(prepare.math, "prepare").mockResolvedValue(true);
+  const signal = new AbortController().signal;
+  try {
+    await prepare.open(textElement(), signal);
+    expect(warm).not.toHaveBeenCalled();
+    const element = textElement({ source: "$x$ ".repeat(1000), width: 500 });
+    await prepare.open(element, signal);
+    await prepare.open({ ...element, width: 250 }, signal);
+    expect(warm).toHaveBeenCalledExactlyOnceWith(signal);
+  } finally {
+    prepare.dispose();
+  }
+});

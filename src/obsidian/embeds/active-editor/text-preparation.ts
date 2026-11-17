@@ -341,6 +341,7 @@ export class ActiveTextPreparation {
       requests.set(`${request.family}:${request.weight}:${request.style}`, request);
     };
     let hasGlyphs = false;
+    let preparingMath = false;
     for (const block of document.blocks) {
       if (block.list) {
         include(blockTextStyle(block, element.style));
@@ -355,7 +356,13 @@ export class ActiveTextPreparation {
           include(style);
           measurements.push({ style, run });
           hasGlyphs = true;
-        } else if (run.kind === "math") include({ ...style, fontFamily: TEXT_CODE_FONT_FAMILY });
+        } else if (run.kind === "math") {
+          include({ ...style, fontFamily: TEXT_CODE_FONT_FAMILY });
+          if (!preparingMath) {
+            preparingMath = true;
+            void this.math.prepare(signal);
+          }
+        }
         const pending = this.#scheduler.checkpoint(signal, "frame");
         if (pending !== undefined) await pending;
         this.#assertActive(signal);

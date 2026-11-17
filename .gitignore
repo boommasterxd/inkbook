@@ -1,11 +1,19 @@
+# Coverage reports
 coverage/
+
+# Generated plugin artifacts
 dist/
 main.js
 *.js.map
+
+# Dependencies
 node_modules/
+
+# Local editor and operating-system files
 .DS_Store
 .idea/
 .vscode/
 
+# Test caches and generated CI plans
 .vitest-cache/
 .ci-selection.json
