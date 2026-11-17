@@ -25,6 +25,7 @@ export interface FontChoiceDropdownOptions extends MenuLocalizationOptions {
   readonly keymap?: Pick<Keymap, "pushScope" | "popScope"> | undefined;
   readonly fontPreviews?: FontOptionPreviewPort | undefined;
   readonly registerCleanup?: ((cleanup: () => void) => void) | undefined;
+  readonly registerActivation?: ((activate: () => void) => void) | undefined;
   readonly registerChoiceRestore?: (id: string, restore: (value: string | null) => void) => void;
   readonly onChange: (controlId: string, value: boolean | number | string) => void;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
@@ -61,6 +62,7 @@ class FontChoiceDropdown {
   #active = 0;
   #open = false;
   #disposed = false;
+  #activeLifecycle = false;
   #selectedPreview: (() => void) | undefined;
   #previewFamily: string | null = null;
   #releaseEscape: (() => void) | undefined;
@@ -112,11 +114,18 @@ class FontChoiceDropdown {
     body.addEventListener("focusout", (event) => {
       if (!this.#contains(event.relatedTarget as Node | null)) this.#setOpen(false);
     });
-    // Registered during content creation, before the enclosing panel's Escape handler.
-    body.ownerDocument.addEventListener("keydown", this.#onKeyDown, true);
-    body.ownerDocument.addEventListener("pointerdown", this.#onOutsidePointer, true);
     updateMenuText(options, () => this.#renderValue());
     this.setValue(control.value);
+    if (options.registerActivation === undefined) this.#activateLifecycle();
+    else options.registerActivation(() => this.#activateLifecycle());
+  }
+
+  #activateLifecycle(): void {
+    if (this.#activeLifecycle || this.#disposed) return;
+    this.#activeLifecycle = true;
+    this.#body.ownerDocument.addEventListener("keydown", this.#onKeyDown, true);
+    this.#body.ownerDocument.addEventListener("pointerdown", this.#onOutsidePointer, true);
+    this.setValue(this.#value);
   }
 
   #createManagementButton(): HTMLButtonElement | undefined {
@@ -160,7 +169,7 @@ class FontChoiceDropdown {
     for (const item of this.#items)
       item.setAttribute("aria-selected", String(item.dataset.value === value));
     this.#renderValue();
-    if (this.#previewFamily !== value) {
+    if (this.#activeLifecycle && this.#previewFamily !== value) {
       this.#selectedPreview?.();
       this.#selectedPreview =
         value === null ? undefined : this.#options.fontPreviews?.acquire(this.#label, value);

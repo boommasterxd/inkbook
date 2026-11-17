@@ -1,6 +1,13 @@
+# Coverage reports
 coverage/
+
+# Generated plugin artifacts
 dist/
 main.js
+
+# Dependencies and generated lockfile
 node_modules/
 package-lock.json
+
+# Generated CI plans
 .ci-selection.json

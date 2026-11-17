@@ -8,7 +8,7 @@ on:
       - CI
       - Commit Style Check
       - Dependabot auto-merge
-      - Push on main
+      - CodeQL
       - Release
       - Secret scan
       - Update gitleaks

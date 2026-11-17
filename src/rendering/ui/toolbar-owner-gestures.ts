@@ -8,7 +8,7 @@ export function useToolbarOwnerGestures(
   elementRef: RefObject<HTMLElement | null>,
   disabled: boolean,
 ) {
-  const [state, setState] = useState({ local: false, gesture: "rest" });
+  const [state, setState] = useState({ local: false, gesture: "rest", hovering: false });
   useLayoutEffect(() => {
     const element = elementRef.current?.closest<HTMLButtonElement>("button") ?? null;
     const ownerWindow = element?.ownerDocument.defaultView;

@@ -1,3 +1,4 @@
+import { assertTextMathInput, MAX_FORMULA_LENGTH, textMathSource } from "./math-input";
 import { liteAdaptor } from "@mathjax/src/js/adaptors/liteAdaptor.js";
 import type { LiteElement } from "@mathjax/src/js/adaptors/lite/Element.js";
 import { HTMLHandler } from "@mathjax/src/js/handlers/html/HTMLHandler.js";
@@ -28,29 +29,12 @@ const MAX_CACHE_PATH_CHARACTERS = 2_000_000;
 // A supported field fits in full. Each key adds at most 64 characters for two
 // finite numbers, mode and separators beyond its bounded TeX source.
 const MAX_CACHE_KEY_CHARACTERS = MAX_TEXT_SOURCE_LENGTH + MAX_TEXT_LAYOUT_ITEMS * 64;
-const MAX_FORMULA_LENGTH = 8192;
 
 interface CachedMath {
   readonly value: ResolvedTextMath;
   readonly pathCharacters: number;
   readonly keyCharacters: number;
   readonly items: number;
-}
-
-export function assertTextMathInput(
-  latex: string,
-  fontSize: number,
-  availableWidth?: number,
-): void {
-  if (
-    latex.length > MAX_FORMULA_LENGTH ||
-    !Number.isFinite(fontSize) ||
-    fontSize <= 0 ||
-    fontSize > 4096
-  )
-    throw new Error("Math expression exceeds the supported limits.");
-  if (availableWidth !== undefined && (!Number.isFinite(availableWidth) || availableWidth < 0))
-    throw new Error("Invalid math container width.");
 }
 
 /** The owner supplies the shared window scheduler; this engine performs no network or DOM work. */
@@ -237,11 +221,6 @@ export class PortableMathRenderer implements TextMathResolver {
     this.#items -= entry.items;
     this.#cache.delete(key);
   }
-}
-
-export function textMathSource(latex: string, options?: TextMathStyle): string {
-  // A newline keeps a final TeX comment from consuming the closing group.
-  return options?.bold ? `\\boldsymbol{${latex}\n}` : latex;
 }
 
 function linkedCancellation(

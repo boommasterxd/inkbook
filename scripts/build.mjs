@@ -12,6 +12,8 @@ const workerEntry = resolve("src/persistence/worker/runtime/document-worker-entr
 const workerSourceModule = resolve("src/persistence/worker/runtime/worker-source.ts");
 const editorChromeEntry = resolve("src/rendering/ui/editor-chrome-entry.ts");
 const editorChromeSourceModule = resolve("src/rendering/ui/editor-chrome-source.ts");
+const portableMathEntry = resolve("src/obsidian/text/portable-math-entry.ts");
+const portableMathSourceModule = resolve("src/obsidian/text/portable-math-source.ts");
 const pluginRuntimeEntry = resolve("src/obsidian/plugin-runtime-entry.ts");
 const pluginRuntimeSourceModule = resolve("src/obsidian/plugin-runtime-source.ts");
 const base91Alphabet =
@@ -54,6 +56,7 @@ function encodeBase91(bytes) {
 function embeddedJavaScript({
   entry,
   external = [],
+  forbiddenInputs,
   filter,
   format,
   marker,
@@ -85,6 +88,12 @@ function embeddedJavaScript({
           target: "es2022",
           write: false,
         });
+        if (
+          forbiddenInputs &&
+          Object.keys(embeddedBuild.metafile.inputs).some((path) => forbiddenInputs.test(path))
+        ) {
+          throw new Error(`${name} eagerly includes an optional embedded engine.`);
+        }
         const output = embeddedBuild.outputFiles[0];
         if (output === undefined) throw new Error(`${name} build produced no JavaScript.`);
         const bundledSource = production
@@ -126,14 +135,26 @@ const embeddedEditorChrome = embeddedJavaScript({
   token: "__INKBOOK_EDITOR_CHROME_SOURCE__",
 });
 
+const embeddedPortableMath = embeddedJavaScript({
+  entry: portableMathEntry,
+  filter: /portable-math-source\.ts$/,
+  format: "esm",
+  marker: "createPortableMathRenderer",
+  name: "embedded-portable-math",
+  sourceModule: portableMathSourceModule,
+  token: "__INKBOOK_PORTABLE_MATH_SOURCE__",
+});
+
 const embeddedPluginRuntime = embeddedJavaScript({
   entry: pluginRuntimeEntry,
   external: ["obsidian", "@codemirror/*", "@lezer/*"],
+  forbiddenInputs:
+    /(?:node_modules\/@mathjax\/|obsidian\/text\/(?:portable-math-renderer|math-font-data)\.ts$)/,
   filter: /plugin-runtime-source\.ts$/,
   format: "cjs",
   marker: "inkbook-plugin-bootstrap",
   name: "embedded-plugin-runtime",
-  plugins: [embeddedDocumentWorker, embeddedEditorChrome],
+  plugins: [embeddedDocumentWorker, embeddedEditorChrome, embeddedPortableMath],
   sourceModule: pluginRuntimeSourceModule,
   token: "__INKBOOK_PLUGIN_RUNTIME_SOURCE__",
   wrap: wrapPluginRuntime,

@@ -8,7 +8,7 @@ The historical policy used a common 20-percent ratio-only comparison, identicall
 
 ## Reason
 
-The earlier absolute floor reduced inconclusive results in local live-stroke controls but weakened sensitivity to short operations. Replaying twice the recorded handoff values passed the floor-based rule in all five profiles; this was an algebraic sensitivity check, not a measured source mutation. The available complete-suite reports were contracts-only executions with source-identity skips and did not validate a universal floor. Widening an allowed slowdown does not resolve measurement uncertainty.
+An absolute relevance floor weakens sensitivity to short operations by allowing large relative slowdowns below that floor. Source-identity skips and contracts-only execution cannot justify a universal timing floor. Widening an allowed slowdown does not resolve measurement uncertainty.
 
 ## Consequences
 
@@ -16,6 +16,6 @@ A change with genuinely slower code may merge when valid timing evidence remains
 
 No benchmark, warmup, sample population or retry is added. More noisy comparisons can use the existing final stage after the floor is removed, so the change does not guarantee shorter execution. The job ceilings are twenty minutes; timeouts are failures, not warnings. Local and hosted commands used the same contracts and comparator.
 
-## Evidence Scope
+## Evidence Boundaries
 
-Stored local Node.js 26 live-stroke controls cover one file with five metrics across all five profiles. Replaying the stored populations with the 20-percent rule yields no regression on unchanged source and an inconclusive overall comparison in each profile. At 90, 120 and 144 Hz the full eighteen pairs are available; these unresolved comparisons warn. Only six pairs exist at 60 and 240 Hz: the then-current gate would continue to eighteen, so their final decisions and added-stage runtime are not established by this replay. Sparse source mutations adding 0.25 ms to two of 120 handoffs are classified as handoff regressions in all five profiles. This retrospective replay does not calibrate every scenario or hosted runner or demonstrate detection of an actual 20-percent source slowdown. The 20-percent boundary replaces the earlier 50-percent allowance; it is a chosen regression budget, not an estimate of noise. No production optimization was justified by an unchanged-source regression in these stored results. A future unchanged-source failure requires investigation of both measurement conditions and the actual work; making an operation faster does not itself prove noise has been resolved. The historical authoring policy required controls, negative evidence, and documented limitations for new timing scenarios.
+The 20-percent boundary replaced the earlier 50-percent allowance as a chosen regression budget, not an estimate of noise. Unchanged-source failures require investigation of both measurement conditions and actual work; making an operation faster does not itself resolve noise. The historical authoring policy required controls, negative evidence, and explicit limitations for new timing scenarios. Neither retrospective controls nor source-identity skips establish full-suite completion, hosted stability, or detection of every small or rare slowdown.

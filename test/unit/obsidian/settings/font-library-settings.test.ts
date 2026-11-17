@@ -184,8 +184,12 @@ it("prepares multiple styles without writes and commits the reviewed name once",
     const previewStyle = [...context.section.querySelectorAll("label")]
       .find((label) => label.textContent?.startsWith("Style to preview"))!
       .querySelector("select")!;
+    previewStyle.focus();
     previewStyle.value = prepared("Example-Bold.ttf", 700).id;
     previewStyle.dispatchEvent(new Event("change"));
+    expect(document.activeElement).toBe(
+      context.section.querySelector('[data-inkbook-setting-identity="font-import-preview"] select'),
+    );
     await vi.waitFor(() =>
       expect(loadNativeFontPreview).toHaveBeenLastCalledWith(
         prepared("Example-Bold.ttf", 700).resource,
@@ -301,8 +305,12 @@ it("uses an existing font name and recovers a failed final write without prepari
     const select = [...context.section.querySelectorAll("label")]
       .find((label) => label.textContent?.startsWith("Add to existing font"))!
       .querySelector("select")!;
+    select.focus();
     select.value = context.library.list()[0]!.family;
     select.dispatchEvent(new Event("change"));
+    expect(document.activeElement).toBe(
+      context.section.querySelector('[data-inkbook-setting-identity="font-import-family"] select'),
+    );
     const name = context.section.querySelector<HTMLInputElement>('input[type="text"]')!;
     expect(name.disabled).toBe(true);
     expect(name.value).toBe("Font 0");
@@ -319,6 +327,38 @@ it("uses an existing font name and recovers a failed final write without prepari
       { displayName: "Font 0", family: context.library.list()[0]!.family },
       expect.any(AbortSignal),
     );
+  } finally {
+    context.dispose();
+  }
+});
+
+it("keeps file-removal focus on the next, previous or upload action", async () => {
+  const context = fixture(0);
+  context.prepare
+    .mockResolvedValueOnce(prepared("Example-Light.ttf", 300))
+    .mockResolvedValueOnce(prepared())
+    .mockResolvedValueOnce(prepared("Example-Bold.ttf", 700));
+  try {
+    button(context.section, "Add font").click();
+    selectFiles(context.section, [
+      file("Example-Light.ttf"),
+      file("Example.ttf"),
+      file("Example-Bold.ttf"),
+    ]);
+    await vi.waitFor(() => expect(button(context.section, "Next").disabled).toBe(false));
+    for (const [removed, next] of [
+      ["Example-Light.ttf", "Remove Example.ttf from selection"],
+      ["Example-Bold.ttf", "Remove Example.ttf from selection"],
+      ["Example.ttf", "Choose font files or drop files here"],
+    ] as const) {
+      const remove = button(context.section, `Remove ${removed} from selection`);
+      remove.focus();
+      remove.click();
+      expect(document.activeElement).toBe(button(context.section, next));
+    }
+    expect(button(context.section, "Next").disabled).toBe(true);
+    expect(context.commit).not.toHaveBeenCalled();
+    expect(context.changed).not.toHaveBeenCalled();
   } finally {
     context.dispose();
   }

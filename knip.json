@@ -4,6 +4,7 @@
   "entry": [
     "src/main.ts!",
     "src/obsidian/plugin-runtime-entry.ts!",
+    "src/obsidian/text/portable-math-entry.ts!",
     "src/persistence/worker/runtime/document-worker-entry.ts!",
     "src/rendering/ui/editor-chrome-entry.ts!",
     "scripts/*.mjs",

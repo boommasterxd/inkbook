@@ -439,7 +439,7 @@ Settings and Keyboard shortcuts opened in a desktop or tablet Inkbook dialog exp
 
 Every section in Drawing tools and Shapes and structures is a keyboard-operable disclosure control. Its header contains the tool title on the left and a Lucide chevron on the right. The chevron is the only disclosure indicator: native `<details>` triangles and other leading disclosure markers are not used. The chevron points right when collapsed and down when expanded, and its state is exposed through `aria-expanded` and `aria-controls`. The section content has a stable, unique controlled ID, the title is the accessible name, and the visible focus ring remains on the header. Enter and Space toggle the section without changing a tool value. Opening and closing use Motion's declarative zero-to-auto content block size, keep the content non-interactive while closing, and settle on the native hidden state; reduced-motion preferences switch directly to the final state. Tool titles and expanded content use the same inline inset as native group actions, while the header provides comfortable vertical spacing around its title. Visual choices may wrap earlier on narrow phones rather than reducing this content inset. The first and subsequent controls share that inset without additional phone-menu card padding. The pointer feedback fills the complete disclosure row between adjacent host dividers and follows the native card radius at an outer edge. Touch feedback is present only while the pointer is pressed and MUST NOT remain highlighted after release; hover feedback is limited to non-mobile platforms with a hover-capable fine pointer. Sections are independent, so opening one does not close another; users may keep multiple tools open for comparison.
 
-Tool controls are created once, on the first expansion, using the current defaults. Construction completes before Motion resolves the disclosure's natural size and starts the transition. Collapsing and reopening retains those controls until the containing settings view is disposed or structurally rebuilt.
+Tool controls are prepared on disclosure pointer entry, keyboard focus, or pointer down, or on the first expansion without prior intent. Preparation keeps the panel hidden and inert and leaves focus unchanged; validation motion, control feedback, document-level font listeners, and selected-font previews activate only when opened. First expansion compares current defaults and font options with the prepared values and rebuilds only stale content before Motion measures its natural size. Collapsing and reopening retains unchanged controls and their owned resources until the settings view is disposed or structurally rebuilt; rebuilding releases prepared content and handlers while preserving expansion state.
 
 ### Menu-recognizable controls
 
@@ -495,10 +495,5 @@ The General settings group exposes the vault-wide `copyTextFieldsAsText` toggle,
 
 ## Related Documentation
 
-- [Implementation specification](specification.md)
-- [File format](file-format.md)
-- [Editor tools](editor-tools.md)
-- [Features](features.md)
-- [Keyboard shortcuts](keyboard-shortcuts.md)
-- [Quality and testing](quality-and-testing.md)
-- [Obsidian integration](obsidian-integration.md)
+See the [implementation specification](specification.md), [file format](file-format.md), [editor tools](editor-tools.md), and [features](features.md) for the surrounding product contracts.
+See [keyboard shortcuts](keyboard-shortcuts.md), [quality and testing](quality-and-testing.md), and [Obsidian integration](obsidian-integration.md) for their respective boundaries.

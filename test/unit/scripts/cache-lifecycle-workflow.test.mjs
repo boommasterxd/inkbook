@@ -185,5 +185,5 @@ it("resumes deferred cleanup after every workflow that can block it completes", 
       .split(/\n/)
       .map((line) => line.trim().slice(2))
       .sort(),
-  ).toEqual([...sourceNames, "Push on main"].sort());
+  ).toEqual([...sourceNames, "CodeQL"].sort());
 });

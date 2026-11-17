@@ -8,8 +8,22 @@ const host = vi.hoisted(() => ({
 }));
 vi.mock("obsidian", () => host);
 
+import { PortableMathModuleLoader } from "../../../../src/obsidian/text/portable-math-loader";
+import type { WorkScheduler } from "../../../../src/domain/scheduling/work-scheduler";
 import { ObsidianTextMathRenderer } from "../../../../src/obsidian/text/math-renderer";
 import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
+
+vi.mock("../../../../src/obsidian/text/portable-math-source", () => ({
+  PORTABLE_MATH_GZIP:
+    "<Ah!!!!!9-SOx5;6=n}85SXsqn,*>3h^H>}Exb9V{|jvA7Y:d=.UqU,ZbU-W<0z#{mr4#O5Q(g)*!!!!",
+}));
+
+import { createEmbeddedModuleWindow } from "../../../fixtures/obsidian/embedded-module-window";
+import { createPortableMathLoader } from "../../../fixtures/obsidian/portable-math-loader";
+
+function createRenderer() {
+  return new ObsidianTextMathRenderer(createTestWorkScheduler(), createPortableMathLoader());
+}
 
 describe("public Obsidian math adaptation", () => {
   beforeEach(() => {
@@ -18,7 +32,7 @@ describe("public Obsidian math adaptation", () => {
   });
 
   it("reflows a cold width-bound equation and reverses width without unused public host work", async () => {
-    const renderer = new ObsidianTextMathRenderer(createTestWorkScheduler());
+    const renderer = createRenderer();
     try {
       const initial = await renderer.resolve("x+1", false, 24, undefined, 120);
       const narrow = await renderer.resolve("x+1", false, 24, undefined, 20);
@@ -37,7 +51,7 @@ describe("public Obsidian math adaptation", () => {
   });
 
   it("detects native CHTML once and reuses the canonical offline SVG engine", async () => {
-    const renderer = new ObsidianTextMathRenderer(createTestWorkScheduler());
+    const renderer = createRenderer();
     try {
       const initial = await renderer.resolve("x+1", false, 24);
       const repeated = await renderer.resolve("x+1", false, 24);
@@ -61,7 +75,7 @@ describe("public Obsidian math adaptation", () => {
       node.append(document.importNode(svg.documentElement, true));
       return node;
     });
-    const renderer = new ObsidianTextMathRenderer(createTestWorkScheduler());
+    const renderer = createRenderer();
     try {
       await renderer.resolve("x", true, 20, undefined, 120);
       expect(host.renderMath).not.toHaveBeenCalled();
@@ -87,7 +101,7 @@ describe("public Obsidian math adaptation", () => {
         node.append(document.createElementNS("http://www.w3.org/2000/svg", "svg"));
       return node;
     });
-    const renderer = new ObsidianTextMathRenderer(createTestWorkScheduler());
+    const renderer = createRenderer();
     try {
       const value = await renderer.resolve("x+1", false, 24);
       expect(value.paths).toHaveLength(3);
@@ -102,12 +116,195 @@ describe("public Obsidian math adaptation", () => {
   it("rejects a stale formula before invoking native rendering", async () => {
     const aborted = new AbortController();
     aborted.abort(new Error("obsolete revision"));
-    const renderer = new ObsidianTextMathRenderer(createTestWorkScheduler());
+    const renderer = createRenderer();
     await expect(renderer.resolve("x", false, 24, aborted.signal)).rejects.toThrow(
       "obsolete revision",
     );
     expect(host.renderMath).not.toHaveBeenCalled();
     renderer.dispose();
     await expect(renderer.resolve("x", false, 24)).rejects.toThrow("disposed");
+  });
+});
+
+function moduleFixture() {
+  const engines: { resolve: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }[] = [];
+  const createPortableMathRenderer = vi.fn((_scheduler: WorkScheduler) => {
+    const engine = {
+      resolve: vi.fn(async () => ({ width: 1, height: 1, ascent: 1, descent: 0, paths: [] })),
+      dispose: vi.fn(),
+    };
+    engines.push(engine);
+    return engine;
+  });
+  return { module: { createPortableMathRenderer }, engines, factory: createPortableMathRenderer };
+}
+
+function deferredModule() {
+  let resolve = (_value: unknown): void => undefined;
+  const promise = new Promise<unknown>((accept) => {
+    resolve = accept;
+  });
+  return { promise, resolve };
+}
+
+describe("on-demand offline math ownership", () => {
+  it("does no engine decode or evaluation for an unused renderer or native SVG", async () => {
+    const owner = createEmbeddedModuleWindow("native");
+    const importer = vi.fn();
+    const renderer = new ObsidianTextMathRenderer(
+      createTestWorkScheduler(),
+      new PortableMathModuleLoader(importer, owner.window),
+    );
+    expect(owner.blobs).toHaveLength(0);
+    host.renderMath.mockImplementation(() => {
+      const node = document.createElement("span");
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 10 10");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "M0 0L1 1");
+      svg.append(path);
+      node.append(svg);
+      return node;
+    });
+    await renderer.resolve("x", false, 24);
+    renderer.dispose();
+    expect(importer).not.toHaveBeenCalled();
+    expect(owner.blobs).toHaveLength(0);
+  });
+
+  it("shares one import realm across main and popout sessions with separate engines and schedulers", async () => {
+    const owner = createEmbeddedModuleWindow("import-realm");
+    const pending = deferredModule();
+    const ready = moduleFixture();
+    const importer = vi.fn((_url: string, _window: unknown) => pending.promise);
+    const loader = new PortableMathModuleLoader(importer, owner.window);
+    const mainScheduler = createTestWorkScheduler();
+    const popoutScheduler = createTestWorkScheduler();
+    const main = new ObsidianTextMathRenderer(mainScheduler, loader);
+    const popout = new ObsidianTextMathRenderer(popoutScheduler, loader);
+    const stale = new AbortController();
+    const prepared = main.prepare(stale.signal);
+    const active = popout.resolve("x", false, 24, undefined, 100);
+    await vi.waitFor(() => expect(importer).toHaveBeenCalledOnce());
+    stale.abort(new Error("obsolete source"));
+    await expect(prepared).resolves.toBe(false);
+    expect(owner.revoked).toHaveLength(0);
+    expect(ready.factory).not.toHaveBeenCalled();
+    pending.resolve(ready.module);
+    await active;
+    await main.resolve("x", false, 24, undefined, 100);
+    expect(ready.factory.mock.calls.map((call) => call[0])).toEqual([
+      popoutScheduler,
+      mainScheduler,
+    ]);
+    expect(ready.engines).toHaveLength(2);
+    expect(ready.engines[0]).not.toBe(ready.engines[1]);
+    main.dispose();
+    popout.dispose();
+    expect(ready.engines.every((engine) => engine.dispose.mock.calls.length === 1)).toBe(true);
+    const reopened = new ObsidianTextMathRenderer(mainScheduler, loader);
+    await expect(reopened.prepare()).resolves.toBe(true);
+    expect(ready.factory).toHaveBeenCalledTimes(2);
+    await reopened.resolve("x", false, 24, undefined, 100);
+    expect(importer).toHaveBeenCalledExactlyOnceWith("blob:import-realm", owner.window);
+    expect(ready.factory).toHaveBeenCalledTimes(3);
+    expect(owner.blobs).toHaveLength(1);
+    expect(owner.revoked).toEqual(["blob:import-realm"]);
+    reopened.dispose();
+    expect(ready.engines.every((engine) => engine.dispose.mock.calls.length === 1)).toBe(true);
+  });
+});
+
+describe("on-demand offline math recovery", () => {
+  it("retries rejected and malformed modules without caching a failed load", async () => {
+    const owner = createEmbeddedModuleWindow("retry");
+    const ready = moduleFixture();
+    const importer = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("blocked module"))
+      .mockResolvedValueOnce({ createPortableMathRenderer: 1 })
+      .mockResolvedValue(ready.module);
+    const renderer = new ObsidianTextMathRenderer(
+      createTestWorkScheduler(),
+      new PortableMathModuleLoader(importer, owner.window),
+    );
+    await expect(renderer.prepare()).resolves.toBe(false);
+    await expect(renderer.resolve("x", false, 24, undefined, 100)).rejects.toThrow(
+      "module is invalid",
+    );
+    await renderer.resolve("x", false, 24, undefined, 100);
+    expect(importer).toHaveBeenCalledTimes(3);
+    expect(owner.revoked).toHaveLength(3);
+    expect(ready.factory).toHaveBeenCalledOnce();
+    renderer.dispose();
+  });
+
+  it("releases the last pending consumer on dispose and ignores its late engine", async () => {
+    const owner = createEmbeddedModuleWindow("disposed");
+    const ready = moduleFixture();
+    const deferred = deferredModule();
+    const importer = vi
+      .fn()
+      .mockImplementationOnce(() => deferred.promise)
+      .mockResolvedValue(ready.module);
+    const loader = new PortableMathModuleLoader(importer, owner.window);
+    const renderer = new ObsidianTextMathRenderer(createTestWorkScheduler(), loader);
+    const active = renderer.resolve("x", false, 24, undefined, 100);
+    await vi.waitFor(() => expect(importer).toHaveBeenCalledOnce());
+    renderer.dispose();
+    await expect(active).rejects.toThrow("disposed");
+    expect(owner.revoked).toEqual(["blob:disposed"]);
+    deferred.resolve(ready.module);
+    await expect(renderer.prepare()).resolves.toBe(false);
+    expect(ready.factory).not.toHaveBeenCalled();
+    const next = new ObsidianTextMathRenderer(createTestWorkScheduler(), loader);
+    await next.resolve("x", false, 24, undefined, 100);
+    expect(importer).toHaveBeenCalledTimes(2);
+    next.dispose();
+  });
+
+  it("bounds a hung import in the fixed realm and permits retry after URL cleanup", async () => {
+    const owner = createEmbeddedModuleWindow("timeout");
+    const ready = moduleFixture();
+    const pending = deferredModule();
+    const importer = vi
+      .fn()
+      .mockImplementationOnce(() => pending.promise)
+      .mockResolvedValue(ready.module);
+    const loader = new PortableMathModuleLoader(importer, owner.window);
+    const renderer = new ObsidianTextMathRenderer(createTestWorkScheduler(), loader);
+    const active = renderer.resolve("x", false, 24, undefined, 100);
+    await vi.waitFor(() => expect(importer).toHaveBeenCalledOnce());
+    owner.runTimers();
+    await expect(active).rejects.toThrow("timed out");
+    expect(owner.revoked).toEqual(["blob:timeout"]);
+    pending.resolve(ready.module);
+    expect(ready.factory).not.toHaveBeenCalled();
+    await renderer.resolve("x", false, 24, undefined, 100);
+    expect(importer).toHaveBeenCalledTimes(2);
+    expect(ready.factory).toHaveBeenCalledOnce();
+    expect(owner.revoked).toHaveLength(2);
+    renderer.dispose();
+  });
+
+  it("rejects an unsupported import realm and pre-aborted source without decoding", async () => {
+    const owner = createEmbeddedModuleWindow("aborted");
+    const importer = vi.fn();
+    const loader = new PortableMathModuleLoader(importer, owner.window);
+    const renderer = new ObsidianTextMathRenderer(createTestWorkScheduler(), loader);
+    const abort = new AbortController();
+    abort.abort(new Error("obsolete source"));
+    await expect(renderer.prepare(abort.signal)).resolves.toBe(false);
+    expect(owner.blobs).toHaveLength(0);
+    vi.stubGlobal("window", undefined);
+    const unsupportedRealm = new PortableMathModuleLoader(importer);
+    vi.unstubAllGlobals();
+    const invalid = new ObsidianTextMathRenderer(createTestWorkScheduler(), unsupportedRealm);
+    await expect(invalid.resolve("x", false, 24, undefined, 100)).rejects.toThrow(
+      "embedded module APIs",
+    );
+    expect(importer).not.toHaveBeenCalled();
+    renderer.dispose();
+    invalid.dispose();
   });
 });

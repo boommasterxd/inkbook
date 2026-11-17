@@ -11,7 +11,7 @@ import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { isReducedMotion } from "../../../rendering/motion/transitions";
 import { createToolStyleControls } from "../../menus/tool-style-controls";
 import type { SettingsControlKey } from "../control-values";
-import { renderSettingsControlContent } from "../settings-control-content";
+import { prepareSettingsControlContent } from "../settings-control-content";
 import { createSettingsDisclosure } from "../settings-disclosure";
 import { SettingsPanelMotion } from "../settings-panel-motion";
 import { SettingsViewState } from "../settings-view-state";
@@ -65,6 +65,7 @@ function renderToolSection(
   const viewState = values.viewState ?? new SettingsViewState();
   const stateKey = `tool:${spec.tool}`;
   const initiallyExpanded = viewState.expandedSections.has(stateKey);
+  const controls = createDeferredToolControls(setting.settingEl, spec, values, panelId);
   const {
     content: panelContent,
     panel,
@@ -79,44 +80,14 @@ function renderToolSection(
     readMotion: values.getMotion,
     ...(values.observeMotion === undefined ? {} : { observeMotion: values.observeMotion }),
     title: spec.name,
+    prepareContent: () => controls.prepare(panelContent),
   });
-  let initialized = false;
-  let releaseControls: (() => void) | undefined;
-
-  const initializeControls = (): void => {
-    if (!initialized) {
-      const controls = panelContent.createDiv({ cls: "inkbook-settings-tool-controls" });
-      const previews =
-        spec.tool === "text"
-          ? values.createFontPreviews?.(setting.settingEl.ownerDocument)
-          : undefined;
-      const release = renderSettingsControlContent(controls, {
-        workScheduler: values.workScheduler(setting.settingEl.ownerDocument.defaultView),
-        fontPreviews: previews,
-        fontManagementAction: spec.tool === "text" ? values.fontManagementAction : undefined,
-        keymap: values.keymap,
-        ...(values.t === undefined ? {} : { t: values.t }),
-        controls: () => toolSectionControls(spec, values),
-        descriptions: spec.controlDescriptions,
-        idPrefix: panelId,
-        onChange: (controlId, value) => setToolControl(spec, values, controlId, value),
-        ownerDocument: setting.settingEl.ownerDocument,
-        readMotion: values.getMotion,
-        ...(values.observeMotion === undefined ? {} : { observeMotion: values.observeMotion }),
-      });
-      releaseControls = () => {
-        release();
-        previews?.dispose();
-      };
-      initialized = true;
-    }
-  };
-  if (initiallyExpanded) initializeControls();
+  if (initiallyExpanded) controls.activate(panelContent);
   const panelMotion = new SettingsPanelMotion(panel, values.getMotion, values.observeMotion);
   const toggle = (): void => {
     const expanded = trigger.getAttribute("aria-expanded") !== "true";
     if (expanded) {
-      initializeControls();
+      controls.activate(panelContent);
       viewState.expandedSections.add(stateKey);
     } else viewState.expandedSections.delete(stateKey);
     trigger.setAttribute("aria-expanded", String(expanded));
@@ -132,9 +103,68 @@ function renderToolSection(
   trigger.addEventListener("click", toggle);
   return () => {
     trigger.removeEventListener("click", toggle);
-    releaseControls?.();
+    controls.dispose();
     dispose();
     panelMotion.dispose();
+  };
+}
+
+function createDeferredToolControls(
+  owner: HTMLElement,
+  spec: ToolSectionSpec,
+  values: ToolSectionValues,
+  panelId: string,
+) {
+  let prepared: ReturnType<typeof prepareSettingsControlContent> | undefined;
+  let preparedValues: string | undefined;
+  let controlsRoot: HTMLElement | undefined;
+  let active = false;
+  let disposed = false;
+  let previews: ReturnType<NonNullable<ToolSectionValues["createFontPreviews"]>> | undefined;
+  const prepare = (container: HTMLElement, current = toolSectionControls(spec, values)): void => {
+    if (disposed || active) return;
+    const identity = JSON.stringify(current);
+    if (preparedValues === identity) return;
+    prepared?.dispose();
+    controlsRoot?.remove();
+    controlsRoot = container.createDiv({ cls: "inkbook-settings-tool-controls" });
+    preparedValues = identity;
+    prepared = prepareSettingsControlContent(controlsRoot, {
+      workScheduler: values.workScheduler(owner.ownerDocument.defaultView),
+      fontPreviews: {
+        acquire: (element, family) => {
+          previews ??= values.createFontPreviews?.(owner.ownerDocument);
+          return previews?.acquire(element, family) ?? (() => undefined);
+        },
+      },
+      fontManagementAction: spec.tool === "text" ? values.fontManagementAction : undefined,
+      keymap: values.keymap,
+      ...(values.t === undefined ? {} : { t: values.t }),
+      controls: () => (active ? toolSectionControls(spec, values) : current),
+      descriptions: spec.controlDescriptions,
+      idPrefix: panelId,
+      onChange: (controlId, value) => setToolControl(spec, values, controlId, value),
+      ownerDocument: owner.ownerDocument,
+      readMotion: values.getMotion,
+      ...(values.observeMotion === undefined ? {} : { observeMotion: values.observeMotion }),
+    });
+  };
+  return {
+    prepare: (container: HTMLElement): void => {
+      if (!disposed && !active && prepared === undefined) prepare(container);
+    },
+    activate: (container: HTMLElement): void => {
+      if (disposed || active) return;
+      prepare(container);
+      active = true;
+      prepared?.activate();
+    },
+    dispose: (): void => {
+      if (disposed) return;
+      disposed = true;
+      prepared?.dispose();
+      previews?.dispose();
+    },
   };
 }
 

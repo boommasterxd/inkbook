@@ -20,7 +20,8 @@ export class ShortcutRecordingView {
   readonly #container: HTMLElement;
   readonly #hostHotkeys: ObsidianHotkeyAccess;
   readonly #keymap: Pick<Keymap, "pushScope" | "popScope">;
-  readonly #motion: ShortcutRecordingMotion;
+  #motion: ShortcutRecordingMotion | undefined;
+  #pendingFeedback: HTMLElement[] = [];
   readonly #recorders = new Map<
     ConfigurableShortcutActionV1,
     { button: HTMLButtonElement; status: HTMLElement }
@@ -40,7 +41,6 @@ export class ShortcutRecordingView {
     this.#store = store;
     this.#hostHotkeys = hostHotkeys;
     this.#keymap = keymap;
-    this.#motion = new ShortcutRecordingMotion(container, () => store.getDeviceSettings().motion);
   }
 
   public prepareRender(): void {
@@ -49,16 +49,29 @@ export class ShortcutRecordingView {
     for (const cleanup of this.#hoverCleanup) cleanup();
     this.#hoverCleanup = [];
     this.#recorders.clear();
-    this.#motion.finish();
+    this.#pendingFeedback = [];
+    this.#motion?.dispose();
+    this.#motion = undefined;
   }
 
   public dispose(): void {
     this.prepareRender();
-    this.#motion.dispose();
   }
 
   public renderActions(container: HTMLElement): void {
     for (const action of CONFIGURABLE_SHORTCUT_ACTIONS) this.#renderAction(container, action);
+  }
+
+  public activateActions(): void {
+    for (const root of this.#pendingFeedback) this.#bindFeedback(root);
+    this.#pendingFeedback = [];
+  }
+
+  #recordingMotion(): ShortcutRecordingMotion {
+    return (this.#motion ??= new ShortcutRecordingMotion(
+      this.#container,
+      () => this.#store.getDeviceSettings().motion,
+    ));
   }
 
   public renderGroupResetAction(container: HTMLElement): void {
@@ -114,7 +127,7 @@ export class ShortcutRecordingView {
         () => this.#clear(action),
       ),
     );
-    this.#bindFeedback(row);
+    this.#pendingFeedback.push(row);
   }
 
   #bindFeedback(root: HTMLElement): void {
@@ -124,7 +137,7 @@ export class ShortcutRecordingView {
         observeMotion: (listener) =>
           this.#store.subscribeDeviceSettings(() => {
             listener();
-            this.#motion.finishReduced();
+            this.#motion?.finishReduced();
           }),
       }),
     );
@@ -137,7 +150,7 @@ export class ShortcutRecordingView {
     this.#recordingAction = action;
     entry.button.dataset.recording = "true";
     entry.button.setAttribute("aria-pressed", "true");
-    this.#motion.replace(entry.button, (content) => {
+    this.#recordingMotion().replace(entry.button, (content) => {
       content.textContent = this.#store.localization.t("settings.shortcuts.press");
       this.#labelRecorder(entry.button, action, content);
     });
@@ -159,7 +172,7 @@ export class ShortcutRecordingView {
     if (entry === undefined) return;
     entry.button.dataset.recording = "false";
     entry.button.setAttribute("aria-pressed", "false");
-    this.#motion.replace(entry.button, (content) => {
+    this.#recordingMotion().replace(entry.button, (content) => {
       renderShortcutBinding(
         content,
         this.#store.getDeviceSettings().keyboardShortcuts[action],
@@ -185,7 +198,7 @@ export class ShortcutRecordingView {
   }
 
   #showStatus(status: HTMLElement, message: string, error: boolean): void {
-    this.#motion.replace(status, (content) => {
+    this.#recordingMotion().replace(status, (content) => {
       status.classList.toggle("is-error", error);
       content.textContent = message;
     });

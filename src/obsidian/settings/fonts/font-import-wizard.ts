@@ -10,6 +10,7 @@ import type { LibraryFontFace } from "../../fonts/vault-font-library";
 import { registerNativeControlFeedback } from "../../menus/feedback/native-control-feedback";
 import { createSettingsLayoutMotion } from "../settings-layout-motion";
 import { createSettingsWriteError } from "../settings-write-feedback";
+import { refreshSettingsView } from "../settings-view-refresh";
 import { mutateFontLibraryDialog, type FontLibrarySettingsOptions } from "./font-library-options";
 import { FontImportSelection } from "./font-import-selection";
 import { renderFontImportView, type FontImportViewHandle } from "./font-import-view";
@@ -73,50 +74,54 @@ export class FontImportWizard {
     mutateFontLibraryDialog(this.options, () => {
       this.#clearPreview();
       this.#layout.mutate(() => {
-        this.#content.replaceChildren();
-        const faces = this.options.library.list();
-        const choices = fontLibraryChoices(faces);
-        this.#view = renderFontImportView(
-          this.#content,
-          {
-            step: this.#step,
-            files: this.#selection.files,
-            busy: this.#busy,
-            name: choices.find((choice) => choice.value === this.#target)?.label ?? this.#name,
-            ...(this.#target ? { targetFamily: this.#target } : {}),
-            ...(this.#previewId ? { previewId: this.#previewId } : {}),
-            existingChoices: choices,
-            fixedFamily: this.options.family !== undefined,
-          },
-          {
-            chooseFiles: () => this.#input.click(),
-            filesSelected: (files) => this.#selectFiles(files),
-            removeFile: this.#removeFile,
-            nameChanged: (name) => {
-              this.#name = name;
-              this.#view!.primary.disabled = !name.trim();
+        const render = () => {
+          this.#content.replaceChildren();
+          const faces = this.options.library.list();
+          const choices = fontLibraryChoices(faces);
+          this.#view = renderFontImportView(
+            this.#content,
+            {
+              step: this.#step,
+              files: this.#selection.files,
+              busy: this.#busy,
+              name: choices.find((choice) => choice.value === this.#target)?.label ?? this.#name,
+              ...(this.#target ? { targetFamily: this.#target } : {}),
+              ...(this.#previewId ? { previewId: this.#previewId } : {}),
+              existingChoices: choices,
+              fixedFamily: this.options.family !== undefined,
             },
-            familyChanged: (family) => {
-              this.#target = family;
-              this.#error.set("");
-              this.#render();
+            {
+              chooseFiles: () => this.#input.click(),
+              filesSelected: (files) => this.#selectFiles(files),
+              removeFile: this.#removeFile,
+              nameChanged: (name) => {
+                this.#name = name;
+                this.#view!.primary.disabled = !name.trim();
+              },
+              familyChanged: (family) => {
+                this.#target = family;
+                this.#error.set("");
+                this.#render();
+              },
+              previewChanged: (id) => {
+                this.#previewId = id;
+                this.#render();
+              },
+              back: () => this.#back(),
+              next: () => this.#next(),
+              confirm: () => {
+                void this.#commit();
+              },
             },
-            previewChanged: (id) => {
-              this.#previewId = id;
-              this.#render();
-            },
-            back: () => this.#back(),
-            next: () => this.#next(),
-            confirm: () => {
-              void this.#commit();
-            },
-          },
-          this.options.localization,
-        );
-        this.#feedback?.();
-        this.#feedback = registerNativeControlFeedback(this.#view.root, this.options);
-        if (focus) this.#view.heading.focus();
-        if (this.#step === 2 && !this.#busy) void this.#loadPreview();
+            this.options.localization,
+          );
+          this.#feedback?.();
+          this.#feedback = registerNativeControlFeedback(this.#view.root, this.options);
+          if (focus) this.#view.heading.focus();
+          if (this.#step === 2 && !this.#busy) void this.#loadPreview();
+        };
+        if (focus) render();
+        else refreshSettingsView(this.#content, render);
       });
     });
   }
@@ -133,6 +138,11 @@ export class FontImportWizard {
   }
 
   #removeFile = (id: string): void => {
+    const index = this.#selection.files.findIndex((face) => face.id === id);
+    const row = this.#content.querySelector(
+      `[data-inkbook-setting-identity="font-import-file:${id}"]`,
+    );
+    const restoreFocus = row?.contains(this.#content.ownerDocument.activeElement) === true;
     this.#selection.remove(id);
     if (this.#previewId === id) this.#previewId = undefined;
     if (this.#selection.files.length === 0) {
@@ -141,6 +151,13 @@ export class FontImportWizard {
     }
     this.#error.set("");
     this.#render();
+    if (restoreFocus) {
+      const next = this.#selection.files[Math.min(index, this.#selection.files.length - 1)];
+      const identity = next === undefined ? "font-import-upload" : `font-import-file:${next.id}`;
+      this.#content
+        .querySelector<HTMLElement>(`[data-inkbook-setting-identity="${identity}"] button`)
+        ?.focus({ preventScroll: true });
+    }
   };
 
   async #prepare(files: readonly File[]): Promise<void> {

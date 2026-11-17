@@ -209,6 +209,7 @@ describe("embedded module build mappings", () => {
     ],
     ["src/rendering/ui/editor-chrome-source.ts", "src/rendering/ui/editor-chrome-entry.ts"],
     ["src/obsidian/plugin-runtime-source.ts", "src/obsidian/plugin-runtime-entry.ts"],
+    ["src/obsidian/text/portable-math-source.ts", "src/obsidian/text/portable-math-entry.ts"],
   ])("connects encoded source %s to its actual build entry", async (source, entry) => {
     const context = await fixture({
       [source]: "export const encoded = 'placeholder';",
@@ -226,6 +227,7 @@ describe("embedded module build mappings", () => {
 
   it.each([
     ["src/obsidian/plugin-loader.ts", "src/obsidian/plugin-runtime-entry.ts"],
+    ["src/obsidian/text/portable-math-loader.ts", "src/obsidian/text/portable-math-entry.ts"],
     [
       "src/obsidian/embeds/active-scene/editor-chrome-loader.ts",
       "src/rendering/ui/editor-chrome-entry.ts",

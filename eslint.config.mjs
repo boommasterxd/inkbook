@@ -220,6 +220,7 @@ export default [
   {
     files: [
       "src/obsidian/embeds/active-scene/editor-chrome-loader.ts",
+      "src/obsidian/text/portable-math-loader.ts",
       "src/obsidian/plugin-loader.ts",
     ],
     rules: {

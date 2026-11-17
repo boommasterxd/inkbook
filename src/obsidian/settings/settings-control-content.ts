@@ -31,8 +31,20 @@ export function renderSettingsControlContent(
   container: HTMLElement,
   options: SettingsControlContentOptions,
 ): () => void {
+  const content = prepareSettingsControlContent(container, options);
+  content.activate();
+  return content.dispose;
+}
+
+export function prepareSettingsControlContent(
+  container: HTMLElement,
+  options: SettingsControlContentOptions,
+): { readonly activate: () => void; readonly dispose: () => void } {
   const writes = new SettingsWriteFeedback(options.t);
-  const validation = createSettingsValidationMotion(container, options);
+  let validation: ReturnType<typeof createSettingsValidationMotion> | undefined;
+  const activations: Array<() => void> = [];
+  let active = false;
+  let disposed = false;
   let currentErrors = new Map<string, HTMLElement>();
   let releaseFeedback: ReturnType<typeof registerNativeControlFeedback> | undefined;
   const cleanups: (() => void)[] = [];
@@ -50,6 +62,7 @@ export function renderSettingsControlContent(
       fontManagementAction: options.fontManagementAction,
       keymap: options.keymap,
       registerCleanup: (cleanup) => cleanups.push(cleanup),
+      registerActivation: (activate) => activations.push(activate),
       registerChoiceRestore: (id, restore) => restoreChoices.set(id, restore),
       registerToggleRestore: (id, restore) => restoreToggles.set(id, restore),
       numberInputMode: "reject",
@@ -57,7 +70,7 @@ export function renderSettingsControlContent(
         const error = currentErrors.get(controlId);
         void writes.run(controlId, () => options.onChange(controlId, value), {
           error: (message) => {
-            if (error !== undefined) validation.set(error, message);
+            if (error !== undefined) validation?.set(error, message);
           },
           restore: () => {
             restoreControlValues(container, options.controls(), restoreChoices, restoreToggles);
@@ -70,7 +83,7 @@ export function renderSettingsControlContent(
         writes.invalidate(controlId);
         const error = currentErrors.get(controlId);
         if (error !== undefined)
-          validation.set(
+          validation?.set(
             error,
             (options.t ?? createEnglishLocalization().t)("settings.invalidValue"),
           );
@@ -81,17 +94,27 @@ export function renderSettingsControlContent(
     currentErrors = errors;
     releaseFeedback?.();
     container.replaceChildren(fragment);
-    releaseFeedback = registerNativeControlFeedback(container, options);
     return errors;
   };
 
   render();
-  return () => {
-    writes.dispose();
-    releaseFeedback?.();
-    releaseFeedback = undefined;
-    validation.dispose();
-    for (const cleanup of cleanups) cleanup();
+  return {
+    activate: () => {
+      if (active || disposed) return;
+      active = true;
+      validation = createSettingsValidationMotion(container, options);
+      for (const activate of activations) activate();
+      releaseFeedback = registerNativeControlFeedback(container, options);
+    },
+    dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      writes.dispose();
+      releaseFeedback?.();
+      releaseFeedback = undefined;
+      validation?.dispose();
+      for (const cleanup of cleanups) cleanup();
+    },
   };
 }
 

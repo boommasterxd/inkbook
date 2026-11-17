@@ -7,9 +7,11 @@ const embeddedEntries = new Map([
   ["src/persistence/worker/runtime/worker-source.ts", "./document-worker-entry"],
   ["src/rendering/ui/editor-chrome-source.ts", "./editor-chrome-entry"],
   ["src/obsidian/plugin-runtime-source.ts", "./plugin-runtime-entry"],
+  ["src/obsidian/text/portable-math-source.ts", "./portable-math-entry"],
 ]);
 const dynamicEntries = new Map([
   ["src/obsidian/plugin-loader.ts", "./plugin-runtime-entry"],
+  ["src/obsidian/text/portable-math-loader.ts", "./portable-math-entry"],
   [
     "src/obsidian/embeds/active-scene/editor-chrome-loader.ts",
     "../../../rendering/ui/editor-chrome-entry",

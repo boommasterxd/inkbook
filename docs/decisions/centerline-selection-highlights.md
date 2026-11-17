@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Context
 
-Compact pressure paths reduced document complexity, but selected zoom still incurred additional raster work from the shared SVG morphology filter. A prepared vector-union prototype avoided that filter but delayed the highlight and did not improve selected zoom in software-rendered Obsidian diagnostics. Reusing filled ink as an accent tint would alter the appearance of colored handwriting and highlighters.
+Compact pressure paths reduce document complexity, but the shared SVG morphology filter adds raster work during selected zoom. Preparing vector unions adds geometry work before highlighting without an established benefit during selected zoom, instead of providing immediate retained-path feedback. Reusing filled ink as an accent tint would alter the appearance of colored handwriting and highlighters.
 
 ## Decision
 
@@ -14,4 +14,4 @@ The visual contract belongs in [Editor Tools](../editor-tools.md#select), and re
 
 ## Verification
 
-Acceptance requires all-family geometry and width-independence coverage, stable resize anchors and preview/commit agreement, deterministic camera reuse and resource bounds, and real Obsidian selection and zoom checks in desktop, tablet, and phone modes. The failed prototype is motivation, not evidence that this replacement meets physical-device latency targets. Software-rendering diagnostics cannot establish physical touchpad or GPU behavior.
+Acceptance requires all-family geometry and width-independence coverage, stable resize anchors and preview/commit agreement, deterministic camera reuse and resource bounds, and real Obsidian selection and zoom checks in desktop, tablet, and phone modes. Removing filter and vector-union work does not establish physical-device latency. Software rendering cannot establish physical touchpad or GPU behavior.
