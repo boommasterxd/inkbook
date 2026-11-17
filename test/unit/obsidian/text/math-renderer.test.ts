@@ -147,6 +147,19 @@ function deferredModule() {
   return { promise, resolve };
 }
 
+function recoverableImportFixture(name: string) {
+  const owner = createEmbeddedModuleWindow(name);
+  const ready = moduleFixture();
+  const pending = deferredModule();
+  const importer = vi
+    .fn()
+    .mockImplementationOnce(() => pending.promise)
+    .mockResolvedValue(ready.module);
+  const loader = new PortableMathModuleLoader(importer, owner.window);
+  const renderer = new ObsidianTextMathRenderer(createTestWorkScheduler(), loader);
+  return { owner, ready, pending, importer, loader, renderer };
+}
+
 describe("on-demand offline math ownership", () => {
   it("does no engine decode or evaluation for an unused renderer or native SVG", async () => {
     const owner = createEmbeddedModuleWindow("native");
@@ -240,15 +253,14 @@ describe("on-demand offline math recovery", () => {
   });
 
   it("releases the last pending consumer on dispose and ignores its late engine", async () => {
-    const owner = createEmbeddedModuleWindow("disposed");
-    const ready = moduleFixture();
-    const deferred = deferredModule();
-    const importer = vi
-      .fn()
-      .mockImplementationOnce(() => deferred.promise)
-      .mockResolvedValue(ready.module);
-    const loader = new PortableMathModuleLoader(importer, owner.window);
-    const renderer = new ObsidianTextMathRenderer(createTestWorkScheduler(), loader);
+    const {
+      owner,
+      ready,
+      pending: deferred,
+      importer,
+      loader,
+      renderer,
+    } = recoverableImportFixture("disposed");
     const active = renderer.resolve("x", false, 24, undefined, 100);
     await vi.waitFor(() => expect(importer).toHaveBeenCalledOnce());
     renderer.dispose();
@@ -264,15 +276,7 @@ describe("on-demand offline math recovery", () => {
   });
 
   it("bounds a hung import in the fixed realm and permits retry after URL cleanup", async () => {
-    const owner = createEmbeddedModuleWindow("timeout");
-    const ready = moduleFixture();
-    const pending = deferredModule();
-    const importer = vi
-      .fn()
-      .mockImplementationOnce(() => pending.promise)
-      .mockResolvedValue(ready.module);
-    const loader = new PortableMathModuleLoader(importer, owner.window);
-    const renderer = new ObsidianTextMathRenderer(createTestWorkScheduler(), loader);
+    const { owner, ready, pending, importer, renderer } = recoverableImportFixture("timeout");
     const active = renderer.resolve("x", false, 24, undefined, 100);
     await vi.waitFor(() => expect(importer).toHaveBeenCalledOnce());
     owner.runTimers();
