@@ -6,6 +6,10 @@ import type {
   VaultFontLibrary,
 } from "../../../src/obsidian/fonts/vault-font-library";
 import type { PreparedLibraryFontFace } from "../../../src/obsidian/fonts/font-import-staging";
+import {
+  loadNativeFontPreview,
+  type NativeFontPreviewOptions,
+} from "../../../src/obsidian/fonts/native-font-preview";
 import { TestWorkScheduler } from "../persistence/work-scheduler";
 import { preparedLibraryFont as prepared } from "./prepared-library-font";
 import { expect } from "vitest";
@@ -37,6 +41,8 @@ export function fontLibrarySettingsFixture(count: number) {
   const library = {
     list: () => faces,
     prepareImport: prepare,
+    previewPrepared: (face: PreparedLibraryFontFace, options: NativeFontPreviewOptions) =>
+      loadNativeFontPreview(face.resource, options),
     commitImport: commit,
     releasePrepared: release,
     remove: removed,

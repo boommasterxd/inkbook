@@ -334,13 +334,17 @@ describe("Live Preview recognition during note edits", () => {
     const mount = vi.spyOn(ports.sessions, "mount");
     const detach = vi.spyOn(ports.sessions, "detach");
     const embed = "![[drawings/page.svg]]";
-    const { parent, view } = mountView(ports, `Prose\n\n${embed}\n\n${embed}`);
+    const { parent, view } = mountView(ports, `Prose\n\n${embed}\n\n${embed}\n\nSchöne Grüße.`);
     try {
       const attachments = mount.mock.calls.map(([attachment]) => attachment);
       expect(attachments).toHaveLength(2);
       attachments[0]!.root.dataset.inkbookState = "active";
+      view.focus();
+      view.dispatch({ changes: { from: view.state.doc.length, insert: " Bis bald!" } });
+      expect(document.activeElement).toBe(view.contentDOM);
       for (const insert of ["longer", "\nHeading\n"]) {
         view.dispatch({ changes: { from: 1, insert } });
+        expect(document.activeElement).toBe(view.contentDOM);
         expect([...parent.querySelectorAll(".inkbook-root")]).toEqual(
           attachments.map((attachment) => attachment.root),
         );

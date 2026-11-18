@@ -41,6 +41,23 @@ describe("Live Preview occurrence entrance state", () => {
     expect(entrances.stateFor(20, 30, "drawing.svg")).toBe(second);
   });
 
+  it("keeps newly recognized occurrences independent after a trailing edit", () => {
+    const before = new LivePreviewEntrances("note.md");
+    const first = before.stateFor(0, 10, "drawing.svg");
+    const after = before.update(ChangeSet.of({ from: 20, insert: "x" }, 60), "note.md");
+    expect(after.stateFor(0, 10, "drawing.svg")).toBe(first);
+    const late = before.stateFor(30, 40, "drawing.svg");
+    expect(after.stateFor(30, 40, "drawing.svg")).not.toBe(late);
+    const appended = after.stateFor(45, 55, "x.svg");
+    expect(before.stateFor(45, 55, "x.svg")).not.toBe(appended);
+    const removed = after.update(ChangeSet.of({ from: 45, to: 55 }, 61), "note.md");
+    const restored = removed.update(
+      ChangeSet.of({ from: 45, insert: "![[x.svg]]" }, 51),
+      "note.md",
+    );
+    expect(restored.stateFor(45, 55, "x.svg")).not.toBe(appended);
+  });
+
   it("retains unchanged remounts but resets changed source notes and edited embed markup", () => {
     const entrances = new LivePreviewEntrances("note.md");
     const token = entrances.stateFor(0, 10, "drawing.svg");

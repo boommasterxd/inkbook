@@ -2,13 +2,11 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChangeSet } from "@codemirror/state";
-import type { FontResourceV2 } from "../../../../../src/domain/schema/public";
 import * as parser from "../../../../../src/domain/text/markdown-parser";
-import type { SvgSceneRenderer } from "../../../../../src/rendering/scene/index";
-import { ActiveTextPreparation } from "../../../../../src/obsidian/embeds/active-editor/text-preparation";
+import { textPreparationFixture as fixture } from "../../../../fixtures/obsidian/text-preparation";
+import { vaultFontLibraryFixture } from "../../../../fixtures/obsidian/vault-font-library";
 import { renderTextMathWidget } from "../../../../../src/obsidian/embeds/active-editor/text-session-presentation";
 import type { ObsidianTextMathRenderer } from "../../../../../src/obsidian/text/math-renderer";
-import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/document-model-port";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 import { textElement } from "../../../../fixtures/rendering/text";
 import { TextFontBindings } from "../../../../../src/obsidian/embeds/active-editor/text-session-font-bindings";
@@ -340,41 +338,6 @@ it("cancels actual SVG path creation through central admission before mounting a
   expect(resolve).toHaveBeenCalledWith("x", true, 24, abort.signal, 100, { bold: false });
 });
 
-function fixture(checkpoint?: () => undefined) {
-  const font: FontResourceV2 = {
-    family: "inter",
-    style: "normal",
-    weight: 400,
-    id: "a".repeat(64),
-    data: "AA==",
-    mimeType: "font/woff2",
-  };
-  const load = vi.fn(async () => []);
-  const renderer = {
-    textDocument: { fonts: { load } },
-    setTextFonts: vi.fn(),
-  } as unknown as SvgSceneRenderer;
-  let resources = [font];
-  const ensure = vi.fn((additional: readonly FontResourceV2[]) => {
-    resources = [...resources, ...additional];
-  });
-  const model = {
-    get fontResources() {
-      return resources;
-    },
-    ensureFontResources: ensure,
-  } as unknown as EditableDocumentModel;
-  const prepare = new ActiveTextPreparation({
-    model,
-    renderer,
-    scheduler: {
-      ...immediateWorkScheduler(),
-      ...(checkpoint ? { checkpoint } : {}),
-    },
-  });
-  return { prepare, load, renderer, ensure };
-}
-
 it("checks retained indentation once per run without reshaping and cancels field-local inspection", async () => {
   let reads = 0;
   let cancelAt = Infinity;
@@ -424,6 +387,41 @@ it("checks retained indentation once per run without reshaping and cancels field
 });
 
 describe("active text preparation work", () => {
+  it("reads a newly selected variable face once for all four Markdown style combinations", async () => {
+    const vault = await vaultFontLibraryFixture("caveat-variable.ttf");
+    const face = await vault.library.import(
+      vault.bytes,
+      { family: "upload", weight: 400, style: "normal" },
+      "Caveat",
+      true,
+    );
+    const { prepare, ensure } = fixture(undefined, {
+      match: () => face,
+      resolve: (_request, signal) => vault.library.resource(face, signal),
+      choices: () => [],
+    });
+    try {
+      const element = await prepare.prepare(
+        textElement({
+          style: { ...textElement().style, fontFamily: face.family },
+          source: "Normal **bold** *italic* ***both***",
+        }),
+        new AbortController().signal,
+      );
+      const runs = element.layout.lines.flatMap((line) => line.runs);
+      const styles = new Set(
+        runs.map((run) => `${run.style?.bold === true}:${run.style?.italic === true}`),
+      );
+      expect(styles.size).toBe(4);
+      expect(runs.every((run) => run.fontResourceId === face.id)).toBe(true);
+      expect(vault.readBinary).toHaveBeenCalledOnce();
+      expect(ensure).toHaveBeenCalledOnce();
+    } finally {
+      prepare.dispose();
+      vault.dispose();
+    }
+  });
+
   it("reuses source parsing, font resolution and stylesheet publication across width reflow", async () => {
     const parsed = vi.spyOn(parser, "parseTextMarkdownSteps");
     const { prepare, load, renderer } = fixture();

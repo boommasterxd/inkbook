@@ -8,6 +8,7 @@ import type {
   ImageResourceV3,
 } from "../../domain/schema/public";
 import { MAX_JSON_DEPTH } from "../../domain/schema/public";
+import { writeClipboardJsonSteps } from "./canonical-json";
 import { CLIPBOARD_LIMITS, INKBOOK_CLIPBOARD_TEXT_PREFIX } from "./constants";
 import type {
   ClipboardCandidates,
@@ -23,7 +24,6 @@ import { bindTextElementFontResourcesSteps } from "../fonts/bound-font-resources
 import { completeSerializationSteps } from "../serialization/output/serialization-model-preparation";
 
 const encoder = new TextEncoder();
-const PLAIN_TEXT_PREFIX_BYTES = encoder.encode(INKBOOK_CLIPBOARD_TEXT_PREFIX).byteLength;
 
 const limitFailure = (message: string): ClipboardResult<never> => ({
   ok: false,
@@ -37,7 +37,7 @@ const schemaFailure = (message: string): ClipboardResult<never> => ({
 
 const compactClipId = (index: number): string => index.toString(36);
 
-const createBody = (
+export const createClipboardBody = (
   element: InkElementV1,
   documentIdToClipId: ReadonlyMap<string, string>,
 ): ClipboardElementBodyV1 => {
@@ -71,16 +71,12 @@ const createEncoded = (
   payload: InkClipboardV1,
   requirePlainFallbackWithinLimit: boolean,
 ): ClipboardResult<EncodedClipboard> => {
-  const compactJson = serializeClipboardPayload(payload);
+  const encoded = completeSerializationSteps(
+    writeClipboardJsonSteps(payload, requirePlainFallbackWithinLimit),
+  );
+  if (!encoded.ok) return encoded;
+  const { text: compactJson, byteLength } = encoded.value;
   const plainText = `${INKBOOK_CLIPBOARD_TEXT_PREFIX}${compactJson}`;
-  const byteLength = encoder.encode(compactJson).byteLength;
-  if (
-    byteLength > CLIPBOARD_LIMITS.totalInputBytes ||
-    (requirePlainFallbackWithinLimit &&
-      PLAIN_TEXT_PREFIX_BYTES + byteLength > CLIPBOARD_LIMITS.totalInputBytes)
-  ) {
-    return limitFailure("Clipboard payload exceeds the 8 MiB input limit.");
-  }
   return {
     ok: true,
     value: {
@@ -133,7 +129,7 @@ const encodeSelectionInternal = (
   );
   const clipboardElements: ClipboardElementV1[] = selectedElements.map((element, index) => ({
     clipId: compactClipId(index),
-    element: createBody(element, documentIdToClipId),
+    element: createClipboardBody(element, documentIdToClipId),
   }));
   const hasImages = selectedElements.some((element) => element.kind === "image");
   const hasText = selectedElements.some((element) => element.kind === "text");
@@ -157,30 +153,6 @@ export const encodeRuntimeSelection = (
   imageResources: readonly ImageResourceV3[] = [],
 ): ClipboardResult<EncodedClipboard> =>
   encodeSelectionInternal(elementsInRenderOrder, selectedIds, true, fontResources, imageResources);
-
-function serializeClipboardPayload(payload: InkClipboardV1): string {
-  return serializeCanonicalJson(payload);
-}
-
-function serializeCanonicalJson(value: unknown): string {
-  if (value instanceof Float64Array) return `[${value.join(",")}]`;
-  if (Array.isArray(value)) {
-    if (value.length === 0 || value[0] === null || typeof value[0] !== "object") {
-      return JSON.stringify(value);
-    }
-    return `[${value.map(serializeCanonicalJson).join(",")}]`;
-  }
-  if (value !== null && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const properties = Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${serializeCanonicalJson(record[key])}`);
-    return `{${properties.join(",")}}`;
-  }
-  const serialized = JSON.stringify(value);
-  if (serialized === undefined) throw new TypeError("Clipboard payload is not JSON serializable.");
-  return serialized;
-}
 
 const jsonDepthWithinLimit = (text: string): boolean => {
   let depth = 0;

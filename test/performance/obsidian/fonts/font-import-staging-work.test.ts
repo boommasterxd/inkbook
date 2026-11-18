@@ -4,12 +4,43 @@ import * as binaryResources from "../../../../src/persistence/serialization/bina
 import { FONT_LIMITS } from "../../../../src/persistence/fonts/font-container";
 import { readBundledFont } from "../../../fixtures/persistence/font-assets";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
+import { vaultFontLibraryFixture } from "../../../fixtures/obsidian/vault-font-library";
+import { FontImportSelection } from "../../../../src/obsidian/settings/fonts/font-import-selection";
 
 const options = {
   descriptor: { family: "upload", weight: 400, style: "normal" },
   fallbackName: "regular.woff2",
   useMetadata: true,
 } as const;
+
+it("charges equal selections once across a batch and retains only the prior draft after a failed addition", async () => {
+  const vault = await vaultFontLibraryFixture();
+  const draft = new FontImportSelection(vault.library);
+  const encode = vi.spyOn(binaryResources, "encodeBinaryResource");
+  try {
+    const copies = Array.from(
+      { length: FONT_LIMITS.libraryFaces + 1 },
+      (_, i) => new File([vault.bytes], `Inter-${i}.woff2`),
+    );
+    await draft.add(copies);
+    expect(draft.files.map((face) => face.fileName)).toEqual([copies[0]!.name]);
+    const bold = new File([await readBundledFont("inter-700-normal.woff2")], "Bold.woff2");
+    const broken = new File([new Uint8Array(vault.bytes.length)], "Broken.woff2");
+    await expect(draft.add([copies[1]!, bold, broken])).rejects.toMatchObject({
+      code: "invalid-font",
+    });
+    expect(encode).toHaveBeenCalledTimes(2);
+    expect(vault.sanitize).toHaveBeenCalledTimes(2);
+    expect(vault.createBinary).not.toHaveBeenCalled();
+    const entries = await vault.library.commitImport(draft.files, { displayName: "Inter" });
+    expect(entries.map((entry) => entry.id)).toEqual([draft.files[0]!.id]);
+    expect(vault.createBinary).toHaveBeenCalledOnce();
+  } finally {
+    encode.mockRestore();
+    draft.dispose();
+    vault.dispose();
+  }
+});
 
 it("prepares each owned binary once through the shared resource pipeline and releases it without vault work", async () => {
   const bytes = await readBundledFont("inter-400-normal.woff2");

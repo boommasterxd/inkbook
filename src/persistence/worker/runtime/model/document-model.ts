@@ -35,7 +35,7 @@ import {
 } from "../../../serialization/output/serialization-model-preparation";
 import {
   decodeClipboardChunked,
-  encodeRuntimeSelectionChunked,
+  encodeModelSelection,
   encodeRuntimeSelectionWrite,
   missingClipboardSelection,
 } from "./fallback-clipboard-codec";
@@ -320,11 +320,8 @@ export class DocumentModelRuntime {
     );
     context.signal.throwIfAborted();
     this.#validatedPasteState(basisRevision);
-    const fonts = this.#serializer.currentFontResources();
-    const images = this.#serializer.currentImageResources();
-    return selected === null
-      ? missingClipboardSelection()
-      : encodeRuntimeSelectionChunked(selected, selectedIds, context, fonts, images);
+    if (selected === null) return missingClipboardSelection();
+    return encodeModelSelection(selected, context, this.#serializer);
   }
 
   public decodeClipboard(

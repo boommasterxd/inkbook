@@ -34,7 +34,10 @@ export class FontImportSpecimen {
     this.#sample.createEl("p", { text: t("fonts.specimenText") });
     this.#preview = new FontSettingsPreview<PreparedLibraryFontFace>(
       this.#sample,
-      { scheduler: options.scheduler, resource: (face) => face.resource },
+      {
+        scheduler: options.scheduler,
+        load: (face, nativeOptions) => options.library.previewPrepared(face, nativeOptions),
+      },
       (publish) => {
         publish();
         this.#status.textContent = "";

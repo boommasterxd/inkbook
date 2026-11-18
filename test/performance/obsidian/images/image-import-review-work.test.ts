@@ -3,7 +3,11 @@ import { expect, it, vi } from "vitest";
 import type { PdfImageResolution } from "../../../../src/obsidian/images/pdf-image-source";
 import { dialogButton } from "../../../fixtures/obsidian/dialog";
 import { installImageRasterBoundary } from "../../../fixtures/obsidian/image-raster";
-import { capacityImageResource } from "../../../fixtures/persistence/images";
+import {
+  capacityImageResource,
+  imageHeaderBytes,
+  validImageResource,
+} from "../../../fixtures/persistence/images";
 import {
   changeImportField,
   imageImportSubmit,
@@ -11,6 +15,7 @@ import {
   installImageImportTestLifecycle,
   selectImportFile,
   setImportThumbnailVisibility,
+  setupImageImport,
   setupPdfImport,
 } from "../../../fixtures/obsidian/image-import-dialog";
 
@@ -75,7 +80,7 @@ it("reuses reviewed PDF rasters and their DPI metadata through browsing and batc
   expect(state.dispose).toHaveBeenCalled();
 });
 
-it("retains High and Ultra together but evicts highly compressed rasters by pixel and string cost", async () => {
+it("reuses reviewed High and Ultra pages without charging released canvas pixels", async () => {
   const high = await capacityImageResource(1);
   const ultra = await capacityImageResource(2, 4000);
   const second = await capacityImageResource(3, 4000);
@@ -100,13 +105,13 @@ it("retains High and Ultra together but evicts highly compressed rasters by pixe
   previewPage(1);
   await ready();
   expect(document.querySelector("img")?.getAttribute("src")).toContain(ultra.data);
-  expect(state.render.mock.calls.map(([page]) => page)).toEqual([1, 1, 2, 1]);
+  expect(state.render.mock.calls.map(([page]) => page)).toEqual([1, 1, 2]);
   dialogButton("Cancel").click();
   expect(await state.pending).toBeUndefined();
   expect(state.dispose).toHaveBeenCalled();
 });
 
-it("bounds retained small-page variants to twenty entries without revisiting source bytes", async () => {
+it("bounds reviewed pages to twenty and protects later insertion hits when the first page was evicted", async () => {
   const state = await setupPdfImport(21);
   selectImportFile("pages.pdf");
   await ready();
@@ -117,15 +122,34 @@ it("bounds retained small-page variants to twenty entries without revisiting sou
   previewPage(2);
   await ready();
   expect(state.render).toHaveBeenCalledTimes(21);
-  previewPage(1);
-  await ready();
+  imageImportSubmit().click();
+  expect((await state.pending)?.resources).toHaveLength(20);
   expect(state.render.mock.calls.map(([page]) => page)).toEqual([
     ...Array.from({ length: 21 }, (_, index) => index + 1),
     1,
   ]);
   expect(readImageSource).toHaveBeenCalledOnce();
-  dialogButton("Cancel").click();
-  expect(await state.pending).toBeUndefined();
+});
+
+it("stops at the first new resource exceeding retained session capacity and accepts duplicate pages on retry", async () => {
+  const retained = await capacityImageResource(1, 4000);
+  const second = await capacityImageResource(2, 4000);
+  const incoming = await capacityImageResource(3);
+  const state = await setupPdfImport(8, undefined, () => [retained, second]);
+  state.render.mockImplementation(async (page) => (page === 2 ? incoming : retained));
+  selectImportFile("pages.pdf");
+  await ready();
+  imageImportSubmit().click();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("capacity"),
+  );
+  expect(state.render.mock.calls.map(([page]) => page)).toEqual([1, 2]);
+  expect(state.submit).not.toHaveBeenCalled();
+  const range = document.querySelector<HTMLInputElement>('input[type="text"]')!;
+  changeImportField(range, "1,3");
+  imageImportSubmit().click();
+  expect((await state.pending)?.resources).toEqual([retained, retained]);
+  expect(state.render.mock.calls.map(([page]) => page)).toEqual([1, 2, 3]);
 });
 
 it("only rasterizes visible PDF thumbnails, reuses the displayed page and releases the bounded cache", async () => {
@@ -242,4 +266,59 @@ it("pauses thumbnail work while navigating and resumes for the latest scrolled p
   expect(state.render.mock.calls.map(([page]) => page)).toEqual([1, 6, 7]);
   dialogButton("Cancel").click();
   expect(await state.pending).toBeUndefined();
+});
+
+it("uses one decode and encode pair per distinct raster size across review and insertion", async () => {
+  const small = await validImageResource();
+  const bytes = Uint8Array.from(atob(small.data), (char) => char.charCodeAt(0));
+  const source = imageHeaderBytes(bytes, 1920, 1080);
+  const { prepareRasterImage } = await vi.importActual<
+    typeof import("../../../../src/obsidian/images/image-import")
+  >("../../../../src/obsidian/images/image-import");
+  vi.mocked(imageImportMocks.prepareRasterImage).mockImplementation(prepareRasterImage);
+  vi.mocked(readImageSource).mockResolvedValue(source);
+  const close = vi.fn();
+  const decode = vi.fn(async () => ({ width: 1920, height: 1080, close }));
+  vi.stubGlobal("createImageBitmap", decode);
+  const { draw, draws, encode } = installImageRasterBoundary(bytes);
+  encode.mockImplementation(function (this: HTMLCanvasElement, callback, mime) {
+    callback(
+      mime === "image/webp"
+        ? null
+        : new Blob([imageHeaderBytes(bytes, this.width, this.height)], {
+            type: "image/png",
+          }),
+    );
+  });
+  const state = setupImageImport();
+  selectImportFile();
+  await ready();
+  const preview = document.querySelector<HTMLImageElement>("figure img")!;
+  const initial = preview.src;
+  quality("standard");
+  await ready();
+  expect([preview.width, preview.height]).toEqual([1885, 1060]);
+  expect(preview.src).not.toBe(initial);
+  for (const profile of ["very-high", "ultra", "high"]) {
+    quality(profile);
+    await ready();
+    expect(preview.src).toBe(initial);
+  }
+  imageImportSubmit().click();
+  const batch = await state.pending;
+  expect(batch?.resources[0]?.data).toBe(initial.split(",")[1]);
+  expect(readImageSource).toHaveBeenCalledOnce();
+  expect(decode).toHaveBeenCalledTimes(2);
+  expect(close).toHaveBeenCalledTimes(2);
+  expect(draw).toHaveBeenCalledTimes(2);
+  expect(draws).toEqual([
+    { width: 1920, height: 1080 },
+    { width: 1885, height: 1060 },
+  ]);
+  expect(encode.mock.calls.map(([, mime]) => mime)).toEqual([
+    "image/webp",
+    "image/png",
+    "image/webp",
+    "image/png",
+  ]);
 });

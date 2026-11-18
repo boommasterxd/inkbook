@@ -1,30 +1,52 @@
-import { IMAGE_LIMITS } from "../../domain/images/image-limits";
+import { ImageResourceBudget } from "../../domain/images/image-resource-budget";
 import type { ImageResourceV3 } from "../../domain/schema/public";
 import { ImageImportError } from "./image-import-error";
 
-/** Keeps page placements ordered while admitting each distinct raster only once. */
+/** Keeps placements ordered and includes history-retained assets in early capacity checks. */
 export class ImageImportStaging {
+  #budget: ImageResourceBudget;
+  #retained: readonly ImageResourceV3[] | undefined;
   readonly #unique = new Map<string, ImageResourceV3>();
   readonly #resources: ImageResourceV3[] = [];
-  #bytes = 0;
-  #pixels = 0;
+
+  public constructor(private readonly readRetained?: () => readonly ImageResourceV3[] | undefined) {
+    this.#retained = readRetained?.();
+    this.#budget = this.#currentBudget();
+  }
 
   public get resources(): readonly ImageResourceV3[] {
     return this.#resources;
   }
 
   public add(resource: ImageResourceV3): void {
-    const retained = this.#unique.get(resource.id);
-    if (retained === undefined) {
-      const padding = resource.data.endsWith("==") ? 2 : resource.data.endsWith("=") ? 1 : 0;
-      const bytes = this.#bytes + (resource.data.length / 4) * 3 - padding;
-      const pixels = this.#pixels + resource.width * resource.height;
-      if (bytes > IMAGE_LIMITS.documentBytes || pixels > IMAGE_LIMITS.documentPixels)
-        throw new ImageImportError("documentCapacity", "Image document capacity exceeded.");
-      this.#bytes = bytes;
-      this.#pixels = pixels;
+    const prior = this.#unique.get(resource.id);
+    if (prior === undefined) {
+      if (!this.#budget.tryInclude(resource)) this.#recheck(resource);
       this.#unique.set(resource.id, resource);
     }
-    this.#resources.push(retained ?? resource);
+    this.#resources.push(prior ?? resource);
   }
+
+  #recheck(resource: ImageResourceV3): void {
+    const current = this.readRetained?.();
+    if (current !== this.#retained) {
+      this.#retained = current;
+      this.#budget = this.#currentBudget();
+      if (this.#budget.tryInclude(resource)) return;
+    }
+    throw capacityError();
+  }
+
+  #currentBudget(): ImageResourceBudget {
+    const budget = new ImageResourceBudget();
+    for (const resource of this.#retained ?? [])
+      if (!budget.tryInclude(resource)) throw capacityError();
+    for (const resource of this.#unique.values())
+      if (!budget.tryInclude(resource)) throw capacityError();
+    return budget;
+  }
+}
+
+function capacityError(): ImageImportError {
+  return new ImageImportError("documentCapacity", "Image document capacity exceeded.");
 }

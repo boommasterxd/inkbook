@@ -17,6 +17,7 @@ export interface ImportedImageBatch {
 export interface ImageImportRequest {
   readonly page: Pick<PageV1, "innerWidth" | "margin" | "background">;
   readonly centerX: number;
+  readonly retainedResources?: () => readonly ImageResourceV3[] | undefined;
   readonly submit: (
     batch: ImportedImageBatch,
     signal: AbortSignal,

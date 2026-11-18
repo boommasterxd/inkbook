@@ -32,13 +32,7 @@ it("preserves mixed locks, shared resources and worker parity when copying and p
   if (!encoded.ok) throw new Error(encoded.error.message);
   expect(encoded.value.payload.version).toBe(5);
   const context = { checkpoint: () => undefined, signal: new AbortController().signal };
-  const worker = await encodeRuntimeSelectionChunked(
-    elements,
-    [...selected],
-    context,
-    [font],
-    [asset],
-  );
+  const worker = await encodeRuntimeSelectionChunked(elements, context, [font], [asset]);
   if (!worker.ok) throw new Error(worker.error.message);
   expect(worker.value.customText).toBe(encoded.value.customText);
   expect(validateClipboardPayload({ ...encoded.value.payload, version: 3 }).ok).toBe(false);
@@ -72,7 +66,7 @@ it("omits an unlocked header so older clipboard readers can still open the copy"
   expect(
     Object.prototype.hasOwnProperty.call(encoded.value.payload.elements[0]!.element, "locked"),
   ).toBe(false);
-  const worker = await encodeRuntimeSelectionChunked([element], [element.id], {
+  const worker = await encodeRuntimeSelectionChunked([element], {
     checkpoint: () => undefined,
     signal: new AbortController().signal,
   });

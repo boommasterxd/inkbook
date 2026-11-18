@@ -1,9 +1,8 @@
 import {
   applyFontPreview,
-  loadNativeFontPreview,
+  type NativeFontPreviewOptions,
   type NativeFontPreview,
 } from "../../fonts/native-font-preview";
-import type { FontResourceV2 } from "../../../domain/schema/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 /** Retains at most one native font and cancels stale preview publication. */
@@ -18,11 +17,10 @@ export class FontSettingsPreview<Face> {
   public constructor(
     private readonly sample: HTMLElement,
     private readonly options: {
-      readonly resource: (
+      readonly load: (
         face: Face,
-        signal: AbortSignal,
-        scheduler: WorkScheduler,
-      ) => FontResourceV2 | Promise<FontResourceV2>;
+        options: NativeFontPreviewOptions,
+      ) => Promise<NativeFontPreview | undefined>;
       readonly scheduler: WorkScheduler | ((ownerWindow: Window | null) => WorkScheduler);
     },
     private readonly mutate: (update: () => void) => void,
@@ -78,9 +76,7 @@ export class FontSettingsPreview<Face> {
       typeof this.options.scheduler === "function"
         ? this.options.scheduler(this.sample.ownerDocument.defaultView)
         : this.options.scheduler;
-    const resource = await this.options.resource(face, signal, scheduler);
-    signal.throwIfAborted();
-    const native = await loadNativeFontPreview(resource, {
+    const native = await this.options.load(face, {
       document: this.sample.ownerDocument,
       scheduler,
       signal,

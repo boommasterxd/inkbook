@@ -3,10 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import { Localization } from "../../../../src/domain/localization";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { dialogButton } from "../../../fixtures/obsidian/dialog";
-import { assertImageDialogSemantics } from "../../../fixtures/obsidian/image-dialog";
+import {
+  assertImageDialogSemantics,
+  imageSourceButton,
+} from "../../../fixtures/obsidian/image-dialog";
 import { capacityImageResource, validImageResource } from "../../../fixtures/persistence/images";
 import { IMAGE_LIMITS } from "../../../../src/domain/images/image-limits";
 import { ImageImportError } from "../../../../src/obsidian/images/image-import-error";
+import type { ImageImportRequest } from "../../../../src/obsidian/embeds/active-scene/editor-chrome-openings";
 import { ImageHeaderError } from "../../../../src/persistence/images/image-header";
 import { webpBytes } from "../../../fixtures/persistence/webp-images";
 import { createImageResource } from "../../../../src/persistence/images/image-resources";
@@ -65,9 +69,9 @@ describe("image import review", () => {
     expect(prepareRasterImage).toHaveBeenCalledOnce();
   });
 
-  it("reviews and replaces the selected image before explicit insertion without decoding it twice", async () => {
-    const resource = await validImageResource();
-    const replacement = await capacityImageResource(1);
+  it("invalidates equal-size raster previews when replacing the selected source", async () => {
+    const resource = await capacityImageResource(1);
+    const replacement = await capacityImageResource(2);
     vi.mocked(readImageSource).mockResolvedValue(new Uint8Array([1]));
     vi.mocked(prepareRasterImage)
       .mockResolvedValueOnce({ resource })
@@ -78,18 +82,21 @@ describe("image import review", () => {
     selectFile();
     await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
     expect(document.querySelector<HTMLElement>('[role="status"][hidden]')?.textContent).toBe("");
-    expect(dialogButton("source.png · Change").disabled).toBe(false);
+    const source = imageSourceButton(/^source\.png\s*PNG\s*Change$/);
+    expect(source.disabled).toBe(false);
     expect(document.querySelector("img")?.getAttribute("src")).toContain(resource.data);
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("1 × 1 pixels");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "2,000 × 2,000 pixels",
+    );
     const choose = vi.spyOn(
       document.querySelector<HTMLInputElement>('input[type="file"]')!,
       "click",
     );
-    dialogButton("source.png · Change").click();
+    source.click();
     expect(choose).toHaveBeenCalledOnce();
     selectFile("replacement.png");
     await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
-    expect(dialogButton("replacement.png · Change").disabled).toBe(false);
+    expect(imageSourceButton(/^replacement\.png\s*PNG\s*Change$/).disabled).toBe(false);
     expect(document.querySelector("img")?.getAttribute("src")).toContain(replacement.data);
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       "2,000 × 2,000 pixels",
@@ -308,7 +315,7 @@ describe("import preview and recovery", () => {
     const { render, pending } = await setupPdfImport();
     const file = document.querySelector<HTMLInputElement>('input[type="file"]')!;
     const choose = vi.spyOn(file, "click");
-    dialogButton("Choose image or PDF").click();
+    imageSourceButton(/^Choose image or PDF\s*PNG, JPG, WebP or PDF · Up to 16 MiB/).click();
     expect(choose).toHaveBeenCalledOnce();
     selectFile();
     await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
@@ -359,12 +366,14 @@ describe("import preview and recovery", () => {
       ),
     );
     expect(dialogButton("Insert").disabled).toBe(true);
-    expect(dialogButton("source.png · Change").disabled).toBe(false);
+    expect(
+      imageSourceButton(/^source\.png\s*PNG, JPG, WebP or PDF · Up to 16 MiB\s*Change$/).disabled,
+    ).toBe(false);
     expect(document.querySelector("img")?.hasAttribute("src")).toBe(false);
     vi.mocked(prepareRasterImage).mockResolvedValue({ resource });
     selectFile("recovered.png");
     await vi.waitFor(() => expect(dialogButton("Insert").disabled).toBe(false));
-    expect(dialogButton("recovered.png · Change").disabled).toBe(false);
+    expect(imageSourceButton(/^recovered\.png\s*PNG\s*Change$/).disabled).toBe(false);
     expect(document.querySelector('[role="alert"]')?.textContent).toBe("");
     dialogButton("Insert").click();
     expect(await pending).toEqual({ resources: [resource], source: "image" });
@@ -372,15 +381,26 @@ describe("import preview and recovery", () => {
 });
 
 describe("PDF import batch ownership", () => {
-  it("keeps a rejected PDF review open and reuses its pages on a smaller submission", async () => {
+  it("defers to final admission if the retained snapshot becomes unavailable and reuses pages on retry", async () => {
     const admission = deferredImageSession<"capacity">();
-    const { pending, render, dispose, submit, resource } = await setupPdfImport(3, (batch) =>
-      batch.resources.length === 3 ? admission.promise : Promise.resolve("committed"),
+    const full = await Promise.all([
+      capacityImageResource(1, 4000),
+      capacityImageResource(2, 4000),
+    ]);
+    const retained = vi
+      .fn<NonNullable<ImageImportRequest["retainedResources"]>>()
+      .mockReturnValueOnce(full)
+      .mockReturnValue(undefined);
+    const { pending, render, dispose, submit, resource } = await setupPdfImport(
+      3,
+      (batch) => (batch.resources.length === 3 ? admission.promise : Promise.resolve("committed")),
+      retained,
     );
     selectFile("review.pdf");
     await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
     imageImportSubmit().click();
     await vi.waitFor(() => expect(submit).toHaveBeenCalledOnce());
+    expect(retained).toHaveBeenCalledTimes(2);
     expect(imageImportSubmit().disabled).toBe(true);
     expect(dialogButton("Cancel").disabled).toBe(false);
     expect(dispose).not.toHaveBeenCalled();

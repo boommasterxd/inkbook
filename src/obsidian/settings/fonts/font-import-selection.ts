@@ -18,17 +18,20 @@ export class FontImportSelection {
 
   public async add(files: readonly File[]): Promise<void> {
     const prepared: PreparedLibraryFontFace[] = [];
-    if (files.length + this.#files.length > FONT_LIMITS.libraryFaces)
-      throw new FontImportError("staging-limit", "Too many selected files.");
     if (files.some((file) => file.size > FONT_LIMITS.fileBytes))
       throw new FontImportError("file-limit", "A selected file is too large.");
     try {
+      const known = new Map(this.#files.map((face) => [face.id, face]));
       for (const file of files) {
         this.signal.throwIfAborted();
         const bytes = new Uint8Array(await file.arrayBuffer());
         this.signal.throwIfAborted();
-        const face = await this.library.prepareImport(bytes, file.name, this.signal);
-        prepared.push(face);
+        const face = await this.library.prepareImport(bytes, file.name, this.signal, known);
+        const existing = known.get(face.id);
+        if (existing === undefined) {
+          prepared.push(face);
+          known.set(face.id, face);
+        } else if (existing !== face) this.library.releasePrepared(face);
         this.signal.throwIfAborted();
       }
       for (const face of prepared) {

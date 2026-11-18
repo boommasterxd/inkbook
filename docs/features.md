@@ -119,6 +119,7 @@ The MIME identifier, versioned payload schema, validation rules, and limits are 
 Cut:
 
 - copies the unlocked selected elements first
+- rejects a selection that exceeds the clipboard limits without removing any element, recording an undo step or replacing the previous in-session clipboard
 - then removes the unlocked selected elements only if the same session, clipboard operation, basis revision, exact selection, and selected record versions are still current
 - creates one undo step
 - detaches unselected unlocked dependent lines or arrows at their current endpoint before removing a selected target; a locked dependent prevents its required detachment

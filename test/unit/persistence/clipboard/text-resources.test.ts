@@ -38,9 +38,7 @@ it("binds copied synthesized bold to the source face across destination font add
   expect(encoded.value.payload.version).toBe(5);
   expect(validateClipboardPayload({ ...encoded.value.payload, version: 2 }).ok).toBe(false);
   const context = { checkpoint: () => undefined, signal: new AbortController().signal };
-  const sliced = await encodeRuntimeSelectionChunked([text], [...selectedIds], context, [
-    sourceRegular,
-  ]);
+  const sliced = await encodeRuntimeSelectionChunked([text], context, [sourceRegular]);
   if (!sliced.ok) throw new Error(sliced.error.message);
   expect(sliced.value.customText).toBe(encoded.value.customText);
   expect(text.layout.lines[0]!.runs[0]!.fontResourceId).toBeUndefined();

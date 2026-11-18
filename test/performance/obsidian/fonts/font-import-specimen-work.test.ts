@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import { expect, it, vi } from "vitest";
+import * as fontResources from "../../../../src/persistence/fonts/font-resources";
+import { vaultFontLibraryFixture } from "../../../fixtures/obsidian/vault-font-library";
 import { fontCssFamily } from "../../../../src/domain/text/font-family";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import {
@@ -12,6 +14,32 @@ import {
   installFontPreviewHost,
   previewFontResource,
 } from "../../../fixtures/obsidian/native-font-preview";
+import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
+
+it("publishes staged bytes without another Base64 pass and isolates the preview from the vault binary", async () => {
+  const vault = await vaultFontLibraryFixture("caveat-variable.ttf");
+  const prepared = await vault.library.prepareImport(vault.bytes, "Caveat.ttf");
+  const decode = vi.spyOn(fontResources, "decodeFontResource");
+  const host = installFontPreviewHost(document, (buffer) => new Uint8Array(buffer).fill(0));
+  try {
+    const native = await vault.library.previewPrepared(prepared, {
+      document,
+      scheduler: new TestWorkScheduler(),
+      signal: new AbortController().signal,
+    });
+    expect(host.created[0]?.bytes).toBe(vault.bytes.byteLength);
+    expect(host.retained.size).toBe(1);
+    expect(decode).not.toHaveBeenCalled();
+    native?.dispose();
+    const [entry] = await vault.library.commitImport([prepared], { displayName: "Caveat" });
+    expect(new Uint8Array(vault.data.get(entry!.path)!)).toEqual(vault.bytes);
+    expect(host.retained.size).toBe(0);
+  } finally {
+    decode.mockRestore();
+    host.restore();
+    vault.dispose();
+  }
+});
 
 it("warms one native face, replaces pending styles with the latest choice, and releases on close", async () => {
   installObsidianDomHelpers();

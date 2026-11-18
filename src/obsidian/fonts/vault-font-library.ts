@@ -8,9 +8,11 @@ import { assertAvailableFamilyFace, resolveImportedFontFamily } from "./font-lib
 import {
   FontImportError,
   FontImportStaging,
+  sameFontBytes,
   type PreparedLibraryFontFace,
 } from "./font-import-staging";
 import { planFontImport, type FontImportSelection } from "./font-import-plan";
+import { loadNativeFontPreview, type NativeFontPreviewOptions } from "./native-font-preview";
 
 export { FontImportError, type PreparedLibraryFontFace } from "./font-import-staging";
 
@@ -123,8 +125,21 @@ export class VaultFontLibrary {
     bytes: Uint8Array,
     fallbackName: string,
     signal?: AbortSignal,
+    draft?: ReadonlyMap<string, PreparedLibraryFontFace>,
   ): Promise<PreparedLibraryFontFace> {
     this.#assertLive();
+    const scheduler = this.#scheduler();
+    for (const face of draft?.values() ?? []) {
+      const owned = this.#staging.bytes(face, signal);
+      if (bytes.length !== owned.length) continue;
+      const equal = await sameFontBytes(bytes, owned, () =>
+        scheduler.checkpoint(signal, "background"),
+      );
+      if (equal) {
+        this.#staging.bytes(face, signal);
+        return face;
+      }
+    }
     return this.#staging.prepare(
       bytes,
       {
@@ -132,10 +147,18 @@ export class VaultFontLibrary {
         fallbackName,
         useMetadata: true,
       },
-      this.#scheduler(),
+      scheduler,
       this.#options.sanitize,
       signal,
     );
+  }
+
+  public async previewPrepared(face: PreparedLibraryFontFace, options: NativeFontPreviewOptions) {
+    const pending = options.scheduler.checkpoint(options.signal, "background");
+    if (pending !== undefined) await pending;
+    const owned = this.#staging.bytes(face, options.signal);
+    // The preview's window may outlive this draft. Never lend it the commit's writable buffer.
+    return loadNativeFontPreview(face.resource, options, owned.slice());
   }
 
   /** Commits one reviewed family in a single metadata transaction, reusing validated bytes. */
@@ -247,17 +270,14 @@ export class VaultFontLibrary {
     if (existing.stat.size !== bytes.length)
       throw new RangeError("Font library content collision.");
     const actual = new Uint8Array(await vault.readBinary(existing));
-    if (actual.length !== bytes.length) throw new RangeError("Font library content collision.");
-    for (let offset = 0; offset < actual.length; offset += 4096) {
-      if (
-        actual.subarray(offset, offset + 4096).some((byte, index) => byte !== bytes[offset + index])
-      )
-        throw new RangeError("Font library content collision.");
-      const pending = this.#scheduler().checkpoint(signal, "background");
-      if (pending !== undefined) await pending;
+    const equal = await sameFontBytes(actual, bytes, () => {
       signal?.throwIfAborted();
       this.#assertLive();
-    }
+      return this.#scheduler().checkpoint(signal, "background");
+    });
+    signal?.throwIfAborted();
+    this.#assertLive();
+    if (!equal) throw new RangeError("Font library content collision.");
   }
 
   #serialize<T>(operation: () => Promise<T>): Promise<T> {

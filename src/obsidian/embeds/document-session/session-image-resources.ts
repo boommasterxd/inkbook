@@ -1,4 +1,5 @@
 import type { ImageResourceV3, InkSnapshotV1 } from "../../../domain/schema/public";
+import { ImageResourceBudget } from "../../../domain/images/image-resource-budget";
 import { IMAGE_LIMITS } from "../../../domain/images/image-limits";
 import { assertImageResourcesSteps } from "../../../domain/schema/image-validation";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
@@ -131,13 +132,8 @@ function checkedResources(
   incoming: readonly ImageResourceV3[],
 ): ImageResourceV3[] {
   const merged = mergeResources(current, incoming);
-  if (
-    merged.length > IMAGE_LIMITS.resources ||
-    merged.reduce((bytes, resource) => bytes + resourceBytes(resource), 0) >
-      IMAGE_LIMITS.documentBytes ||
-    merged.reduce((pixels, resource) => pixels + resource.width * resource.height, 0) >
-      IMAGE_LIMITS.documentPixels
-  )
+  const budget = new ImageResourceBudget();
+  if (!merged.every((resource) => budget.tryInclude(resource)))
     throw new ImageResourceCapacityError();
   return merged;
 }
@@ -163,9 +159,4 @@ function mergeResources(
       throw new RangeError("Conflicting image resource identity.");
   }
   return result;
-}
-
-function resourceBytes(resource: ImageResourceV3): number {
-  const padding = resource.data.endsWith("==") ? 2 : resource.data.endsWith("=") ? 1 : 0;
-  return (resource.data.length / 4) * 3 - padding;
 }

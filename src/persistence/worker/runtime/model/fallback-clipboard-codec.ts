@@ -7,7 +7,7 @@ import type {
   FontResourceV2,
   ImageResourceV3,
 } from "../../../../domain/schema/public";
-import { MAX_JSON_DEPTH } from "../../../../domain/schema/public";
+import { CLIPBOARD_JSON_LIMITS, writeClipboardJsonSteps } from "../../../clipboard/canonical-json";
 import { CLIPBOARD_LIMITS, INKBOOK_CLIPBOARD_TEXT_PREFIX } from "../../../clipboard/constants";
 import type {
   ClipboardCandidates,
@@ -17,7 +17,9 @@ import type {
   DecodedClipboard,
 } from "../../../clipboard/types";
 import { validateClipboardPayloadSliced } from "../../../clipboard/validation";
-import { encodeRuntimeSelection } from "../../../clipboard/codec";
+import { createClipboardBody, encodeRuntimeSelection } from "../../../clipboard/codec";
+import type { IncrementalDocumentSerializer } from "../../../serialization/output/incremental-document-serializer";
+import type { ClipboardStrokeFacts } from "../../../clipboard/validation";
 import { usedImageResourcesSteps } from "../../../images/used-image-resources";
 import { usedFontResourcesSteps } from "../../../fonts/used-font-resources";
 import { bindTextElementFontResourcesSteps } from "../../../fonts/bound-font-resources";
@@ -53,25 +55,34 @@ function runtimeWorkProfile(context: RuntimeSliceContext): RuntimeSliceWorkProfi
   return runtimeSliceWorkProfile(context.sliceMilliseconds?.());
 }
 
+export function encodeModelSelection(
+  selected: InkElementV1[],
+  context: RuntimeSliceContext,
+  model: IncrementalDocumentSerializer,
+): Promise<ClipboardResult<ClipboardWritePayload>> {
+  return encodeRuntimeSelectionChunked(
+    selected,
+    context,
+    model.currentFontResources(),
+    model.currentImageResources(),
+    model,
+  );
+}
+
 export async function encodeRuntimeSelectionChunked(
-  elementsInRenderOrder: readonly InkElementV1[],
-  selectedIds: readonly string[],
+  records: readonly InkElementV1[],
   context: RuntimeSliceContext,
   fontResources: readonly FontResourceV2[] = [],
   imageResources: readonly ImageResourceV3[] = [],
+  model?: IncrementalDocumentSerializer,
 ): Promise<ClipboardResult<ClipboardWritePayload>> {
   const profile = runtimeWorkProfile(context);
-  const selection = new Set(selectedIds);
-  if (selection.size === 0) return clipboardFailure("empty-selection", "No elements are selected.");
-  const selected = await selectedElementsInOrder(elementsInRenderOrder, selection, context);
-  if (selected.length !== selection.size) {
-    return clipboardFailure("missing-selection", "The selection contains an unknown element.");
-  }
-  const hasImages = selected.some((element) => element.kind === "image");
+  if (records.length === 0) return clipboardFailure("empty-selection", "No elements are selected.");
+  const hasImages = records.some((element) => element.kind === "image");
   let images: ImageResourceV3[];
   try {
     images = hasImages
-      ? await consumeSerializationSteps(usedImageResourcesSteps(selected, imageResources), context)
+      ? await consumeSerializationSteps(usedImageResourcesSteps(records, imageResources), context)
       : [];
   } catch {
     context.signal.throwIfAborted();
@@ -80,42 +91,45 @@ export async function encodeRuntimeSelectionChunked(
       "The selection references an unavailable image resource.",
     );
   }
-  const hasText = selected.some((element) => element.kind === "text");
+  const hasText = records.some((element) => element.kind === "text");
+  const textSelection = hasText ? [...records] : [];
+  const selected = hasText ? textSelection : records;
   const fonts = hasText
-    ? await prepareSelectionFonts(selected, fontResources, context)
+    ? await prepareSelectionFonts(textSelection, fontResources, context, model)
     : { ok: true as const, value: [] };
   if (!fonts.ok) return fonts;
-  const documentIds = new Map<string, string>();
-  for (let index = 0; index < selected.length; index += 1) {
-    documentIds.set(selected[index]!.id, compactClipId(index));
-    if ((index + 1) % profile.nodeLimit === 0) {
-      const pending = context.checkpoint();
-      if (pending !== undefined) await pending;
-    }
-  }
-  const clipboardElements: ClipboardElementV1[] = [];
-  for (let index = 0; index < selected.length; index += 1) {
-    const element = selected[index]!;
-    clipboardElements.push({
-      clipId: compactClipId(index),
-      element: createBody(element, documentIds),
-    });
-    if ((index + 1) % profile.nodeLimit === 0) {
-      const pending = context.checkpoint();
-      if (pending !== undefined) await pending;
-    }
-  }
-  const encoded = await serializeClipboardPayload(
-    {
-      elements: clipboardElements,
-      format: "inkbook-elements",
-      version: elementSnapshotVersion(selected),
-      ...(hasText ? { fontResources: fonts.value } : {}),
-      ...(hasImages ? { imageResources: images } : {}),
-    },
+  const { clipboardElements, strokes } = await consumeSerializationSteps(
+    clipboardBodiesSteps(selected, profile.nodeLimit, model),
     context,
-    true,
-    profile,
+  );
+  const payload: InkClipboardV1 = {
+    elements: clipboardElements,
+    format: "inkbook-elements",
+    version: elementSnapshotVersion(selected),
+    ...(hasText ? { fontResources: fonts.value } : {}),
+    ...(hasImages ? { imageResources: images } : {}),
+  };
+  const validated = await validateClipboardPayloadSliced(
+    payload,
+    context.checkpoint,
+    profile.nodeLimit,
+    Math.max(1, Math.floor(profile.inputByteLimit / 24)),
+    {
+      strokes,
+      ...(model !== undefined &&
+      images.every((resource) => model.currentImageResources().includes(resource))
+        ? { selectedImages: images }
+        : {}),
+      ...(model !== undefined &&
+      fonts.value.every((resource) => model.currentFontResources().includes(resource))
+        ? { selectedFonts: fonts.value }
+        : {}),
+    },
+  );
+  if (!validated.ok) return validated;
+  const encoded = await consumeSerializationSteps(
+    writeClipboardJsonSteps(payload, true, profile),
+    context,
   );
   if (!encoded.ok) return encoded;
   return {
@@ -128,21 +142,32 @@ export async function encodeRuntimeSelectionChunked(
   };
 }
 
-async function selectedElementsInOrder(
-  elements: readonly InkElementV1[],
-  selection: ReadonlySet<string>,
-  context: RuntimeSliceContext,
-): Promise<InkElementV1[]> {
-  const selected: InkElementV1[] = [];
-  const profile = runtimeWorkProfile(context);
-  for (let index = 0; index < elements.length; index += 1) {
-    if (selection.has(elements[index]!.id)) selected.push(elements[index]!);
-    if ((index + 1) % profile.nodeLimit === 0) {
-      const pending = context.checkpoint();
-      if (pending !== undefined) await pending;
-    }
+function* clipboardBodiesSteps(
+  selected: readonly InkElementV1[],
+  nodeLimit: number,
+  model?: IncrementalDocumentSerializer,
+) {
+  const documentIds = new Map<string, string>();
+  for (let index = 0; index < selected.length; index += 1) {
+    documentIds.set(selected[index]!.id, compactClipId(index));
+    if ((index + 1) % nodeLimit === 0) yield;
   }
-  return selected;
+  const clipboardElements: ClipboardElementV1[] = [];
+  const strokes = new Map<ClipboardElementBodyV1, ClipboardStrokeFacts>();
+  for (let index = 0; index < selected.length; index += 1) {
+    const element = selected[index]!;
+    const body = createClipboardBody(element, documentIds);
+    if (element.kind === "stroke") {
+      const facts = model?.currentElementFacts(element);
+      if (facts !== undefined) strokes.set(body, { element, spatial: facts });
+    }
+    clipboardElements.push({
+      clipId: compactClipId(index),
+      element: body,
+    });
+    if ((index + 1) % nodeLimit === 0) yield;
+  }
+  return { clipboardElements, strokes };
 }
 
 /** Bind private selected records before body creation, preserving the source store records. */
@@ -150,11 +175,12 @@ async function prepareSelectionFonts(
   elements: InkElementV1[],
   resources: readonly FontResourceV2[],
   context: RuntimeSliceContext,
+  model?: IncrementalDocumentSerializer,
 ): Promise<ClipboardResult<FontResourceV2[]>> {
   try {
     for (let index = 0; index < elements.length; index += 1) {
       const element = elements[index]!;
-      if (element.kind === "text")
+      if (element.kind === "text" && model?.currentElementFacts(element) === undefined)
         elements[index] = await consumeSerializationSteps(
           bindTextElementFontResourcesSteps(element, resources),
           context,
@@ -199,7 +225,7 @@ async function decodeCandidate(
       : input;
   if (json === null) return clipboardFailure("invalid-prefix", "Plain text is not Inkbook data.");
   const profile = runtimeWorkProfile(context);
-  const inputBytes = await utf8ByteLength(json, context, profile.inputByteLimit);
+  const inputBytes = await utf8ByteLength(input, context, profile.inputByteLimit);
   if (inputBytes > CLIPBOARD_LIMITS.totalInputBytes) {
     return clipboardFailure("limit-exceeded", "Clipboard input exceeds the 8 MiB input limit.");
   }
@@ -209,10 +235,7 @@ async function decodeCandidate(
       batchCharacters: profile.inputByteLimit,
       checkpoint: context.checkpoint,
       limits: {
-        maximumContainerEntries: CLIPBOARD_LIMITS.pointsPerStroke * 3,
-        maximumDepth: MAX_JSON_DEPTH,
-        maximumNodes: CLIPBOARD_LIMITS.strokePoints * 4 + CLIPBOARD_LIMITS.elements * 64,
-        maximumOutputCharacters: CLIPBOARD_LIMITS.totalInputBytes,
+        ...CLIPBOARD_JSON_LIMITS,
         maximumStringScratchCharacters: profile.inputByteLimit,
       },
       signal: context.signal,
@@ -229,7 +252,10 @@ async function decodeCandidate(
     Math.max(1, Math.floor(profile.inputByteLimit / 24)),
   );
   if (!validated.ok) return validated;
-  const canonical = await serializeClipboardPayload(validated.value, context, false, profile);
+  const canonical = await consumeSerializationSteps(
+    writeClipboardJsonSteps(validated.value, false, profile),
+    context,
+  );
   if (!canonical.ok) return canonical;
   return {
     ok: true,
@@ -242,185 +268,6 @@ async function decodeCandidate(
       plainText: `${INKBOOK_CLIPBOARD_TEXT_PREFIX}${canonical.value.text}`,
       source,
     },
-  };
-}
-
-async function serializeClipboardPayload(
-  payload: InkClipboardV1,
-  context: RuntimeSliceContext,
-  requirePlainFallbackWithinLimit: boolean,
-  profile = runtimeWorkProfile(context),
-): Promise<ClipboardResult<{ readonly byteLength: number; readonly text: string }>> {
-  const writer = new CanonicalJsonWriter(context, profile);
-  await writer.write(payload);
-  const result = await writer.finish();
-  const prefixBytes = encoder.encode(INKBOOK_CLIPBOARD_TEXT_PREFIX).byteLength;
-  if (
-    result.byteLength > CLIPBOARD_LIMITS.totalInputBytes ||
-    (requirePlainFallbackWithinLimit &&
-      result.byteLength + prefixBytes > CLIPBOARD_LIMITS.totalInputBytes)
-  ) {
-    return clipboardFailure("limit-exceeded", "Clipboard payload exceeds the 8 MiB input limit.");
-  }
-  return { ok: true, value: result };
-}
-
-type JsonFrame =
-  | { readonly kind: "value"; readonly value: unknown }
-  | { readonly kind: "array"; readonly value: ArrayLike<unknown>; index: number }
-  | {
-      readonly kind: "object";
-      readonly value: Record<string, unknown>;
-      readonly keys: string[];
-      index: number;
-    };
-
-class CanonicalJsonWriter {
-  readonly #chunks: string[] = [];
-  readonly #context: RuntimeSliceContext;
-  readonly #profile: RuntimeSliceWorkProfile;
-  #current = "";
-  #nodes = 0;
-
-  public constructor(context: RuntimeSliceContext, profile: RuntimeSliceWorkProfile) {
-    this.#context = context;
-    this.#profile = profile;
-  }
-
-  public async write(value: unknown): Promise<void> {
-    const stack: JsonFrame[] = [{ kind: "value", value }];
-    while (stack.length > 0) {
-      const frame = stack.pop()!;
-      if (frame.kind === "value") {
-        this.#context.signal.throwIfAborted();
-        this.#nodes += 1;
-        if (this.#nodes % this.#profile.nodeLimit === 0) {
-          const pending = this.#context.checkpoint();
-          if (pending !== undefined) await pending;
-        }
-        if (typeof frame.value === "string" && frame.value.length > this.#profile.inputByteLimit) {
-          await this.#writeString(frame.value);
-        } else this.#writeValue(frame.value, stack);
-      } else {
-        this.#continueContainer(frame, stack);
-      }
-    }
-  }
-
-  async #writeString(value: string): Promise<void> {
-    this.#append('"');
-    for (let start = 0; start < value.length;) {
-      let end = Math.min(value.length, start + Math.max(2, this.#profile.inputByteLimit));
-      const trailing = value.charCodeAt(end - 1);
-      if (end < value.length && trailing >= 0xd800 && trailing <= 0xdbff) end -= 1;
-      this.#append(JSON.stringify(value.slice(start, end)).slice(1, -1));
-      start = end;
-      const pending = this.#context.checkpoint();
-      if (pending !== undefined) await pending;
-      this.#context.signal.throwIfAborted();
-    }
-    this.#append('"');
-  }
-
-  #writeValue(value: unknown, stack: JsonFrame[]): void {
-    if (value instanceof Float64Array || Array.isArray(value)) {
-      this.#append("[");
-      stack.push({ index: 0, kind: "array", value });
-    } else if (value !== null && typeof value === "object") {
-      this.#append("{");
-      stack.push({
-        index: 0,
-        keys: Object.keys(value).sort(),
-        kind: "object",
-        value: value as Record<string, unknown>,
-      });
-    } else {
-      const serialized = JSON.stringify(value);
-      if (serialized === undefined) throw new TypeError("Clipboard payload is not serializable.");
-      this.#append(serialized);
-    }
-  }
-
-  #continueContainer(
-    frame: Exclude<JsonFrame, { readonly kind: "value" }>,
-    stack: JsonFrame[],
-  ): void {
-    if (frame.kind === "array") {
-      if (frame.index === frame.value.length) {
-        this.#append("]");
-        return;
-      }
-      if (frame.index > 0) this.#append(",");
-      const nextValue = frame.value[frame.index];
-      frame.index += 1;
-      stack.push(frame, { kind: "value", value: nextValue });
-      return;
-    }
-    if (frame.index === frame.keys.length) {
-      this.#append("}");
-      return;
-    }
-    if (frame.index > 0) this.#append(",");
-    const key = frame.keys[frame.index]!;
-    this.#append(`${JSON.stringify(key)}:`);
-    frame.index += 1;
-    stack.push(frame, { kind: "value", value: frame.value[key] });
-  }
-
-  public async finish(): Promise<{ readonly byteLength: number; readonly text: string }> {
-    this.#flush();
-    let text = "";
-    let byteLength = 0;
-    for (let index = 0; index < this.#chunks.length; index += 1) {
-      const chunk = this.#chunks[index]!;
-      text += chunk;
-      byteLength += encoder.encode(chunk).byteLength;
-      if ((index + 1) % this.#profile.nodeLimit === 0) {
-        const pending = this.#context.checkpoint();
-        if (pending !== undefined) await pending;
-      }
-    }
-    return { byteLength, text };
-  }
-
-  #append(value: string): void {
-    this.#current += value;
-    if (this.#current.length >= this.#profile.inputByteLimit) this.#flush();
-  }
-
-  #flush(): void {
-    if (this.#current.length === 0) return;
-    this.#chunks.push(this.#current);
-    this.#current = "";
-  }
-}
-
-function createBody(
-  element: InkElementV1,
-  documentIds: ReadonlyMap<string, string>,
-): ClipboardElementBodyV1 {
-  if (element.kind !== "line" && element.kind !== "arrow") {
-    const { createdAt: _createdAt, id: _id, locked, ...body } = element;
-    return { ...body, ...(locked === true ? { locked: true } : {}) };
-  }
-  const {
-    createdAt: _createdAt,
-    endConnection,
-    id: _id,
-    startConnection,
-    locked,
-    ...body
-  } = element;
-  const remap = (connection: typeof startConnection) => {
-    if (connection === null) return null;
-    const targetClipId = documentIds.get(connection.targetId);
-    return targetClipId === undefined ? null : { anchor: connection.anchor, targetClipId };
-  };
-  return {
-    ...body,
-    ...(locked === true ? { locked: true } : {}),
-    endConnection: remap(endConnection),
-    startConnection: remap(startConnection),
   };
 }
 

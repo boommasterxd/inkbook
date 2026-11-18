@@ -4,9 +4,7 @@ import { Platform } from "obsidian";
 export async function readBundledFont(name: string): Promise<Uint8Array<ArrayBuffer>> {
   if (Platform.isDesktop) {
     const { readFile } = await import("node:fs/promises");
-    return new Uint8Array(
-      await readFile(new URL(`../../../src/persistence/fonts/assets/${name}`, import.meta.url)),
-    );
+    return new Uint8Array(await readFile(`src/persistence/fonts/assets/${name}`));
   }
   throw new Error("Font fixtures require the desktop test runtime.");
 }

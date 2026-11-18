@@ -12,7 +12,10 @@ export async function previewFontResource(
   return { ...resource, family: `custom-${resource.id}` };
 }
 
-export function installFontPreviewHost(document: Document) {
+export function installFontPreviewHost(
+  document: Document,
+  onCreate?: (buffer: ArrayBuffer) => void,
+) {
   const owner = document.defaultView;
   if (owner === null) throw new Error("Native font fixture requires its window.");
   const retained = new Set<unknown>();
@@ -23,6 +26,7 @@ export function installFontPreviewHost(document: Document) {
   class NativeFont {
     public constructor(family: string, bytes: ArrayBuffer) {
       created.push({ family, bytes: bytes.byteLength });
+      onCreate?.(bytes);
     }
     public async load(): Promise<this> {
       loading += 1;
