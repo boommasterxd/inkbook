@@ -31,7 +31,9 @@ describe("native modal motion", () => {
       first.setTitle("Inkbook settings");
       second.setTitle("Keyboard shortcuts");
       first.open();
+      expect(document.activeElement).toBe(first.titleEl);
       second.open();
+      expect(document.activeElement).toBe(second.titleEl);
 
       for (const modal of [first, second]) {
         expect(modal.modalEl.getAttribute("role")).toBe("dialog");

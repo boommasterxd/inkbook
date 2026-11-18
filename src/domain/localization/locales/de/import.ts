@@ -1,13 +1,12 @@
 export const inkImport = {
   "import.title": "Aus Obsidian Ink importieren",
-  "import.close": "Schließen",
   "import.scan": "Vault durchsuchen",
   "import.scanAgain": "Erneut suchen",
   "import.emptyHeading": "Keine unterstützte Handschrift gefunden",
   "import.emptyDescription": "Gesucht wird in den Handschrift-Verweisen deiner Notizen.",
   "import.scanEmptyStatus": "Keine unterstützte Handschrift gefunden. Du kannst erneut suchen.",
   "import.back": "Zurück",
-  "import.import": "Handschrift importieren",
+  "import.import": "Importieren",
   "import.scanPending": "Vault wird durchsucht…",
   "import.scanComplete": "Suche abgeschlossen. Prüfe die Vorschau vor dem Import.",
   "import.importPending": "Handschrift wird importiert…",
@@ -95,10 +94,11 @@ export const inkImport = {
   "import.journeySwitchDescription":
     "Nach deiner Bestätigung erstellen wir bearbeitbare Inkbook-Kopien in denselben Ordnern und aktualisieren deine Notizen.",
   "import.examples": "Importbeispiele",
-  "import.examplesWarning":
-    "Strichstärke, Kurven und Hintergründe können sich ändern. Prüfe die Kopien, bevor du Originale entfernst.",
-  "import.previousExample": "Vorheriges Beispiel",
-  "import.nextExample": "Nächstes Beispiel",
+  "import.showExample": "Beispiel ansehen ({title})",
+  "import.examplesIntro": "Allgemeine Beispiele. Deine Dateien können anders aussehen.",
+  "import.examplesLoading": "Beispiel wird geladen…",
+  "import.exampleView": "Beispielansicht",
+  "import.examplesUnavailable": "Das Beispiel konnte nicht geladen werden.",
   "import.before": "Vorher · Obsidian Ink",
   "import.after": "Nachher · Inkbook",
   "import.scanSafety":
@@ -117,6 +117,11 @@ export const inkImport = {
   "import.cleanupProgressDescription":
     "Sicherungskopien, Originale und verbleibende Verweise werden geprüft.",
   "import.notesToReview": "Zu prüfende Notizen",
+  "import.openNote": "Notiz öffnen",
+  "import.openNoteAria": "Notiz öffnen ({path})",
+  "import.openNotePending": "Notiz wird geöffnet…",
+  "import.openNoteFailure":
+    "Die Notiz konnte nicht geöffnet werden. Prüfe, ob sie noch im Vault liegt.",
   "import.undoStopped": "Wiederherstellung gestoppt",
   "import.undoSuccess": "Obsidian-Ink-Einbettungen wiederhergestellt",
   "import.undoReview": "Wiederherstellung muss geprüft werden",
@@ -151,7 +156,7 @@ export const inkImport = {
   "import.importNextTitle": "Als Nächstes: Handschrift prüfen",
   "import.importReviewTitle": "Vor dem Fortfahren prüfen",
   "import.importNext":
-    "Schließe die Einstellungen und öffne eine der hier aufgeführten Notizen. Prüfe ihre Handschrift, bevor du Originale entfernst.",
+    "Öffne unten eine Notiz und prüfe ihre Handschrift, bevor du Originale entfernst.",
   "import.importReviewNext":
     "Öffne „Import ansehen“ und prüfe mögliche Probleme. Prüfe aktualisierte Notizen vor einem erneuten Versuch oder der Wiederherstellung ursprünglicher Einbettungen.",
   "import.importRecovery":
@@ -182,7 +187,8 @@ export const inkImport = {
   "import.historyCountOne": "{count} gespeicherter Import.",
   "import.historyCountOther": "{count} gespeicherte Importe.",
   "import.found": "{files} gefunden",
-  "import.selected": "{count} von {total} ausgewählt · {notes}",
+  "import.selectionImpact": "{copies} · {notes}",
+  "import.originalsKept": "Originaldateien bleiben erhalten.",
   "import.step": "Schritt {step} von {total} · {label}",
   "import.notePath": "Notiz: {path}",
   "import.backupPath": "Wiederherstellungskopie: {path}",
@@ -192,7 +198,6 @@ export const inkImport = {
   "import.previousPage": "Vorherige Seite: {label}",
   "import.nextPage": "Nächste Seite: {label}",
   "import.pageRange": "{start}–{end} von {total}",
-  "import.exampleCount": "Beispiel {count} von {total}",
   "import.example.diagram.title": "Kurven und Druck",
   "import.example.diagram.note":
     "Die breiten Keile an diesen gebogenen Ecken bleiben nicht vollständig erhalten.",
@@ -214,10 +219,25 @@ export const inkImport = {
     "Großbuchstaben A bis Z und verbundene Kleinbuchstaben a bis z in Schreibschrift in Obsidian Ink.",
   "import.example.cursive.after":
     "Dasselbe Schreibschriftalphabet nach dem Import in Inkbook; Schleifen, Strichstärke und Glättung können abweichen.",
+  "import.example.corners.title": "Abgerundete Ecken",
+  "import.example.corners.note":
+    "Schema desselben Rechtecks. Aus abgerundeten Ecken werden rechtwinklige Ecken.",
+  "import.example.corners.before": "Umrandetes Rechteck mit abgerundeten Ecken in Obsidian Ink.",
+  "import.example.corners.after":
+    "Dasselbe umrandete Rechteck mit rechtwinkligen Ecken in Inkbook.",
+  "import.example.precision.title": "Gerundete Koordinaten",
+  "import.example.precision.note":
+    "Vergrößertes Schema einer x-Koordinate. Inkbook rundet diesen Wert auf drei Nachkommastellen.",
+  "import.example.precision.before":
+    "Ursprüngliche x-Koordinate {value} auf einer vergrößerten Achse.",
+  "import.example.precision.after":
+    "Gerundete x-Koordinate {value} auf derselben vergrößerten Achse.",
   "import.quantity.handwriting.one": "{count} Handschriftdatei",
   "import.quantity.handwriting.other": "{count} Handschriftdateien",
   "import.quantity.affectedNote.one": "{count} betroffene Notiz",
   "import.quantity.affectedNote.other": "{count} betroffene Notizen",
+  "import.quantity.copy.one": "{count} Inkbook-Kopie",
+  "import.quantity.copy.other": "{count} Inkbook-Kopien",
   "import.quantity.file.one": "{count} Datei",
   "import.quantity.file.other": "{count} Dateien",
   "import.quantity.note.one": "{count} Notiz",

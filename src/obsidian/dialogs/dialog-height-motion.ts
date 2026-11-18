@@ -84,6 +84,7 @@ export class DialogHeightMotion {
   }
 
   #animate(current: string): void {
+    this.#surface.dataset.inkbookDialogResizing = "";
     const animation = animateOwnedElement(
       this.#surface,
       { height: [current, "auto"] },
@@ -122,6 +123,7 @@ export class DialogHeightMotion {
   }
 
   #restoreHeight(): void {
+    delete this.#surface.dataset.inkbookDialogResizing;
     if (this.#height === "") this.#surface.style.removeProperty("height");
     else this.#surface.style.setProperty("height", this.#height, this.#heightPriority);
   }

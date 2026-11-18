@@ -16,7 +16,11 @@ export const images = {
   "images.pageTotal": "von {count}",
   "images.previousPage": "Vorherige Seite",
   "images.nextPage": "Nächste Seite",
-  "images.previewNotSelected": "Nicht zum Import ausgewählt",
+  "images.choosePages": "Seiten auswählen",
+  "images.previousPages": "Vorherige Miniaturen",
+  "images.nextPages": "Nächste Miniaturen",
+  "images.thumbnailRange": "{start}–{end} von {total}",
+  "images.thumbnailSelect": "Seite {page} einfügen",
   "images.failurePreviewPage": "Gib eine Seite zwischen 1 und {count} ein.",
   "images.quality": "PDF-Auflösung",
   "images.imageQuality": "Bildauflösung",
@@ -33,8 +37,12 @@ export const images = {
     "Diese Seite wurde auf ca. {dpi} dpi begrenzt, um die gewählte Auflösungsgrenze einzuhalten.",
   "images.preview": "Bildvorschau",
   "images.pageWidthLocked": "Auf Seitenbreite einfügen und sperren",
+  "images.pageWidthLockedHint":
+    "Die Vorlage bleibt fest im Hintergrund, während du darauf schreibst oder zeichnest.",
   "images.preparing": "Bild wird vorbereitet…",
-  "images.preparingPage": "Seite {page} von {total} wird vorbereitet…",
+  "images.preparingPage": "PDF-Seite {page} wird vorbereitet ({index} von {total})…",
+  "images.failureUnavailable":
+    "Die Zeichnung wurde geändert oder ist vorübergehend nicht verfügbar. Versuche, erneut einzufügen.",
   "images.details": "{width} × {height} Pixel",
   "images.resized":
     "Automatisch von {sourceWidth} × {sourceHeight} auf {width} × {height} Pixel verkleinert. Die Originaldatei bleibt unverändert.",

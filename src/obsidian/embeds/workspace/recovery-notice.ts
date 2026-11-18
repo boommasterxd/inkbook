@@ -110,7 +110,7 @@ class HeadlessRecoveryModal extends InkbookModal {
     private readonly localization: Localization,
     workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
   ) {
-    super(app, readMotion, workScheduler);
+    super(app, readMotion, workScheduler, undefined, localization);
     this.#actions = actions;
   }
 

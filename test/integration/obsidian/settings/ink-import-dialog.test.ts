@@ -10,6 +10,7 @@ import {
 // @vitest-environment happy-dom
 import "../../../fixtures/obsidian/menu-motion";
 
+import type { TFile } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import type { InkImportPreview } from "../../../../src/obsidian/import/types";
@@ -64,6 +65,8 @@ it("requires a reviewed preview before writes and announces an accessible result
   expect(findings[0]?.querySelector(".inkbook-import-finding-message")?.textContent).toBe(
     "Stroke timing and source-specific metadata beyond creation time are not retained.",
   );
+  expect(findings[0]?.querySelector(".inkbook-import-finding-source")).toBeNull();
+  disclosure("1 handwriting file · 1 note").click();
   expect(findings[0]?.querySelector(".inkbook-import-finding-source")?.textContent).toBe(
     "Ink/Notes/drawing.svg",
   );
@@ -75,6 +78,9 @@ it("requires a reviewed preview before writes and announces an accessible result
     "Stroke outlines, smoothing and pressure response",
   );
   disclosure("Skipped items (1)").click();
+  dialog.contentEl
+    .querySelector<HTMLButtonElement>('ul[aria-label="Skipped items"] button')!
+    .click();
   expect(dialog.contentEl.textContent).toContain("Skipped.svg");
   dialogButton("Import handwriting").click();
   await settle("Operation finished");
@@ -94,21 +100,74 @@ it("withholds writes for an empty selection and imports only selected files", as
   service.scan.mockResolvedValueOnce(reviewed);
   dialogButton("Scan vault").click();
   await settle("Scan complete");
+  const impact = dialog.contentEl.querySelector(".inkbook-import-actions")!;
+  expect(impact.textContent).toContain("2 Inkbook copies · 1 affected note");
+  expect(impact.textContent).toContain("Original files are kept.");
   disclosure("Handwriting files (2)").click();
   dialog.contentEl.querySelector<HTMLInputElement>(".inkbook-import-select-all input")!.click();
   expect(dialogButton("Import handwriting").disabled).toBe(true);
+  expect(impact.textContent).toContain("0 Inkbook copies · 0 affected notes");
   dialogButton("Import handwriting").click();
   expect(service.apply).not.toHaveBeenCalled();
   dialog.contentEl
     .querySelector<HTMLInputElement>('input[data-inkbook-import-source="drawing-1.svg"]')!
     .click();
   expect(dialogButton("Import handwriting").disabled).toBe(false);
+  expect(impact.textContent).toContain("1 Inkbook copy · 1 affected note");
   dialogButton("Import handwriting").click();
   await settle("Operation finished");
   expect(service.apply).toHaveBeenCalledWith(
     { ...reviewed, sources: [reviewed.sources[1]] },
     expect.any(AbortSignal),
   );
+});
+
+it("retries a missing applied note and focuses it in the dialog's owning workspace on success", async () => {
+  const imported = await appliedImportFixture();
+  const applied = imported.journal.notes[0]!;
+  const { app, dialog, service } = fixture();
+  service.apply.mockResolvedValueOnce({ ...result(), journal: imported.journal });
+  const file = { path: applied.path, extension: "md" } as TFile;
+  const getFileByPath = vi.fn().mockReturnValueOnce(null).mockReturnValue(file);
+  Object.assign(app, { vault: { getFileByPath } });
+  const ownerRoot = { win: window };
+  const otherRoot = { win: new EventTarget() };
+  const openFile = vi.fn().mockResolvedValue(undefined);
+  const ownerLeaf = { getContainer: () => ownerRoot, openFile };
+  const otherLeaf = { getContainer: () => otherRoot, openFile: vi.fn() };
+  const iterateAllLeaves = (visit: (leaf: typeof ownerLeaf | typeof otherLeaf) => void): void => {
+    visit(otherLeaf);
+    visit(ownerLeaf);
+  };
+  const getMostRecentLeaf = vi.fn().mockReturnValue(ownerLeaf);
+  const setActiveLeaf = vi.fn();
+  Object.assign(app.workspace, {
+    rootSplit: otherRoot,
+    iterateAllLeaves,
+    getMostRecentLeaf,
+    setActiveLeaf,
+  });
+
+  dialogButton("Scan vault").click();
+  await settle("Scan complete");
+  dialogButton("Import handwriting").click();
+  await settle("Operation finished");
+  disclosure("Notes to review (1)").click();
+  const open = dialogButton(`Open note (${applied.path})`);
+  open.focus();
+  open.click();
+  await settle("Could not open the note");
+  expect(document.activeElement).toBe(open);
+  expect(openFile).not.toHaveBeenCalled();
+  expect(dialog.isClosed).toBe(false);
+
+  open.click();
+  await vi.waitFor(() => expect(dialog.isClosed).toBe(true));
+  expect(getFileByPath).toHaveBeenNthCalledWith(2, applied.path);
+  expect(getMostRecentLeaf).toHaveBeenCalledWith(ownerRoot);
+  expect(openFile).toHaveBeenCalledWith(file, { active: false });
+  expect(otherLeaf.openFile).not.toHaveBeenCalled();
+  expect(setActiveLeaf).toHaveBeenCalledWith(ownerLeaf, { focus: true });
 });
 
 it("lazily reveals findings, omits unnecessary pagination and bounds large pages", async () => {

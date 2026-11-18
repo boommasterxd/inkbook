@@ -1,4 +1,5 @@
-import { Modal, type App } from "obsidian";
+import { Modal, setIcon, type App } from "obsidian";
+import { Localization } from "../../domain/localization";
 import { cycleModalFocus } from "../runtime/focus-navigation";
 
 interface NativeDialogCallbacks {
@@ -11,8 +12,14 @@ interface NativeDialogCallbacks {
 export class NativeDialogShell extends Modal {
   public readonly motionBackdropEl: HTMLElement;
   readonly #callbacks: NativeDialogCallbacks;
+  readonly #closeButton: HTMLButtonElement;
+  #releaseLanguage: (() => void) | undefined;
 
-  public constructor(app: App, callbacks: NativeDialogCallbacks) {
+  public constructor(
+    app: App,
+    callbacks: NativeDialogCallbacks,
+    private readonly localization = new Localization(),
+  ) {
     super(app);
     this.#callbacks = callbacks;
     // Modal documents this class and container structure; retain a direct owned Motion target.
@@ -21,11 +28,32 @@ export class NativeDialogShell extends Modal {
       attr: { "aria-hidden": "true" },
     });
     this.containerEl.replaceChildren(this.motionBackdropEl, this.modalEl);
+    const header = this.modalEl.createDiv({ cls: "inkbook-dialog-header" });
+    header.append(this.titleEl);
+    this.titleEl.classList.add("inkbook-dialog-title");
+    this.titleEl.tabIndex = -1;
+    this.#closeButton = header.createEl("button", {
+      cls: "clickable-icon inkbook-dialog-close",
+      type: "button",
+    });
+    setIcon(this.#closeButton, "x");
+    this.modalEl.replaceChildren(header, this.contentEl);
     this.scope.register(null, "Tab", this.#cycleFocus);
+  }
+
+  public override open(): void {
+    super.open();
+    const active = this.modalEl.ownerDocument.activeElement;
+    if (this.modalEl.isConnected && !this.modalEl.inert && !this.modalEl.contains(active)) {
+      this.titleEl.focus({ preventScroll: true });
+    }
   }
 
   public override onOpen(): void {
     this.motionBackdropEl.addEventListener("click", this.#requestClose);
+    this.#closeButton.addEventListener("click", this.#requestClose);
+    this.#labelCloseButton();
+    this.#releaseLanguage = this.localization.subscribe(this.#labelCloseButton);
     this.#callbacks.open();
   }
 
@@ -38,6 +66,8 @@ export class NativeDialogShell extends Modal {
   }
 
   public override onClose(): void {
+    this.#releaseLanguage?.();
+    this.#closeButton.removeEventListener("click", this.#requestClose);
     this.motionBackdropEl.removeEventListener("click", this.#requestClose);
     this.#callbacks.closed();
   }
@@ -56,6 +86,10 @@ export class NativeDialogShell extends Modal {
     if (controls.length === 0) this.modalEl.tabIndex = -1;
     cycleModalFocus(event, controls.length === 0 ? [this.modalEl] : controls);
     return false;
+  };
+
+  #labelCloseButton = (): void => {
+    this.#closeButton.setAttribute("aria-label", this.localization.t("host.dialog.close"));
   };
 
   #requestClose = (): void => this.close();

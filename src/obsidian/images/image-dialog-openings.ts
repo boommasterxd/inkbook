@@ -19,6 +19,7 @@ export function createImageDialogOpenings(
     observeMotion: (listener: () => void) => settings.subscribeDeviceSettings(listener),
   });
   return {
-    onImportImages: (signal, ownerWindow) => openImageImportDialog(options(signal, ownerWindow)),
+    onImportImages: (signal, ownerWindow, request) =>
+      openImageImportDialog({ ...options(signal, ownerWindow), ...request }),
   };
 }

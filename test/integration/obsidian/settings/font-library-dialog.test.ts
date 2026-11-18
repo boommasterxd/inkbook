@@ -198,8 +198,8 @@ it("starts guided import from the empty library action and restores it when retu
   expect(document.querySelectorAll('button[aria-label="Add font"]')).toHaveLength(1);
   expect(document.querySelector('[data-inkbook-setting-identity="font-library-add"]')).toBeNull();
   emptyAction()!.click();
-  expect(document.querySelector('.inkbook-font-import [aria-current="step"]')?.textContent).toBe(
-    "1",
+  expect(document.querySelector(".inkbook-font-import h3")?.textContent).toBe(
+    context.localization.t("fonts.chooseStep"),
   );
   expect(document.querySelector('button[aria-label^="Choose font files"]')).not.toBeNull();
   expect(emptyAction()).toBeNull();
@@ -325,7 +325,14 @@ it("keeps phone library pagination inside shrinkable content until its owner clo
   expect(body.textContent).toContain("Example 9");
   dialogButton(context.localization.t("fonts.previous")).click();
   expect(body.querySelectorAll(".inkbook-font-library-font-row")).toHaveLength(8);
+  dialogButton(context.localization.t("fonts.add")).click();
+  const footer = dialog.querySelector<HTMLElement>(".inkbook-font-import-footer")!;
+  const back = dialogButton(context.localization.t("fonts.backToLibrary"));
+  expect(footer.contains(back)).toBe(true);
+  expect(body.contains(footer)).toBe(false);
   await assertAccessibleSemantics(dialog, ["aria-dialog-name", "button-name"]);
+  back.click();
+  expect(footer.childElementCount).toBe(0);
   lifetime.abort();
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(document.activeElement).toBe(context.trigger);

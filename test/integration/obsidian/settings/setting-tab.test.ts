@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { type SettingDefinitionItem, type SettingDefinitionRender } from "obsidian";
 
 import type { SettingsControlKey } from "../../../../src/obsidian/settings/control-values";
+import type { InkImportSettingsAccess } from "../../../../src/obsidian/settings/import/import-access";
 import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { labelledByElements } from "../../../fixtures/accessibility";
@@ -176,9 +177,7 @@ describe("InkbookSettingTab general, appearance and tool controls", () => {
 
 describe("InkbookSettingTab import action", () => {
   it("places import history below the optional start action", () => {
-    const openInkImport = vi
-      .fn<(ownerWindow: Window | null) => Promise<void>>()
-      .mockResolvedValue();
+    const openInkImport = vi.fn<InkImportSettingsAccess["open"]>().mockResolvedValue();
     const tab = createTab(
       new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()),
       undefined,
@@ -201,8 +200,16 @@ describe("InkbookSettingTab import action", () => {
     const rendered = renderDefinition(action);
     rendered.container.click();
 
-    expect(openInkImport).toHaveBeenCalledWith(window, undefined, expect.any(AbortSignal));
+    expect(openInkImport).toHaveBeenCalledExactlyOnceWith(
+      window,
+      undefined,
+      expect.any(AbortSignal),
+      undefined,
+    );
+    const signal = openInkImport.mock.calls[0]?.[2];
+    expect(signal?.aborted).toBe(false);
     rendered.cleanup();
+    expect(signal?.aborted).toBe(true);
   });
 });
 

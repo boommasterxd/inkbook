@@ -144,6 +144,34 @@ describe("higher PDF raster resolutions", () => {
 });
 
 describe("owned PDF cancellation and loading failures", () => {
+  it("bounds thumbnail rendering and gives a pending foreground raster priority without encoding thumbnails", async () => {
+    const state = await pdfSetup(2_000, 3_000);
+    const thumbnail = await state.source.renderThumbnail(1, state.options);
+    expect(thumbnail).toMatchObject({ width: 96, height: 144 });
+    expect(state.render).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ viewport: { width: 96, height: 144 } }),
+    );
+    expect(state.encode).not.toHaveBeenCalled();
+    expect(state.source.resolution).toBeUndefined();
+    let reject!: (error: Error) => void;
+    const pending = new Promise<void>((_resolve, rejected) => {
+      reject = rejected;
+    });
+    state.cancel.mockImplementationOnce(() => reject(new Error("Cancelled thumbnail")));
+    state.render.mockReturnValueOnce({ promise: pending, cancel: state.cancel });
+    const background = state.source.renderThumbnail(2, state.options);
+    await vi.waitFor(() => expect(state.render).toHaveBeenCalledTimes(2));
+    const foreground = state.source.render(3, state.options);
+    await expect(background).rejects.toThrow("Cancelled thumbnail");
+    expect(await foreground).toEqual(state.expectedResource);
+    expect(state.cancel).toHaveBeenCalledOnce();
+    expect(state.getPage.mock.calls).toEqual([[1], [2], [3]]);
+    expect(state.cleanup).toHaveBeenCalledTimes(3);
+    expect(state.canvases[1]).toMatchObject({ width: 0, height: 0 });
+    expect(state.source.resolution?.page).toBe(3);
+    await state.source.dispose();
+  });
+
   it("cancels an in-flight render on owner unload and releases its resources", async () => {
     const state = await pdfSetup();
     let reject!: (error: Error) => void;

@@ -1,6 +1,5 @@
 export const inkImport = {
   "import.title": "Import from Obsidian Ink",
-  "import.close": "Close",
   "import.scan": "Scan vault",
   "import.scanAgain": "Scan again",
   "import.emptyHeading": "No supported handwriting found",
@@ -94,10 +93,11 @@ export const inkImport = {
   "import.journeySwitchDescription":
     "When you confirm, we create editable Inkbook copies in the same folders and update your notes.",
   "import.examples": "Example imports",
-  "import.examplesWarning":
-    "Stroke thickness, curves and backgrounds can change. Review the copies before removing originals.",
-  "import.previousExample": "Previous example",
-  "import.nextExample": "Next example",
+  "import.showExample": "View example ({title})",
+  "import.examplesIntro": "General examples. Your files may look different.",
+  "import.examplesLoading": "Loading example…",
+  "import.exampleView": "Example view",
+  "import.examplesUnavailable": "The example could not be loaded.",
   "import.before": "Before · Obsidian Ink",
   "import.after": "After · Inkbook",
   "import.scanSafety": "Your files stay unchanged. Next, you choose what to import.",
@@ -111,6 +111,10 @@ export const inkImport = {
   "import.undoProgressDescription": "Restoring your Obsidian Ink embeds.",
   "import.cleanupProgressDescription": "Checking backups, originals and remaining references.",
   "import.notesToReview": "Notes to review",
+  "import.openNote": "Open note",
+  "import.openNoteAria": "Open note ({path})",
+  "import.openNotePending": "Opening note…",
+  "import.openNoteFailure": "Could not open the note. Check that it is still in the vault.",
   "import.undoStopped": "Restore stopped",
   "import.undoSuccess": "Obsidian Ink embeds restored",
   "import.undoReview": "Restore needs review",
@@ -142,8 +146,7 @@ export const inkImport = {
   "import.importReviewDescription": "Completed changes are saved in this import record.",
   "import.importNextTitle": "Next: check your handwriting",
   "import.importReviewTitle": "Review before continuing",
-  "import.importNext":
-    "Close the settings and open one of the notes listed here. Check its handwriting before removing any originals.",
+  "import.importNext": "Open a note below and check its handwriting before removing any originals.",
   "import.importReviewNext":
     "Open View import and review any issues. Check notes that were updated before retrying or restoring the original embeds.",
   "import.importRecovery":
@@ -173,7 +176,8 @@ export const inkImport = {
   "import.historyCountOne": "{count} saved import.",
   "import.historyCountOther": "{count} saved imports.",
   "import.found": "{files} found",
-  "import.selected": "{count} of {total} selected · {notes}",
+  "import.selectionImpact": "{copies} · {notes}",
+  "import.originalsKept": "Original files are kept.",
   "import.step": "Step {step} of {total} · {label}",
   "import.notePath": "Note: {path}",
   "import.backupPath": "Recovery backup: {path}",
@@ -183,7 +187,6 @@ export const inkImport = {
   "import.previousPage": "Previous page: {label}",
   "import.nextPage": "Next page: {label}",
   "import.pageRange": "{start}–{end} of {total}",
-  "import.exampleCount": "Example {count} of {total}",
   "import.example.diagram.title": "Curves and pressure",
   "import.example.diagram.note":
     "The broad wedges at these curved corners are not fully preserved.",
@@ -205,10 +208,22 @@ export const inkImport = {
     "Uppercase A to Z and connected lowercase a to z in cursive handwriting in Obsidian Ink.",
   "import.example.cursive.after":
     "The same cursive alphabet imported into Inkbook; loops, stroke weight and smoothing can differ.",
+  "import.example.corners.title": "Rounded corners",
+  "import.example.corners.note":
+    "Diagram of the same rectangle. Its rounded corners become square.",
+  "import.example.corners.before": "Outlined rectangle with rounded corners in Obsidian Ink.",
+  "import.example.corners.after": "The same outlined rectangle with square corners in Inkbook.",
+  "import.example.precision.title": "Coordinate rounding",
+  "import.example.precision.note":
+    "Magnified diagram of one x-coordinate. Inkbook rounds this value to three decimal places.",
+  "import.example.precision.before": "Original x-coordinate {value} on a magnified axis.",
+  "import.example.precision.after": "Rounded x-coordinate {value} on the same magnified axis.",
   "import.quantity.handwriting.one": "{count} handwriting file",
   "import.quantity.handwriting.other": "{count} handwriting files",
   "import.quantity.affectedNote.one": "{count} affected note",
   "import.quantity.affectedNote.other": "{count} affected notes",
+  "import.quantity.copy.one": "{count} Inkbook copy",
+  "import.quantity.copy.other": "{count} Inkbook copies",
   "import.quantity.file.one": "{count} file",
   "import.quantity.file.other": "{count} files",
   "import.quantity.note.one": "{count} note",

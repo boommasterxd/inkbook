@@ -191,13 +191,6 @@
   max-block-size: min(88vh, 900px);
 }
 
-.inkbook-settings-modal.modal .modal-close-button,
-.inkbook-settings-modal.modal .modal-header-button {
-  inset-block-start: var(--size-4-2);
-  inset-inline-end: var(--size-4-2);
-  right: var(--size-4-2);
-}
-
 .inkbook-settings-modal .modal-content {
   inline-size: calc(100% + var(--scrollbar-width, 12px));
   margin-inline-end: calc(-1 * var(--scrollbar-width, 12px));
@@ -215,7 +208,7 @@
 }
 
 .inkbook-settings-modal-body > .setting-group:first-child {
-  margin-block-start: var(--size-4-3);
+  margin-block-start: 0;
 }
 
 .is-mobile .inkbook-shortcut-recorder {

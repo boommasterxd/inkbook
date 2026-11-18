@@ -79,6 +79,20 @@
   border: 0;
 }
 
+.inkbook-import-result-note {
+  align-items: center;
+  display: flex;
+  gap: var(--size-4-3);
+  justify-content: space-between;
+}
+
+.inkbook-import-result-note > .inkbook-import-open-note {
+  block-size: auto;
+  flex: 0 0 auto;
+  min-block-size: 44px;
+  transition: none;
+}
+
 .inkbook-import-result-recovery {
   align-items: flex-start;
   color: var(--text-muted);

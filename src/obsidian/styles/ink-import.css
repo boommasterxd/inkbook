@@ -1,4 +1,6 @@
 .inkbook-import-dialog.inkbook-settings-modal {
+  --inkbook-dialog-shell-inset: 0px;
+  --inkbook-dialog-title-inset: var(--inkbook-import-inline-inset);
   --inkbook-import-inline-inset: var(--size-4-8);
 
   display: flex;
@@ -6,11 +8,6 @@
   inline-size: min(840px, calc(100vw - 32px));
   overflow: hidden;
   padding: 0;
-}
-
-.inkbook-import-title {
-  margin: 0;
-  padding: var(--size-4-6) var(--inkbook-import-inline-inset) var(--size-4-5);
 }
 
 .inkbook-import-content {
@@ -37,7 +34,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-inline: var(--inkbook-import-inline-inset, var(--size-4-5));
-  padding-block: var(--size-4-2);
+  padding-block: 0 var(--size-4-2);
 }
 
 .inkbook-import-body :is(h3, .inkbook-import-heading) {
@@ -86,6 +83,23 @@
   padding-inline: var(--size-4-4);
   transition: none;
   white-space: normal;
+}
+
+.inkbook-import-action-summary {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--font-ui-small);
+  margin-inline-end: auto;
+}
+
+.inkbook-import-action-summary span {
+  color: var(--text-muted);
+}
+
+.inkbook-import-status-message:not(.inkbook-menu-visually-hidden) {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  padding: var(--size-4-2) var(--inkbook-import-inline-inset);
 }
 
 .inkbook-import-content .inkbook-import-actions > .inkbook-import-danger {
@@ -219,16 +233,10 @@
   flex: 0 0 auto;
 }
 
-.inkbook-phone-dialog-header:has(> .inkbook-import-title) {
+.inkbook-import-container .inkbook-phone-dialog-header {
   background: var(--modal-background);
-  flex: 0 0 auto;
-  padding-block: var(--size-4-2);
-  padding-inline: var(--size-4-5);
+  padding-inline: var(--inkbook-import-inline-inset);
   z-index: 2;
-}
-
-.inkbook-import-container[data-platform="phone"] .inkbook-import-title {
-  padding: 0;
 }
 
 .is-mobile .inkbook-import-content button {
@@ -268,5 +276,9 @@
 
   .inkbook-import-actions > .mod-cta {
     flex: 1;
+  }
+
+  .inkbook-import-action-summary {
+    flex-basis: 100%;
   }
 }

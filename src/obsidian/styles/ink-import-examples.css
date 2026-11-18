@@ -9,39 +9,71 @@
   margin: 0 0 var(--size-4-2);
 }
 
+.inkbook-import-examples-intro,
 .inkbook-import-examples-note {
   color: var(--text-muted);
 }
 
-.inkbook-import-examples-warning {
-  align-items: flex-start;
-  display: flex;
+.inkbook-import-example-choices.inkbook-menu-controls {
   gap: var(--size-4-2);
-}
-
-.inkbook-import-examples-warning > .inkbook-import-file-icon {
-  color: var(--inkbook-tone-caution);
-  flex: 0 0 auto;
-}
-
-.inkbook-import-examples-navigation {
-  justify-content: space-between;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
   margin-block-end: var(--size-4-3);
-  padding: 0;
 }
 
-.inkbook-import-examples-current {
-  display: flex;
-  flex-direction: column;
-  gap: var(--size-4-1);
-  min-inline-size: 0;
-  text-align: center;
+:where(.inkbook-import-finding-copy) > .inkbook-import-example-link {
+  background-color: var(--background-secondary);
+  block-size: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  margin-block: var(--size-4-1);
+  max-inline-size: 100%;
+  min-block-size: 44px;
+  padding-inline: var(--size-4-3);
+  text-align: start;
+  transition: none;
+  white-space: normal;
 }
 
 .inkbook-import-examples-pair {
   display: grid;
   gap: var(--size-4-3);
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inkbook-import-examples-pair.inkbook-import-example-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.inkbook-import-example-switches:not([hidden]) {
+  display: grid;
+  gap: var(--size-4-2);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-block-end: var(--size-4-2);
+}
+
+.inkbook-import-example-switches[hidden] {
+  display: none;
+}
+
+.inkbook-menu-controls > .inkbook-import-example-toggle {
+  block-size: auto;
+  min-block-size: 44px;
+  padding-inline: var(--size-4-2);
+  transition: none;
+  white-space: normal;
+}
+
+.inkbook-import-example-toggle:focus-visible,
+.inkbook-import-example-link:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.inkbook-import-example-single figcaption {
+  display: none;
 }
 
 .inkbook-import-example {
@@ -56,7 +88,7 @@
 }
 
 .inkbook-import-example-image {
-  aspect-ratio: 2 / 1;
+  aspect-ratio: 1396 / 646;
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
@@ -77,10 +109,6 @@
 }
 
 @media (width <= 480px) {
-  .inkbook-import-examples-pair {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .inkbook-import-body .inkbook-import-examples-note {
     min-block-size: 3lh;
   }

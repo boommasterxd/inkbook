@@ -75,6 +75,7 @@ it("owns one dialog, returns focus, and stops opening when the plugin is release
   context.access.open(context.trigger);
   context.access.open(context.trigger);
   expect(document.querySelectorAll(".inkbook-font-library-dialog")).toHaveLength(1);
+  expect(document.querySelector('input[type="file"]')).toBeNull();
   dismissDialog();
   await vi.waitFor(() => expect(document.querySelector(".inkbook-font-library-dialog")).toBeNull());
   expect(document.activeElement).toBe(context.trigger);
@@ -85,6 +86,42 @@ it("owns one dialog, returns focus, and stops opening when the plugin is release
   context.lifetime.abort();
   context.access.open(context.trigger);
   expect(document.querySelector(".inkbook-font-library-dialog")).toBeNull();
+});
+
+it("opens the library before the upload step and allows another attempt after cancellation", () => {
+  const context = fixture();
+  const choose = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => undefined);
+  context.trigger.focus();
+  try {
+    context.access.open(context.trigger);
+    const add = document.querySelector<HTMLButtonElement>('button[aria-label="Add font"]')!;
+    expect(document.activeElement).toBe(add);
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+    expect(choose).not.toHaveBeenCalled();
+    add.click();
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const upload = document.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Choose font files"]',
+    )!;
+    expect(document.activeElement).toBe(document.querySelector(".inkbook-font-library-body h3"));
+    expect(choose).not.toHaveBeenCalled();
+    upload.click();
+    expect(choose).toHaveBeenCalledOnce();
+    expect(choose.mock.contexts[0]).toBe(input);
+    input.dispatchEvent(new Event("cancel"));
+    upload.click();
+    expect(choose).toHaveBeenCalledTimes(2);
+    document.querySelector<HTMLButtonElement>('button[aria-label="Font library"]')!.click();
+    expect(input.isConnected).toBe(false);
+    expect(document.querySelector('button[aria-label="Add font"]')).toBe(document.activeElement);
+    dismissDialog();
+    expect(document.activeElement).toBe(context.trigger);
+    expect(context.imported).not.toHaveBeenCalled();
+    expect(context.changed).not.toHaveBeenCalled();
+  } finally {
+    context.access.dispose();
+    choose.mockRestore();
+  }
 });
 
 it("refreshes callers after closing a changed library and after a late admitted import", async () => {

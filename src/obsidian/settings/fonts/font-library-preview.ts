@@ -13,7 +13,7 @@ interface PreviewTarget {
 interface ActivePreview extends PreviewTarget {
   readonly panel: HTMLElement;
   readonly motion: SettingsPanelMotion;
-  readonly font: FontSettingsPreview;
+  readonly font: FontSettingsPreview<LibraryFontFace>;
   closing: boolean;
 }
 
@@ -70,12 +70,20 @@ export class FontLibraryPreview {
       this.options.readMotion,
       this.options.observeMotion,
     );
-    const font = new FontSettingsPreview(sample, this.options, (update) => {
-      if (this.#active !== active || active.closing) return;
-      update();
-      panel.setAttribute("aria-busy", "false");
-      motion.setExpanded(true);
-    });
+    const font = new FontSettingsPreview<LibraryFontFace>(
+      sample,
+      {
+        scheduler: this.options.scheduler,
+        resource: (face, signal, scheduler) =>
+          this.options.library.resource(face, signal, scheduler),
+      },
+      (update) => {
+        if (this.#active !== active || active.closing) return;
+        update();
+        panel.setAttribute("aria-busy", "false");
+        motion.setExpanded(true);
+      },
+    );
     const active: ActivePreview = { ...target, panel, motion, font, closing: false };
     this.#active = active;
     void font.show(target.face).catch(() => {

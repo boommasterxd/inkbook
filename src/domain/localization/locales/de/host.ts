@@ -137,6 +137,7 @@ export const host = {
   "host.command.erase-all": "Alle Elemente löschen",
   "host.command.delete-embed": "Aktive Einbettung löschen",
   "host.command.insert": "Handschrift einfügen",
+  "host.dialog.close": "Schließen",
   "host.dialog.cancel": "Abbrechen",
   "host.dialog.deleteTitle": "Einbettung löschen?",
   "host.dialog.deleteSingle":

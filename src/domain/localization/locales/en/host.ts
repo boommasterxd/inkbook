@@ -111,6 +111,7 @@ export const host = {
   "host.command.erase-all": "Erase all annotations",
   "host.command.delete-embed": "Delete active embed",
   "host.command.insert": "Insert handwriting embed",
+  "host.dialog.close": "Close",
   "host.dialog.cancel": "Cancel",
   "host.dialog.deleteTitle": "Delete embed?",
   "host.dialog.deleteSingle":

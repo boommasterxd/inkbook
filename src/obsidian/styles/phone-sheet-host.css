@@ -6,6 +6,15 @@
   overflow: hidden;
 }
 
+.inkbook-font-library-container[data-inkbook-modal-platform="phone"]
+  .inkbook-font-library-dialog:has(.inkbook-font-import-review),
+.inkbook-image-dialog-container[data-inkbook-modal-platform="phone"] .inkbook-phone-image-review {
+  --inkbook-adaptive-panel-maximum-height: calc(
+    var(--inkbook-adaptive-panel-viewport-height, 100dvh) -
+      max(var(--safe-area-inset-top, 0px), 12px)
+  );
+}
+
 :is(
     .inkbook-import-container[data-platform="phone"],
     .inkbook-font-library-container[data-inkbook-modal-platform="phone"]

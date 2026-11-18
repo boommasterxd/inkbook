@@ -1,5 +1,6 @@
 import { setIcon, setTooltip } from "obsidian";
 import type { Localization, Translator } from "../../../domain/localization";
+import type { FontImportConflict, FontImportReview } from "../../fonts/font-import-plan";
 import type { PreparedLibraryFontFace } from "../../fonts/font-import-staging";
 
 export interface FontImportViewModel {
@@ -11,6 +12,7 @@ export interface FontImportViewModel {
   readonly existingChoices: readonly { readonly value: string; readonly label: string }[];
   readonly busy: boolean;
   readonly previewId?: string;
+  readonly specimen?: HTMLElement;
 }
 
 export interface FontImportViewCallbacks {
@@ -20,6 +22,7 @@ export interface FontImportViewCallbacks {
   readonly nameChanged: (name: string) => void;
   readonly familyChanged: (family: string | undefined) => void;
   readonly previewChanged: (id: string) => void;
+  readonly preparePreview: () => void;
   readonly back: () => void;
   readonly next: () => void;
   readonly confirm: () => void;
@@ -28,31 +31,44 @@ export interface FontImportViewCallbacks {
 export interface FontImportViewHandle {
   readonly root: HTMLElement;
   readonly heading: HTMLElement;
-  readonly preview?: HTMLElement;
   readonly nameInput?: HTMLInputElement;
   readonly primary: HTMLButtonElement;
   readonly back: HTMLButtonElement;
+  readonly showReview: (review: FontImportReview) => void;
 }
+
+let nextImportLabel = 0;
 
 /** Renders one review step; the owner coordinates state, feedback and font resources. */
 export function renderFontImportView(
   container: HTMLElement,
+  footer: HTMLElement,
   model: FontImportViewModel,
   callbacks: FontImportViewCallbacks,
   localization: Localization,
 ): FontImportViewHandle {
   const { t } = localization;
   const root = container.createDiv({ cls: "inkbook-font-import" });
+  root.classList.toggle("inkbook-font-import-review", model.step > 1);
   root.setAttribute("aria-busy", String(model.busy));
   const titles = [t("fonts.chooseStep"), t("fonts.checkStep"), t("fonts.addStep")];
-  renderProgress(root, titles, model.step, t);
+  const progress = root.createEl("p", {
+    cls: "inkbook-font-import-hint",
+    text: t("fonts.importProgress", { step: model.step, total: titles.length }),
+  });
+  progress.id = `inkbook-font-import-progress-${++nextImportLabel}`;
   const heading = root.createEl("h3", { text: titles[model.step - 1]! });
   heading.tabIndex = -1;
-  let fields: Pick<FontImportViewHandle, "preview" | "nameInput"> = {};
-  if (model.step === 1) renderChoose(root, model, callbacks, t);
-  if (model.step === 2) fields = renderCheck(root, model, callbacks, t);
-  if (model.step === 3) renderReview(root, model, t);
-  const navigation = root.createDiv({ cls: "inkbook-font-import-navigation" });
+  heading.setAttribute("aria-describedby", progress.id);
+  const nameInput = renderStep(root, model, callbacks, t);
+  const files = renderFiles(root, model, callbacks.removeFile, t);
+  const showReview =
+    model.step === 1 ? () => undefined : renderReviewNotice(footer, files, model.busy, t);
+  if (model.step === 3)
+    root.createEl("p", { text: t("fonts.storageNotice"), cls: "inkbook-font-import-hint" });
+  const navigation = footer.createDiv({
+    cls: "inkbook-dialog-actions inkbook-font-import-navigation",
+  });
   const back = renderAction(navigation, {
     label: t(model.step === 1 ? "fonts.backToLibrary" : "fonts.backStep"),
     icon: "arrow-left",
@@ -63,26 +79,87 @@ export function renderFontImportView(
     label: t(model.step === 3 ? "fonts.confirmAdd" : "fonts.nextStep"),
     icon: model.step === 3 ? "check" : "arrow-right",
     iconPosition: "end",
-    disabled:
-      model.busy || model.files.length === 0 || (model.step > 1 && model.name.trim() === ""),
+    disabled: model.busy || model.files.length === 0,
     action: model.step === 3 ? callbacks.confirm : callbacks.next,
   });
-  return { root, heading, ...fields, primary, back };
+  primary.classList.add("mod-cta");
+  if (model.step === 1 && !primary.disabled) {
+    primary.addEventListener("pointerenter", callbacks.preparePreview);
+    primary.addEventListener("pointerdown", callbacks.preparePreview);
+    primary.addEventListener("focus", callbacks.preparePreview);
+  }
+  return {
+    root,
+    heading,
+    ...(nameInput === undefined ? {} : { nameInput }),
+    primary,
+    back,
+    showReview,
+  };
 }
 
-function renderProgress(
-  root: HTMLElement,
-  titles: readonly string[],
-  current: number,
+interface ImportFileIssue {
+  readonly row: HTMLLIElement;
+  readonly remove: HTMLButtonElement;
+  readonly message: HTMLElement;
+}
+
+function renderReviewNotice(
+  footer: HTMLElement,
+  files: ReadonlyMap<string, ImportFileIssue>,
+  busy: boolean,
   t: Translator,
-): void {
-  const progress = root.createEl("ol", { cls: "inkbook-font-import-progress" });
-  progress.setAttribute("aria-label", t("fonts.importProgress"));
-  for (const [index, title] of titles.entries()) {
-    const item = progress.createEl("li", { text: String(index + 1) });
-    item.setAttribute("aria-label", title);
-    if (index + 1 === current) item.setAttribute("aria-current", "step");
-  }
+): (review: FontImportReview) => void {
+  const notice = footer.createDiv({ cls: "inkbook-font-import-review-notice" });
+  const status = notice.createEl("p", { cls: "inkbook-font-import-issue" });
+  status.id = `inkbook-font-import-notice-${++nextImportLabel}`;
+  status.setAttribute("role", "status");
+  let firstIssue: ImportFileIssue | undefined;
+  const openFile = renderAction(notice, {
+    label: t("fonts.showConflictFile"),
+    icon: "arrow-up",
+    disabled: busy,
+    action: () => {
+      firstIssue?.row.scrollIntoView({ block: "nearest", behavior: "instant" });
+      firstIssue?.remove.focus({ preventScroll: true });
+    },
+  });
+  openFile.setAttribute("aria-describedby", status.id);
+  return ({ conflicts, error }) => {
+    firstIssue = undefined;
+    let summary = "";
+    for (const [id, file] of files) {
+      const conflict = conflicts.get(id);
+      file.message.textContent = conflictMessage(conflict, t);
+      file.message.hidden = conflict === undefined;
+      if (conflict === undefined || firstIssue !== undefined) continue;
+      firstIssue = file;
+      summary = t(conflict === "face-conflict" ? "fonts.overlappingFaces" : "fonts.assignedFace");
+    }
+    openFile.hidden = firstIssue === undefined;
+    if (error !== undefined && firstIssue === undefined)
+      summary = t(error === "library-full" ? "fonts.libraryFull" : "fonts.unavailableFamily");
+    if (status.textContent !== summary) status.textContent = summary;
+  };
+}
+
+function renderStep(
+  root: HTMLElement,
+  model: FontImportViewModel,
+  callbacks: FontImportViewCallbacks,
+  t: Translator,
+): HTMLInputElement | undefined {
+  if (model.step === 1) renderChoose(root, model, callbacks, t);
+  if (model.step === 2) return renderCheck(root, model, callbacks, t);
+  if (model.step === 3)
+    root.createEl("strong", { text: model.name, cls: "inkbook-font-import-name" });
+  return undefined;
+}
+
+function conflictMessage(conflict: FontImportConflict | undefined, t: Translator): string {
+  if (conflict === "face-conflict") return t("fonts.overlappingFace");
+  if (conflict === "duplicate-family") return t("fonts.assignedFace");
+  return "";
 }
 
 function renderChoose(
@@ -107,7 +184,6 @@ function renderChoose(
   button.setAttribute("aria-label", `${t("fonts.chooseFiles")} ${t("fonts.dropFiles")}`);
   upload.createEl("p", { text: t("fonts.fileLimit"), cls: "inkbook-font-import-hint" });
   bindFileDrop(button, callbacks.filesSelected);
-  renderFiles(root, model, t, callbacks.removeFile);
 }
 
 function bindFileDrop(button: HTMLButtonElement, selected: (files: readonly File[]) => void): void {
@@ -151,7 +227,16 @@ function renderCheck(
   model: FontImportViewModel,
   callbacks: FontImportViewCallbacks,
   t: Translator,
-): Pick<FontImportViewHandle, "preview" | "nameInput"> {
+): HTMLInputElement {
+  if (model.specimen !== undefined) root.append(model.specimen);
+  if (model.files.length > 1) renderPreviewChoice(root, model, callbacks, t);
+  else if (model.files[0] !== undefined)
+    root.createEl("p", {
+      cls: "inkbook-font-import-hint",
+      text: t("fonts.previewSingleStyle", { style: importFaceLabel(model.files[0], t) }),
+    });
+  if (!model.fixedFamily && model.existingChoices.length > 0)
+    renderTarget(root, model, callbacks, t);
   const label = root.createEl("label", { cls: "inkbook-font-import-field" });
   label.dataset.inkbookSettingIdentity = "font-import-name";
   label.createSpan({ text: t("fonts.pickerName") });
@@ -161,17 +246,7 @@ function renderCheck(
   nameInput.required = true;
   nameInput.disabled = model.busy || model.targetFamily !== undefined;
   nameInput.addEventListener("input", () => callbacks.nameChanged(nameInput.value));
-  if (!model.fixedFamily && model.existingChoices.length > 0)
-    renderTarget(root, model, callbacks, t);
-  renderFiles(root, model, t);
-  const previewSection = root.createDiv({ cls: "inkbook-font-import-preview" });
-  previewSection.createEl("h4", { text: t("fonts.preview") });
-  if (model.files.length > 1) renderPreviewChoice(previewSection, model, callbacks, t);
-  const preview = previewSection.createEl("p", {
-    text: t("fonts.sample"),
-    cls: "inkbook-font-sample",
-  });
-  return { nameInput, preview };
+  return nameInput;
 }
 
 function renderTarget(
@@ -206,7 +281,7 @@ function renderPreviewChoice(
   for (const face of model.files) {
     select.createEl("option", {
       value: face.id,
-      text: `${friendlyFontVariant(face, t)} · ${face.fileName}`,
+      text: `${importFaceLabel(face, t)} · ${face.fileName}`,
     });
   }
   select.value = model.previewId ?? model.files[0]!.id;
@@ -214,19 +289,19 @@ function renderPreviewChoice(
   select.addEventListener("change", () => callbacks.previewChanged(select.value));
 }
 
-function renderReview(root: HTMLElement, model: FontImportViewModel, t: Translator): void {
-  root.createEl("strong", { text: model.name, cls: "inkbook-font-import-name" });
-  renderFiles(root, model, t);
-  root.createEl("p", { text: t("fonts.storageNotice"), cls: "inkbook-font-import-hint" });
+function importFaceLabel(face: PreparedLibraryFontFace, t: Translator): string {
+  const weight = face.weightRange?.join("–") ?? String(face.weight);
+  return `${friendlyFontVariant(face, t)} · ${weight}`;
 }
 
 function renderFiles(
   root: HTMLElement,
   model: FontImportViewModel,
+  remove: (id: string) => void,
   t: Translator,
-  remove?: (id: string) => void,
-): void {
-  if (model.files.length === 0) return;
+): ReadonlyMap<string, ImportFileIssue> {
+  const issues = new Map<string, ImportFileIssue>();
+  if (model.files.length === 0) return issues;
   const list = root.createEl("ul", { cls: "inkbook-font-import-files" });
   list.setAttribute("aria-label", t("fonts.selectedFiles"));
   for (const face of model.files) {
@@ -234,16 +309,22 @@ function renderFiles(
     item.dataset.inkbookSettingIdentity = `font-import-file:${face.id}`;
     const copy = item.createDiv({ cls: "inkbook-font-import-file-copy" });
     copy.createSpan({ text: face.fileName });
-    copy.createSpan({ text: friendlyFontVariant(face, t), cls: "inkbook-font-import-hint" });
-    if (remove !== undefined) {
-      renderIconButton(item, {
-        label: t("fonts.removeFile", { name: face.fileName }),
-        icon: "x",
-        disabled: model.busy,
-        action: () => remove(face.id),
-      });
-    }
+    copy.createSpan({ text: importFaceLabel(face, t), cls: "inkbook-font-import-hint" });
+    const actions = item.createDiv({ cls: "inkbook-dialog-actions" });
+    const button = renderIconButton(actions, {
+      label: t("fonts.removeFile", { name: face.fileName }),
+      icon: "x",
+      disabled: model.busy,
+      action: () => remove(face.id),
+    });
+    if (model.step === 1) continue;
+    const issue = copy.createSpan({ cls: "inkbook-font-import-issue" });
+    issue.id = `inkbook-font-import-issue-${++nextImportLabel}`;
+    issue.hidden = true;
+    button.setAttribute("aria-describedby", issue.id);
+    issues.set(face.id, { row: item, remove: button, message: issue });
   }
+  return issues;
 }
 
 interface IconAction {
@@ -256,7 +337,7 @@ interface IconAction {
 
 function renderAction(container: HTMLElement, action: IconAction): HTMLButtonElement {
   const button = renderIconButton(container, action);
-  button.classList.remove("inkbook-font-library-icon-button");
+  button.classList.remove("clickable-icon", "inkbook-font-library-icon-button");
   button.classList.add("inkbook-font-import-action");
   const label = button.createSpan({ text: action.label });
   if (action.iconPosition === "end") button.prepend(label);

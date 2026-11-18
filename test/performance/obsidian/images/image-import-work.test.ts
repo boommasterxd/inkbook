@@ -8,7 +8,10 @@ import {
   validImageResource,
 } from "../../../fixtures/persistence/images";
 import { installImageRasterBoundary } from "../../../fixtures/obsidian/image-raster";
-import { SessionImageResources } from "../../../../src/obsidian/embeds/document-session/session-image-resources";
+import {
+  ImageResourceCapacityError,
+  SessionImageResources,
+} from "../../../../src/obsidian/embeds/document-session/session-image-resources";
 import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 
@@ -17,11 +20,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("stages the full session pixel budget once per unique trusted raster and publishes without payload work", async () => {
-  const assets = await Promise.all([
+it("stages the full pixel budget once per unique raster and skips payload work when capacity is exhausted", async () => {
+  const [first, second, excess] = await Promise.all([
     capacityImageResource(2, 4000),
     capacityImageResource(3, 4000),
+    capacityImageResource(4),
   ]);
+  const assets = [first, second];
   const images = new SessionImageResources(createWorkerSnapshot([]));
   const hash = vi.spyOn(ChunkedSha256.prototype, "update");
   let scanned = 0;
@@ -30,10 +35,11 @@ it("stages the full session pixel budget once per unique trusted raster and publ
     return this.exec(input) !== null;
   });
   const repeated = assets.flatMap((asset) => Array.from({ length: 10 }, () => asset));
-  const token = await images.prepare(repeated, {
+  const context = {
     active: () => true,
     scheduler: new TestWorkScheduler(),
-  });
+  };
+  const token = await images.prepare(repeated, context);
   expect(images.resources).toEqual([]);
   expect(scanned).toBe(assets.reduce((sum, asset) => sum + asset.data.length, 0));
   expect(hash).not.toHaveBeenCalled();
@@ -45,6 +51,10 @@ it("stages the full session pixel budget once per unique trusted raster and publ
   expect(images.resources.reduce((sum, asset) => sum + asset.width * asset.height, 0)).toBe(
     32_000_000,
   );
+  await expect(images.prepare([excess], context)).rejects.toBeInstanceOf(
+    ImageResourceCapacityError,
+  );
+  expect(images.resources).toEqual(assets);
   expect(scanned).toBe(admittedWork);
   expect(hash).not.toHaveBeenCalled();
 });

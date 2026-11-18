@@ -126,6 +126,7 @@ export function generalGroup(
 export function appearanceGroup(
   t: Translator,
   reset: () => void | Promise<void>,
+  manageFonts?: (trigger: HTMLElement) => void,
 ): SettingDefinitionGroup<SettingsControlKey> {
   return {
     type: "group",
@@ -147,6 +148,9 @@ export function appearanceGroup(
         full: t("settings.motion.full"),
         reduced: t("settings.motion.reduced"),
       }),
+      ...(manageFonts === undefined
+        ? []
+        : [settingsAction(t("fonts.manage"), "", undefined, manageFonts)]),
       resetAction(t("settings.controls.resetGroup"), reset, t),
     ],
   };

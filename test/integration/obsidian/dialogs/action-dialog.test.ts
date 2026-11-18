@@ -228,11 +228,13 @@ describe("action dialog localization", () => {
       confirmLabel: () => localization.t("host.dialog.deleteConfirm"),
     });
     const confirm = button("Delete embed");
+    const dismiss = button("Close");
     confirm.focus();
     localization.setLanguage("de");
     expect(document.activeElement).toBe(confirm);
     expect(button("Einbettung löschen")).toBe(confirm);
     expect(button("Abbrechen")).toBeDefined();
+    expect(button("Schließen")).toBe(dismiss);
     expect(document.querySelector(".inkbook-action-dialog")?.getAttribute("aria-label")).toBe(
       "Einbettung löschen?",
     );

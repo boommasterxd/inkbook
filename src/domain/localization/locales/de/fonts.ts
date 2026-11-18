@@ -1,11 +1,16 @@
 export const fonts = {
-  "fonts.manage": "Schriftart hinzufügen",
+  "fonts.manage": "Schriftbibliothek verwalten",
   "fonts.importSuccess": "Schrift importiert",
   "fonts.importing": "Schrift wird importiert…",
   "fonts.busy": "Schriftbibliothek wird aktualisiert…",
   "fonts.importFamily": "Zu Schrift hinzufügen",
   "fonts.faceConflict":
-    "Zwei Dateien enthalten denselben Stil. Entferne eine davon oder wähle eine andere Schrift.",
+    "Einige Schriftschnitte überschneiden sich. Entferne eine Datei oder wähle eine andere Schrift.",
+  "fonts.overlappingFace":
+    "Diese Strichstärke überschneidet sich mit einem Schnitt im selben Stil.",
+  "fonts.assignedFace": "Diese Datei ist bereits einer anderen Schrift zugeordnet.",
+  "fonts.overlappingFaces": "Schriftschnitte überschneiden sich.",
+  "fonts.showConflictFile": "Datei anzeigen",
   "fonts.previewNamed": "Vorschau für {name}",
   "fonts.editNamed": "{name} bearbeiten",
   "fonts.addVariants": "Schriftschnitte hinzufügen",
@@ -24,7 +29,7 @@ export const fonts = {
   "fonts.retention":
     "Wenn du eine Schrift aus dieser Liste entfernst, bleiben ihre Quelldatei im Vault und bereits in Zeichnungen gespeicherte Schriften erhalten.",
   "fonts.empty": "Noch keine eigenen Schriften.",
-  "fonts.add": "Schrift hinzufügen",
+  "fonts.add": "Schriftart hinzufügen",
   "fonts.finish": "Zur Bibliothek",
   "fonts.filesChecking": "Schriftdateien werden geprüft…",
   "fonts.invalidName": "Gib einen Schriftnamen mit 1 bis 128 Zeichen ein.",
@@ -46,10 +51,10 @@ export const fonts = {
     "Die Vorschau konnte nicht geladen werden. Versuche eine andere Schriftdatei.",
   "fonts.libraryFull":
     "Die Schriftbibliothek ist voll. Entferne eine ungenutzte Schrift, bevor du weitere hinzufügst.",
-  "fonts.chooseStep": "1. Schriftdateien auswählen",
-  "fonts.checkStep": "2. Name und Stile prüfen",
-  "fonts.addStep": "3. Schrift hinzufügen",
-  "fonts.importProgress": "Schritte zum Hinzufügen einer Schrift",
+  "fonts.chooseStep": "Schriftdateien auswählen",
+  "fonts.checkStep": "Name und Stile prüfen",
+  "fonts.addStep": "Schrift hinzufügen",
+  "fonts.importProgress": "Schritt {step} von {total}",
   "fonts.chooseFiles": "Schriftdateien auswählen",
   "fonts.dropFiles": "oder Dateien hier ablegen",
   "fonts.fileLimit": ".ttf, .otf, .woff, .woff2 · max. 8 MiB pro Datei",
@@ -59,6 +64,10 @@ export const fonts = {
   "fonts.addToExisting": "Zu vorhandener Schrift hinzufügen",
   "fonts.newFont": "Neue Schrift",
   "fonts.previewStyle": "Stil für die Vorschau",
+  "fonts.previewSingleStyle": "Gezeigter Stil: {style}",
+  "fonts.previewLoading": "Vorschau wird geladen…",
+  "fonts.specimenGlyphs": "Die Form der Dinge",
+  "fonts.specimenText": "Größe, Maß und Gefühl. 0123456789",
   "fonts.storageNotice":
     "Speicherung im Vault und Einbettung in Zeichnungen. Prüfe, ob die Schriftlizenz das erlaubt.",
   "fonts.backToLibrary": "Schriftbibliothek",

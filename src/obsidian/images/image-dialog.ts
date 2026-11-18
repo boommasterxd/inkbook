@@ -6,6 +6,7 @@ import { InkbookModal } from "../dialogs/inkbook-modal";
 import type { ObserveMotion } from "../runtime/effective-motion";
 import { registerNativeControlFeedback } from "../menus/feedback/native-control-feedback";
 import { bindElementLanguage } from "../../rendering/localization/element-language";
+import type { ImageImportRequest } from "../embeds/active-scene/editor-chrome-openings";
 
 export interface ImageDialogOptions {
   readonly app: App;
@@ -16,8 +17,13 @@ export interface ImageDialogOptions {
   readonly signal?: AbortSignal;
 }
 
+export interface ImageImportDialogOptions extends ImageDialogOptions, ImageImportRequest {}
+
 /** Shared host modal, focus, motion, language and owner-cancellation lifetime. */
-export abstract class ImageDialog<T> extends InkbookModal {
+export abstract class ImageDialog<
+  T,
+  Options extends ImageDialogOptions = ImageDialogOptions,
+> extends InkbookModal {
   protected readonly abort = new AbortController();
   protected result: T | undefined;
   #releaseFeedback: (() => void) | undefined;
@@ -25,10 +31,16 @@ export abstract class ImageDialog<T> extends InkbookModal {
   readonly #ownerAbort = (): void => this.closeImmediately();
 
   public constructor(
-    protected readonly options: ImageDialogOptions,
+    protected readonly options: Options,
     private readonly resolve: (result: T | undefined) => void,
   ) {
-    super(options.app, options.readMotion, () => options.scheduler, options.observeMotion);
+    super(
+      options.app,
+      options.readMotion,
+      () => options.scheduler,
+      options.observeMotion,
+      options.localization,
+    );
   }
 
   public override onOpen(): void {

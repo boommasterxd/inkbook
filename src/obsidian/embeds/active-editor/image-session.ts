@@ -1,5 +1,6 @@
 import { applyImageCrop } from "../../../domain/images/image-crop";
-import { initialImageSize } from "../../../domain/images/image-insertion-size";
+import { initialImageSize, initialImageX } from "../../../domain/images/image-insertion-size";
+import { IMAGE_LIMITS } from "../../../domain/images/image-limits";
 import {
   canonicalizeGeometryNumber,
   type ImageCropV3,
@@ -8,6 +9,7 @@ import {
 } from "../../../domain/schema/public";
 import type {
   EditorChromeOpenings,
+  ImageImportRequest,
   ImportedImageBatch,
 } from "../active-scene/editor-chrome-openings";
 import type { EditableDocumentModel } from "../document-session/document-model-port";
@@ -79,43 +81,65 @@ export class ActiveImageSession {
 
   public import(point?: PointV1): void {
     if (!this.canImport) return;
-    void this.#run(async (signal) => {
+    void this.#run((signal) => {
       const options = this.#options;
       const center = point ?? options.visibleCenter();
-      const revision = options.model.revision;
-      const imported = await options.onImportImages!(signal, options.ownerWindow);
-      if (
-        imported === undefined ||
-        imported.resources.length === 0 ||
-        !this.#current(signal, revision)
-      )
-        return;
-      const { resources } = imported;
-      if (resources.length > 20) throw new RangeError("Image imports are limited to twenty pages.");
-      const elements = createImportedImages(
-        imported,
-        center,
-        options.model.page,
-        options.ownerWindow.crypto,
-      );
-      const isCancelled = () => !this.#current(signal, revision);
-      const preparedResources = await options.model.prepareImageResources!(resources, {
-        isCancelled,
+      return options.onImportImages!(signal, options.ownerWindow, {
+        page: options.model.page,
+        centerX: center.x,
+        submit: this.#importSubmission(center, signal),
       });
-      if (preparedResources === null || isCancelled()) return;
-      const prepared = await options.model.prepareElementAppend(elements, { isCancelled });
-      if (prepared.status !== "prepared" || prepared.token === null || isCancelled()) return;
-      const applied = options.model.commitPreparedElementMutation(
-        prepared.token,
-        preparedResources,
-      );
-      if (applied === null) return;
-      registerAppliedDocumentMutation(options.history, options.model, applied);
-      options.select(
-        new Set(imported.placement === "page-width-locked" ? [] : elements.map(({ id }) => id)),
-      );
-      options.onCommitted(imported.placement === "page-width-locked");
     });
+  }
+
+  #importSubmission(center: PointV1, signal: AbortSignal): ImageImportRequest["submit"] {
+    const { model, history } = this.#options;
+    let submitting = false;
+    let committed = false;
+    return async (imported, dialogSignal) => {
+      const revision = model.revision;
+      const isCancelled = () =>
+        dialogSignal.aborted ||
+        this.#operation?.signal !== signal ||
+        !this.#current(signal, revision);
+      if (submitting || committed || isCancelled() || imported.resources.length === 0)
+        return "unavailable";
+      if (imported.resources.length > IMAGE_LIMITS.pdfSelectedPages) return "capacity";
+      submitting = true;
+      try {
+        const prepared = await this.#prepareImport(imported, center, isCancelled);
+        if (prepared === null || isCancelled()) return "unavailable";
+        const applied = model.commitPreparedElementMutation(prepared.token, prepared.resources);
+        if (applied === null) return "unavailable";
+        committed = true;
+        registerAppliedDocumentMutation(history, model, applied);
+        const locked = imported.placement === "page-width-locked";
+        this.#options.select(new Set(locked ? [] : prepared.elements.map(({ id }) => id)));
+        this.#options.onCommitted(locked);
+        return "committed";
+      } catch (error) {
+        if (committed) {
+          this.#options.onFailed();
+          return "committed";
+        }
+        if (isCancelled()) return "unavailable";
+        if (error instanceof ImageResourceCapacityError) return "capacity";
+        throw error;
+      } finally {
+        submitting = false;
+      }
+    };
+  }
+
+  async #prepareImport(imported: ImportedImageBatch, center: PointV1, isCancelled: () => boolean) {
+    const { model, ownerWindow } = this.#options;
+    const resources = await model.prepareImageResources!(imported.resources, { isCancelled });
+    if (resources === null || isCancelled()) return null;
+    const elements = createImportedImages(imported, center, model.page, ownerWindow.crypto);
+    const prepared = await model.prepareElementAppend(elements, { isCancelled });
+    return prepared.status === "prepared" && prepared.token !== null
+      ? { elements, resources, token: prepared.token }
+      : null;
   }
 
   public crop(): void {
@@ -254,14 +278,7 @@ function createImportedImages(
       index === 0 ? firstSize : initialImageSize(resource, page.innerWidth, source, placement);
     const width = canonicalizeGeometryNumber(size.width);
     const height = canonicalizeGeometryNumber((width * resource.height) / resource.width);
-    const x = canonicalizeGeometryNumber(
-      locked
-        ? page.margin
-        : Math.max(
-            page.margin,
-            Math.min(center.x - width / 2, page.margin + page.innerWidth - width),
-          ),
-    );
+    const x = initialImageX(width, page, center.x, placement);
     const top = canonicalizeGeometryNumber(y);
     y += height + page.margin;
     return {

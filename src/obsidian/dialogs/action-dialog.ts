@@ -61,9 +61,10 @@ class InkbookActionDialog<T extends string> extends InkbookModal {
     options: ActionDialogOptions<T>,
     resolve: (value: T | null) => void,
   ) {
-    super(app, options.readMotion, options.workScheduler, options.observeMotion);
+    const localization = options.localization ?? new Localization();
+    super(app, options.readMotion, options.workScheduler, options.observeMotion, localization);
     this.#options = options;
-    this.#localization = options.localization ?? new Localization();
+    this.#localization = localization;
     this.#resolve = resolve;
   }
 

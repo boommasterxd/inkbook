@@ -115,7 +115,7 @@ it("places import history after Start import and loads only on disclosure expans
   start.container.focus();
   start.container.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   await vi.waitFor(() =>
-    expect(access.open).toHaveBeenCalledWith(window, undefined, expect.any(AbortSignal)),
+    expect(access.open).toHaveBeenCalledWith(window, undefined, expect.any(AbortSignal), undefined),
   );
   expect(access.history).not.toHaveBeenCalled();
   trigger.click();

@@ -190,15 +190,16 @@ it("prepares multiple styles without writes and commits the reviewed name once",
     expect(document.activeElement).toBe(
       context.section.querySelector('[data-inkbook-setting-identity="font-import-preview"] select'),
     );
+    expect(previewStyle.isConnected).toBe(true);
     await vi.waitFor(() =>
       expect(loadNativeFontPreview).toHaveBeenLastCalledWith(
         prepared("Example-Bold.ttf", 700).resource,
         expect.any(Object),
       ),
     );
-    const currentName = context.section.querySelector<HTMLInputElement>('input[type="text"]')!;
-    currentName.value = "My handwriting";
-    currentName.dispatchEvent(new Event("input"));
+    expect(context.section.querySelector('input[type="text"]')).toBe(name);
+    name.value = "My handwriting";
+    name.dispatchEvent(new Event("input"));
     button(context.section, "Next").click();
     expect(context.section.textContent).toContain("My handwriting");
     expect(context.commit).not.toHaveBeenCalled();
@@ -271,7 +272,9 @@ it("previews the retained style and adopts the replacement name after clearing a
     button(context.section, "Remove Example-Bold.ttf from selection").click();
     button(context.section, "Next").click();
     expect(context.section.querySelector("select")).toBeNull();
-    expect(loadNativeFontPreview).toHaveBeenLastCalledWith(regular.resource, expect.any(Object));
+    await vi.waitFor(() =>
+      expect(loadNativeFontPreview).toHaveBeenLastCalledWith(regular.resource, expect.any(Object)),
+    );
     expect(context.section.querySelector<HTMLInputElement>('input[type="text"]')!.value).toBe(
       "Example",
     );
@@ -285,9 +288,11 @@ it("previews the retained style and adopts the replacement name after clearing a
     expect(context.section.querySelector<HTMLInputElement>('input[type="text"]')!.value).toBe(
       "Replacement",
     );
-    expect(loadNativeFontPreview).toHaveBeenLastCalledWith(
-      replacement.resource,
-      expect.any(Object),
+    await vi.waitFor(() =>
+      expect(loadNativeFontPreview).toHaveBeenLastCalledWith(
+        replacement.resource,
+        expect.any(Object),
+      ),
     );
     expect(context.release).toHaveBeenCalledWith(bold);
     expect(context.release).toHaveBeenCalledWith(regular);
@@ -301,7 +306,10 @@ it("uses an existing font name and recovers a failed final write without prepari
   const context = fixture(1);
   context.commit.mockRejectedValueOnce(new Error("Storage unavailable"));
   try {
-    await checkStep(context);
+    button(context.section, "Add font").click();
+    selectFiles(context.section, [file("Example-Bold.ttf")]);
+    await vi.waitFor(() => expect(button(context.section, "Next").disabled).toBe(false));
+    button(context.section, "Next").click();
     const select = [...context.section.querySelectorAll("label")]
       .find((label) => label.textContent?.startsWith("Add to existing font"))!
       .querySelector("select")!;
@@ -311,6 +319,7 @@ it("uses an existing font name and recovers a failed final write without prepari
     expect(document.activeElement).toBe(
       context.section.querySelector('[data-inkbook-setting-identity="font-import-family"] select'),
     );
+    expect(select.isConnected).toBe(true);
     const name = context.section.querySelector<HTMLInputElement>('input[type="text"]')!;
     expect(name.disabled).toBe(true);
     expect(name.value).toBe("Font 0");
@@ -323,7 +332,7 @@ it("uses an existing font name and recovers a failed final write without prepari
     expect(context.prepare).toHaveBeenCalledOnce();
     expect(context.commit).toHaveBeenCalledTimes(2);
     expect(context.commit).toHaveBeenLastCalledWith(
-      [prepared()],
+      [prepared("Example-Bold.ttf", 700)],
       { displayName: "Font 0", family: context.library.list()[0]!.family },
       expect.any(AbortSignal),
     );

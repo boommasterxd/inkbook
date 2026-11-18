@@ -8,7 +8,7 @@ import { DialogHeightMotion } from "../../dialogs/dialog-height-motion";
 import { confirmInkbookAction } from "../../dialogs/action-dialog";
 import type { VaultFontLibrary } from "../../fonts/vault-font-library";
 import type { ObserveMotion } from "../../runtime/effective-motion";
-import { mountFontLibraryContent } from "./font-library-settings";
+import { FontLibraryContent } from "./font-library-settings";
 import { friendlyFontVariant } from "./font-import-view";
 
 export interface FontLibraryDialogOptions {
@@ -40,13 +40,20 @@ export function openFontLibraryDialog(
 class FontLibraryDialog extends InkbookModal {
   readonly #options: FontLibraryDialogOptions;
   #body: HTMLElement | undefined;
-  #disposeContent: (() => void) | undefined;
+  #importFooter: HTMLElement | undefined;
+  #libraryContent: FontLibraryContent | undefined;
   #releaseLanguage: (() => void) | undefined;
   #unsubscribeLanguage: (() => void) | undefined;
   #heightMotion: DialogHeightMotion | undefined;
 
   public constructor(app: App, options: FontLibraryDialogOptions) {
-    super(app, options.readMotion, options.workScheduler, options.observeMotion);
+    super(
+      app,
+      options.readMotion,
+      options.workScheduler,
+      options.observeMotion,
+      options.localization,
+    );
     this.#options = options;
   }
 
@@ -80,8 +87,8 @@ class FontLibraryDialog extends InkbookModal {
     this.modalEl.classList.add("inkbook-settings-modal", "inkbook-font-library-dialog");
     this.containerEl.classList.add("inkbook-font-library-container");
     this.contentEl.classList.add("inkbook-font-library-dialog-content");
-    this.titleEl.classList.add("inkbook-font-library-title");
     this.#body = this.contentEl.createDiv({ cls: "inkbook-font-library-body" });
+    this.#importFooter = this.contentEl.createDiv({ cls: "inkbook-font-import-footer" });
     this.#releaseLanguage = bindElementLanguage(this.modalEl, this.#options.localization);
     this.#unsubscribeLanguage = this.#options.localization.subscribe(this.#render);
     this.#render();
@@ -92,11 +99,12 @@ class FontLibraryDialog extends InkbookModal {
     const body = this.#body;
     if (this.closed || body === undefined) return;
     this.#mutateLayout(() => {
-      this.#disposeContent?.();
+      this.#libraryContent?.dispose();
       const { localization } = this.#options;
       this.setTitle(localization.t("fonts.group"));
-      this.#disposeContent = mountFontLibraryContent(body, {
+      this.#libraryContent = new FontLibraryContent(body, {
         ...this.#options,
+        ...(this.#importFooter === undefined ? {} : { importFooter: this.#importFooter }),
         scheduler: this.#options.workScheduler,
         changed: this.#options.onChanged,
         mutateDialogLayout: this.#mutateLayout,
@@ -128,8 +136,8 @@ class FontLibraryDialog extends InkbookModal {
     this.#options.signal.removeEventListener("abort", this.#ownerClosed);
     this.#heightMotion?.dispose();
     this.#heightMotion = undefined;
-    this.#disposeContent?.();
-    this.#disposeContent = undefined;
+    this.#libraryContent?.dispose();
+    this.#libraryContent = undefined;
     this.#unsubscribeLanguage?.();
     this.#releaseLanguage?.();
     super.onClose();

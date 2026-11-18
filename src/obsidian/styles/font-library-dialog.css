@@ -1,14 +1,12 @@
 .inkbook-font-library-dialog.inkbook-settings-modal {
+  --inkbook-dialog-shell-inset: 0px;
+  --inkbook-dialog-title-inset: var(--size-4-5);
+
   display: flex;
   flex-direction: column;
   overflow: hidden;
   padding: 0;
   interpolate-size: allow-keywords;
-}
-
-.inkbook-font-library-title {
-  margin: 0;
-  padding: var(--size-4-5) var(--size-4-5) var(--size-4-3);
 }
 
 .inkbook-font-library-dialog.inkbook-settings-modal .inkbook-font-library-dialog-content {
@@ -26,6 +24,10 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 var(--size-4-5) var(--size-4-5);
+}
+
+.inkbook-font-library-dialog[data-inkbook-dialog-resizing] .inkbook-font-library-body {
+  scrollbar-width: none;
 }
 
 .inkbook-font-library-content {
@@ -50,7 +52,6 @@
 .inkbook-font-library-controls {
   display: grid;
   gap: var(--size-4-3);
-  margin-block-start: var(--size-4-3);
 }
 
 .inkbook-font-library-dialog .inkbook-font-library-content .setting-group {
@@ -194,7 +195,7 @@
   .inkbook-settings-control-error:not([hidden]),
   .inkbook-font-library-success:not([hidden])
 ) {
-  margin-block-start: var(--size-4-3);
+  margin-block-end: var(--size-4-3);
 }
 
 .inkbook-font-library-success:not([hidden]) {
@@ -216,14 +217,6 @@
   margin: 0;
   overflow-wrap: anywhere;
   padding-block-start: var(--size-4-2);
-}
-
-.inkbook-font-library-container .inkbook-phone-dialog-header {
-  margin: 0;
-}
-
-.inkbook-font-library-container[data-inkbook-modal-platform="phone"] .inkbook-font-library-title {
-  padding: 0;
 }
 
 .inkbook-font-library-container[data-inkbook-modal-platform="phone"]
@@ -263,7 +256,10 @@
 }
 
 @media (width <= 600px) {
-  .inkbook-font-library-title,
+  .inkbook-font-library-dialog.inkbook-settings-modal {
+    --inkbook-dialog-title-inset: var(--size-4-3);
+  }
+
   .inkbook-font-library-body {
     padding-inline: var(--size-4-3);
   }

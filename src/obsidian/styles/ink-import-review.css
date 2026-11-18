@@ -144,6 +144,51 @@
   padding: 0 0 var(--size-4-3);
 }
 
+.inkbook-import-review-findings .inkbook-import-disclosure,
+.inkbook-import-review-finding .inkbook-import-disclosure,
+.inkbook-import-list > .inkbook-import-review-finding,
+.inkbook-import-affected-paths .inkbook-import-list-item {
+  border: 0;
+}
+
+.inkbook-import-review-findings > .inkbook-import-disclosure > .inkbook-import-disclosure-trigger {
+  font-weight: var(--font-semibold);
+}
+
+.inkbook-import-list > .inkbook-import-review-finding {
+  display: block;
+  padding: var(--size-4-2) var(--size-4-2) var(--size-4-3);
+}
+
+.inkbook-import-review-finding .inkbook-import-disclosure {
+  inline-size: fit-content;
+  max-inline-size: 100%;
+}
+
+.inkbook-import-review-finding .inkbook-import-disclosure:has(> [aria-expanded="true"]) {
+  inline-size: 100%;
+}
+
+.inkbook-import-review-finding .inkbook-import-disclosure > .inkbook-import-disclosure-trigger {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  gap: var(--size-4-2);
+  grid-template-columns: var(--icon-s) minmax(0, auto) var(--icon-s);
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-block-size: 44px;
+  padding: var(--size-4-1);
+}
+
+.inkbook-import-review-finding .inkbook-import-disclosure-icon svg {
+  block-size: var(--icon-s);
+  inline-size: var(--icon-s);
+}
+
+.inkbook-import-affected-paths .inkbook-import-list-item {
+  padding-block: 0;
+}
+
 .inkbook-import-file-choice,
 .inkbook-import-finding-row {
   align-items: start;
@@ -197,6 +242,17 @@
 .inkbook-import-finding-message {
   color: var(--text-normal);
   font-weight: var(--font-medium);
+}
+
+.inkbook-import-review-finding > .inkbook-import-finding-copy {
+  align-items: center;
+  flex-flow: row wrap;
+  gap: 0 var(--size-4-3);
+}
+
+.inkbook-import-review-finding .inkbook-import-finding-message {
+  flex-basis: 100%;
+  font-size: var(--font-ui-medium);
 }
 
 .inkbook-import-file-path,

@@ -1,7 +1,7 @@
-import { Localization } from "../../../../src/domain/localization";
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { Localization } from "../../../../src/domain/localization";
 import { renderImportExamples } from "../../../../src/obsidian/settings/import/import-examples";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { assertAccessibleSemantics } from "../../../fixtures/accessibility";
@@ -14,41 +14,54 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-function gallery(motion: "full" | "reduced" = "reduced") {
+async function gallery(motion: "full" | "reduced" = "reduced") {
   const container = document.body.createDiv();
   container.dataset.inkbookMotion = motion;
   const subscriptions = new Set<() => void>();
-  renderImportExamples(container, {
-    localization: new Localization(),
-    mutate: (update) => update(),
-    readMotion: () => (container.dataset.inkbookMotion === "full" ? "full" : "reduced"),
-    observeMotion: (listener) => {
-      subscriptions.add(listener);
-      return () => subscriptions.delete(listener);
+  renderImportExamples(
+    container,
+    {
+      localization: new Localization(),
+      mutate: (update) => update(),
+      readMotion: () => (container.dataset.inkbookMotion === "full" ? "full" : "reduced"),
+      observeMotion: (listener) => {
+        subscriptions.add(listener);
+        return () => subscriptions.delete(listener);
+      },
+      own: (dispose) => disposers.push(dispose),
     },
-    own: (dispose) => disposers.push(dispose),
-  });
+    "diagram",
+  );
+  await vi.waitFor(() =>
+    expect(container.querySelector("img")?.alt).toContain("handwritten boxes"),
+  );
   return {
     container,
     subscriptions,
-    previous: container.querySelector<HTMLButtonElement>('[aria-label="Previous example"]')!,
-    next: container.querySelector<HTMLButtonElement>('[aria-label="Next example"]')!,
-    status: container.querySelector<HTMLElement>('[aria-live="polite"]')!,
+    choices: [
+      ...container.querySelectorAll<HTMLButtonElement>(".inkbook-import-example-choices button"),
+    ],
+    status: container.querySelector<HTMLElement>('[role="status"]')!,
     images: [...container.querySelectorAll("img")],
   };
 }
 
-it("shows an accessible offline comparison with honest conversion warnings before import", async () => {
-  const { container, images, status } = gallery();
-  expect(status.textContent).toContain("Curves and pressure");
-  expect(status.textContent).toContain("Example 1 of 3");
+it("shows an accessible offline comparison clearly distinguished from the user's files", async () => {
+  const { container, choices, images, status } = await gallery();
+  expect(choices.map((choice) => choice.textContent)).toEqual([
+    "Curves and pressure",
+    "Print handwriting",
+    "Cursive handwriting",
+    "Rounded corners",
+    "Coordinate rounding",
+  ]);
+  expect(choices[0]?.getAttribute("aria-pressed")).toBe("true");
   expect(status.getAttribute("aria-atomic")).toBe("true");
   expect(
     [...container.querySelectorAll("figcaption")].map((caption) => caption.textContent),
   ).toEqual(["Before · Obsidian Ink", "After · Inkbook"]);
-  expect(container.textContent).toContain("Stroke thickness, curves and backgrounds can change.");
-  expect(container.textContent).toContain("Review the copies before removing originals.");
-  expect(container.textContent).toContain(
+  expect(container.textContent).toContain("General examples. Your files may look different.");
+  expect(status.textContent).toContain(
     "broad wedges at these curved corners are not fully preserved",
   );
   expect(images).toHaveLength(2);
@@ -59,48 +72,42 @@ it("shows an accessible offline comparison with honest conversion warnings befor
   await assertAccessibleSemantics(container, ["button-name", "image-alt"]);
 });
 
-it("browses all examples in both directions with bounded image ownership and usable focus", () => {
-  const { container, previous, next, status, images, subscriptions } = gallery("full");
+it("selects every named example directly while retaining only two image slots and keyboard focus", async () => {
+  const { container, choices, status, images, subscriptions } = await gallery("full");
   container.dataset.inkbookMotion = "reduced";
   for (const notify of subscriptions) notify();
   const initialSources = images.map((image) => image.src);
-  expect(previous.disabled).toBe(true);
-  previous.click();
-  expect(status.textContent).toContain("Example 1 of 3");
-  next.click();
-  expect(status.textContent).toContain("Print handwriting");
-  expect(status.textContent).toContain("Example 2 of 3");
-  expect(document.activeElement).toBe(next);
-  expect(images[0]!.alt).toContain("written in print");
-  expect(images[1]!.alt).toContain("same print alphabet");
-  next.click();
-  expect(status.textContent).toContain("Cursive handwriting");
-  expect(status.textContent).toContain("Example 3 of 3");
-  expect(images[0]!.alt).toContain("cursive handwriting");
-  expect(images[1]!.alt).toContain("same cursive alphabet");
-  expect(next.disabled).toBe(true);
-  expect(document.activeElement).toBe(previous);
-  next.click();
-  expect(status.textContent).toContain("Example 3 of 3");
-  previous.click();
-  expect(status.textContent).toContain("Example 2 of 3");
-  previous.click();
-  expect(status.textContent).toContain("Example 1 of 3");
-  expect(previous.disabled).toBe(true);
-  expect(next.disabled).toBe(false);
-  expect(document.activeElement).toBe(next);
-  expect([...container.querySelectorAll("img")]).toEqual(images);
-  expect(images.every((image, index) => image.src === initialSources[index])).toBe(true);
+  const cases = [
+    [2, "cursive handwriting", "same cursive alphabet"],
+    [1, "written in print", "same print alphabet"],
+    [3, "rounded corners", "square corners"],
+    [4, "12.3456", "12.346"],
+  ] as const;
+  for (const [index, before, after] of cases) {
+    const choice = choices[index]!;
+    choice.focus();
+    choice.click();
+    expect(document.activeElement).toBe(choice);
+    expect(choices.filter((button) => button.getAttribute("aria-pressed") === "true")).toEqual([
+      choice,
+    ]);
+    expect(images[0]!.alt).toContain(before);
+    expect(images[1]!.alt).toContain(after);
+    expect([...container.querySelectorAll("img")]).toEqual(images);
+  }
+  expect(status.textContent).toContain("Magnified diagram");
+  choices[0]!.click();
+  expect(images.map((image) => image.src)).toEqual(initialSources);
 });
 
-it("releases preference subscriptions and prevents detached controls from changing images", () => {
-  const { container, subscriptions, next, images, status } = gallery();
+it("releases preference subscriptions and prevents detached controls from changing images", async () => {
+  const { container, subscriptions, choices, images } = await gallery();
   expect(subscriptions.size).toBeGreaterThan(0);
   const initialSources = images.map((image) => image.src);
   for (const dispose of disposers.splice(0)) dispose();
   container.remove();
   expect(subscriptions.size).toBe(0);
-  next.click();
-  expect(status.textContent).toContain("Example 1 of 3");
-  expect(images.every((image, index) => image.src === initialSources[index])).toBe(true);
+  choices[3]!.click();
+  expect(choices[3]!.getAttribute("aria-pressed")).toBe("false");
+  expect(images.map((image) => image.src)).toEqual(initialSources);
 });

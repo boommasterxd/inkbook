@@ -1,9 +1,8 @@
 import type { MessageKey } from "../../../domain/localization";
 import {
-  applyFontPreview,
-  loadNativeFontPreview,
-  type NativeFontPreview,
-} from "../../fonts/native-font-preview";
+  inspectFontImport,
+  type FontImportSelection as ImportTarget,
+} from "../../fonts/font-import-plan";
 import { FontImportError } from "../../fonts/vault-font-library";
 import { FontFamilyFaceConflictError, fontLibraryChoices } from "../../fonts/font-library-families";
 import type { LibraryFontFace } from "../../fonts/vault-font-library";
@@ -13,6 +12,7 @@ import { createSettingsWriteError } from "../settings-write-feedback";
 import { refreshSettingsView } from "../settings-view-refresh";
 import { mutateFontLibraryDialog, type FontLibrarySettingsOptions } from "./font-library-options";
 import { FontImportSelection } from "./font-import-selection";
+import { FontImportSpecimen } from "./font-import-specimen";
 import { renderFontImportView, type FontImportViewHandle } from "./font-import-view";
 
 interface FontImportWizardOptions extends FontLibrarySettingsOptions {
@@ -25,19 +25,22 @@ interface FontImportWizardOptions extends FontLibrarySettingsOptions {
 export class FontImportWizard {
   readonly #root: HTMLElement;
   readonly #content: HTMLElement;
+  readonly #footer: HTMLElement;
   readonly #input: HTMLInputElement;
   readonly #status: HTMLElement;
   readonly #error: ReturnType<typeof createSettingsWriteError>;
   readonly #layout: ReturnType<typeof createSettingsLayoutMotion>;
   readonly #selection: FontImportSelection;
   #feedback: (() => void) | undefined;
+  #footerFeedback: (() => void) | undefined;
   #view: FontImportViewHandle | undefined;
   #step: 1 | 2 | 3 = 1;
   #name = "";
   #target: string | undefined;
   #previewId: string | undefined;
-  #preview: NativeFontPreview | undefined;
-  #previewAbort: AbortController | undefined;
+  #specimen: FontImportSpecimen | undefined;
+  #targetSelection: ImportTarget = { displayName: "" };
+  #reviewBlocked = false;
   #busy = false;
   #disposed = false;
 
@@ -61,6 +64,9 @@ export class FontImportWizard {
     this.#content.setAttribute("aria-label", options.localization.t("fonts.import"));
     this.#error = createSettingsWriteError(this.#root, options);
     this.#error.associate(this.#content);
+    this.#footer = (options.importFooter ?? this.#root).createDiv({
+      cls: "inkbook-font-import-footer-content",
+    });
     this.#layout = createSettingsLayoutMotion(
       this.#root,
       options.readMotion,
@@ -69,61 +75,116 @@ export class FontImportWizard {
     this.#render(true);
   }
 
+  #chooseFiles = (): void => {
+    if (this.#disposed || this.#busy || this.#step !== 1) return;
+    this.#content.querySelector<HTMLButtonElement>(".inkbook-font-import-dropzone")?.focus();
+    this.#input.click();
+  };
+
   #render(focus = false): void {
     if (this.#disposed) return;
     mutateFontLibraryDialog(this.options, () => {
-      this.#clearPreview();
       this.#layout.mutate(() => {
-        const render = () => {
-          this.#content.replaceChildren();
-          const faces = this.options.library.list();
-          const choices = fontLibraryChoices(faces);
-          this.#view = renderFontImportView(
-            this.#content,
-            {
-              step: this.#step,
-              files: this.#selection.files,
-              busy: this.#busy,
-              name: choices.find((choice) => choice.value === this.#target)?.label ?? this.#name,
-              ...(this.#target ? { targetFamily: this.#target } : {}),
-              ...(this.#previewId ? { previewId: this.#previewId } : {}),
-              existingChoices: choices,
-              fixedFamily: this.options.family !== undefined,
-            },
-            {
-              chooseFiles: () => this.#input.click(),
-              filesSelected: (files) => this.#selectFiles(files),
-              removeFile: this.#removeFile,
-              nameChanged: (name) => {
-                this.#name = name;
-                this.#view!.primary.disabled = !name.trim();
-              },
-              familyChanged: (family) => {
-                this.#target = family;
-                this.#error.set("");
-                this.#render();
-              },
-              previewChanged: (id) => {
-                this.#previewId = id;
-                this.#render();
-              },
-              back: () => this.#back(),
-              next: () => this.#next(),
-              confirm: () => {
-                void this.#commit();
-              },
-            },
-            this.options.localization,
-          );
-          this.#feedback?.();
-          this.#feedback = registerNativeControlFeedback(this.#view.root, this.options);
-          if (focus) this.#view.heading.focus();
-          if (this.#step === 2 && !this.#busy) void this.#loadPreview();
-        };
-        if (focus) render();
-        else refreshSettingsView(this.#content, render);
+        if (focus) this.#renderStep();
+        else refreshSettingsView(this.#content, () => this.#renderStep());
+        if (focus) this.#view?.heading.focus();
       });
     });
+  }
+
+  #renderStep(): void {
+    this.#content.replaceChildren();
+    this.#footer.replaceChildren();
+    if (this.#step === 2) this.#showSpecimen();
+    else this.#specimen?.clear();
+    const faces = this.#step === 1 ? [] : this.options.library.list();
+    this.#view = renderFontImportView(
+      this.#content,
+      this.#footer,
+      {
+        step: this.#step,
+        files: this.#selection.files,
+        busy: this.#busy,
+        name: this.#displayName(faces),
+        ...(this.#target === undefined ? {} : { targetFamily: this.#target }),
+        ...(this.#previewId === undefined ? {} : { previewId: this.#previewId }),
+        ...(this.#step !== 2 || this.#specimen === undefined
+          ? {}
+          : { specimen: this.#specimen.element }),
+        existingChoices: this.#step === 2 ? fontLibraryChoices(faces) : [],
+        fixedFamily: this.options.family !== undefined,
+      },
+      {
+        chooseFiles: this.#chooseFiles,
+        filesSelected: (files) => this.#selectFiles(files),
+        removeFile: this.#removeFile,
+        nameChanged: (name) => {
+          this.#name = name;
+          this.#targetSelection = { displayName: name.trim() };
+          this.#updatePrimary();
+        },
+        familyChanged: this.#familyChanged,
+        previewChanged: (id) => {
+          this.#previewId = id;
+          this.#showSpecimen();
+        },
+        preparePreview: () => this.#showSpecimen(),
+        back: () => this.#back(),
+        next: () => this.#next(),
+        confirm: () => void this.#commit(),
+      },
+      this.options.localization,
+    );
+    this.#updateReview(faces);
+    this.#feedback?.();
+    this.#feedback = registerNativeControlFeedback(this.#view.root, this.options);
+    this.#footerFeedback?.();
+    this.#footerFeedback = registerNativeControlFeedback(this.#footer, this.options);
+    this.#specimen?.reveal();
+  }
+
+  #displayName(faces: readonly LibraryFontFace[]): string {
+    return faces.find((face) => face.family === this.#target)?.displayName ?? this.#name;
+  }
+
+  #familyChanged = (family: string | undefined): void => {
+    this.#target = family;
+    const faces = this.options.library.list();
+    const nameInput = this.#view?.nameInput;
+    if (nameInput !== undefined) {
+      nameInput.disabled = family !== undefined;
+      nameInput.value = this.#displayName(faces);
+    }
+    mutateFontLibraryDialog(this.options, () => {
+      this.#error.set("");
+      this.#updateReview(faces);
+    });
+  };
+
+  #updateReview(faces: readonly LibraryFontFace[]): void {
+    if (this.#step === 1) return;
+    this.#targetSelection = {
+      displayName: this.#displayName(faces).trim(),
+      ...(this.#target === undefined ? {} : { family: this.#target }),
+    };
+    const review = inspectFontImport(this.#selection.files, faces, this.#targetSelection);
+    this.#reviewBlocked = review.conflicts.size > 0 || review.error !== undefined;
+    this.#view?.showReview(review);
+    this.#updatePrimary();
+  }
+
+  #updatePrimary(): void {
+    if (this.#view !== undefined)
+      this.#view.primary.disabled =
+        this.#busy || this.#reviewBlocked || this.#targetSelection.displayName === "";
+  }
+
+  #showSpecimen(): void {
+    const face =
+      this.#selection.files.find((file) => file.id === this.#previewId) ?? this.#selection.files[0];
+    if (face === undefined || this.#busy) return;
+    this.#specimen ??= new FontImportSpecimen(this.#root, this.options);
+    this.#specimen.show(face);
   }
 
   #selected = (): void => {
@@ -148,6 +209,7 @@ export class FontImportWizard {
     if (this.#selection.files.length === 0) {
       this.#name = "";
       this.#target = this.options.family;
+      this.#step = 1;
     }
     this.#error.set("");
     this.#render();
@@ -183,7 +245,7 @@ export class FontImportWizard {
   }
 
   #next(): void {
-    if (this.#busy || this.#selection.files.length === 0) return;
+    if (this.#busy || this.#view?.primary.disabled !== false) return;
     if (
       this.#step === 2 &&
       this.#target === undefined &&
@@ -210,17 +272,13 @@ export class FontImportWizard {
   }
 
   async #commit(): Promise<void> {
-    if (this.#busy || this.#disposed) return;
+    if (this.#busy || this.#disposed || this.#view?.primary.disabled !== false) return;
+    const target = this.#targetSelection;
     this.#setBusy(true, "fonts.importing");
     try {
       const faces = await this.options.library.commitImport(
         this.#selection.files,
-        {
-          displayName:
-            this.options.library.list().find((face) => face.family === this.#target)?.displayName ??
-            this.#name.trim(),
-          ...(this.#target ? { family: this.#target } : {}),
-        },
+        target,
         this.#selection.signal,
       );
       this.options.imported(faces);
@@ -229,7 +287,9 @@ export class FontImportWizard {
     } finally {
       if (!this.#disposed) {
         this.#setBusy(false);
-        this.#view?.primary.focus();
+        const view = this.#view;
+        if (view?.primary.disabled === false) view.primary.focus();
+        else view?.heading.focus();
       }
     }
   }
@@ -241,35 +301,6 @@ export class FontImportWizard {
       this.#status.textContent = message ? this.options.localization.t(message) : "";
       this.#render();
     });
-  }
-
-  async #loadPreview(): Promise<void> {
-    const target = this.#view?.preview;
-    const face =
-      this.#selection.files.find((file) => file.id === this.#previewId) ?? this.#selection.files[0];
-    if (!target || !face) return;
-    const abort = new AbortController();
-    this.#previewAbort = abort;
-    try {
-      const scheduler =
-        typeof this.options.scheduler === "function"
-          ? this.options.scheduler(target.ownerDocument.defaultView)
-          : this.options.scheduler;
-      const preview = await loadNativeFontPreview(face.resource, {
-        document: target.ownerDocument,
-        scheduler,
-        signal: abort.signal,
-      });
-      if (abort.signal.aborted || this.#disposed) {
-        preview?.dispose();
-        return;
-      }
-      this.#preview = preview;
-      if (preview) mutateFontLibraryDialog(this.options, () => applyFontPreview(target, preview));
-    } catch {
-      if (!abort.signal.aborted && !this.#disposed)
-        this.#error.set(this.options.localization.t("fonts.previewFailure"));
-    }
   }
 
   #message(error: unknown): string {
@@ -290,18 +321,13 @@ export class FontImportWizard {
     return t(messages[error.code]);
   }
 
-  #clearPreview(): void {
-    this.#previewAbort?.abort();
-    this.#previewAbort = undefined;
-    this.#preview?.dispose();
-    this.#preview = undefined;
-  }
-
   public dispose(): void {
     this.#disposed = true;
-    this.#clearPreview();
+    this.#specimen?.dispose();
     this.#selection.dispose();
     this.#feedback?.();
+    this.#footerFeedback?.();
+    this.#footer.remove();
     this.#input.removeEventListener("change", this.#selected);
     this.#error.dispose();
     this.#layout.dispose();

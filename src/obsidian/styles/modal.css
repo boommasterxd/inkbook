@@ -2,6 +2,49 @@
   opacity: var(--inkbook-modal-backdrop-opacity, 0.85);
 }
 
+.inkbook-modal-container[data-inkbook-modal-platform="wide"] > .inkbook-modal-surface {
+  padding-block-start: 0;
+  padding-inline: var(--inkbook-dialog-shell-inset, var(--size-4-4));
+}
+
+.inkbook-dialog-header,
+.inkbook-phone-dialog-header {
+  margin-block-end: var(--size-4-3);
+}
+
+.inkbook-dialog-header {
+  --inkbook-dialog-close-size: 32px;
+
+  align-items: center;
+  display: grid;
+  flex: none;
+  gap: var(--size-4-2);
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-inline: calc(-1 * var(--inkbook-dialog-shell-inset, var(--size-4-4)));
+  padding-block-start: var(--size-4-2);
+  padding-inline: var(--inkbook-dialog-title-inset, var(--size-4-4)) var(--size-4-2);
+}
+
+.is-mobile .inkbook-dialog-header {
+  --inkbook-dialog-close-size: 44px;
+}
+
+.inkbook-dialog-header > .inkbook-dialog-title {
+  margin: 0;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+
+.inkbook-dialog-header > .inkbook-dialog-close {
+  align-items: center;
+  block-size: var(--inkbook-dialog-close-size);
+  display: inline-flex;
+  inline-size: var(--inkbook-dialog-close-size);
+  justify-content: center;
+  padding: 0;
+}
+
 .inkbook-adaptive-panel-layer[data-kind="dialog"] {
   z-index: var(--layer-modal);
 }
@@ -13,9 +56,9 @@
 .inkbook-phone-dialog-header {
   align-items: center;
   display: flex;
+  flex-shrink: 0;
   gap: var(--size-4-2);
   justify-content: space-between;
-  margin-block-end: var(--size-4-3);
 }
 
 .inkbook-phone-dialog-title {

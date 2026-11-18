@@ -262,7 +262,7 @@ export class ActiveEditorMenuController {
         ? {}
         : {
             fontManagementAction: {
-              label: () => menuTranslator(this.#options)("fonts.manage"),
+              label: () => menuTranslator(this.#options)("fonts.add"),
               onActivate: () => {
                 this.closeToolbar("immediate");
                 this.#options.onOpenFonts?.(options.anchor as HTMLButtonElement);

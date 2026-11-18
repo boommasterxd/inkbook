@@ -7,6 +7,7 @@ import {
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { selectFontResources } from "../../../../src/persistence/fonts/font-resources";
 import { fontLibraryChoices } from "../../../../src/obsidian/fonts/font-library-families";
+import { inspectFontImport } from "../../../../src/obsidian/fonts/font-import-plan";
 import { readWoff2Directory } from "../../../../src/persistence/fonts/woff2-directory";
 import { readBundledFont as fontBytes } from "../../../fixtures/persistence/font-assets";
 import * as binaryResources from "../../../../src/persistence/serialization/binary-resource";
@@ -339,6 +340,31 @@ it("rechecks live capacity and selected family after preparation", async () => {
   await expect(
     context.library.commitImport([prepared], { displayName: "Inter" }),
   ).rejects.toMatchObject({ code: "library-full" });
+  expect(context.createBinary).not.toHaveBeenCalled();
+  expect(context.metadataWrite).not.toHaveBeenCalled();
+});
+
+it("rejects a newly overlapping library face after an earlier successful review", async () => {
+  const context = await setup();
+  const incoming = await context.library.prepareImport(context.bytes, "regular.woff2");
+  const family = `custom-${"b".repeat(64)}`;
+  const existing = {
+    ...descriptor,
+    id: "b".repeat(64),
+    family,
+    path: "bold.woff2",
+    displayName: "Headings",
+    weight: 700,
+  };
+  const target = { displayName: existing.displayName, family };
+  expect(inspectFontImport([incoming], [existing], target).conflicts.size).toBe(0);
+  context.setIndex([
+    existing,
+    { ...existing, id: "c".repeat(64), path: "variable.woff2", weightRange: [300, 500] },
+  ]);
+  await expect(context.library.commitImport([incoming], target)).rejects.toMatchObject({
+    code: "face-conflict",
+  });
   expect(context.createBinary).not.toHaveBeenCalled();
   expect(context.metadataWrite).not.toHaveBeenCalled();
 });
