@@ -1,6 +1,7 @@
 .inkbook-image-dialog-surface.inkbook-image-import-surface {
   --inkbook-dialog-shell-inset: 0px;
   --inkbook-dialog-title-inset: var(--size-4-5);
+  --inkbook-image-import-footer-inset: var(--size-4-3);
 
   inline-size: min(480px, calc(100vw - 32px));
   padding: 0;
@@ -16,14 +17,13 @@
   container-type: inline-size;
 }
 
-.inkbook-image-import-surface[data-review="single-page"] {
+.inkbook-image-import-surface:is(
+  [data-review="single-page"],
+  [data-review="pdf-pages"]:not(.inkbook-phone-image-review)
+) {
   --inkbook-image-review-height: auto;
 
   max-block-size: var(--inkbook-image-review-limit);
-}
-
-.inkbook-image-import-surface[data-review="pdf-pages"]:not(.inkbook-phone-image-review) {
-  --inkbook-image-review-height: min(712px, var(--inkbook-image-review-limit));
 }
 
 .inkbook-image-dialog-surface.inkbook-image-import-surface[data-review] {
@@ -54,6 +54,11 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 var(--size-4-5) var(--size-4-4);
+}
+
+.inkbook-image-import-surface[data-review="pdf-pages"]:not(.inkbook-phone-image-review)
+  .inkbook-image-import-body {
+  padding-block-end: var(--inkbook-image-import-footer-inset);
 }
 
 .inkbook-image-import-content .inkbook-image-import-source {
@@ -301,7 +306,7 @@
   flex: 0 0 auto;
   flex-direction: column;
   gap: var(--size-4-3);
-  padding: var(--size-4-3) var(--size-4-5) var(--size-4-4);
+  padding: var(--inkbook-image-import-footer-inset) var(--size-4-5) var(--size-4-4);
 }
 
 .inkbook-image-dialog-container[data-inkbook-modal-platform="phone"]
