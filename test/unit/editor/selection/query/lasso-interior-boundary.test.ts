@@ -97,6 +97,25 @@ describe("even-odd lasso holes inside filled pressure strips", () => {
     expect(enclosed([...outline, { x: 50, y: 50 }, { x: 0, y: 0 }])).toBe(true);
     expect(enclosed([...outline, { x: 50, y: 50 }, { x: 25, y: 25 }, { x: 0, y: 0 }])).toBe(true);
   });
+
+  it("retains a hole at the end of a long diagonal retrace in either direction", () => {
+    const connector = Array.from({ length: 50 }, (_, index) => ({ x: index + 1, y: index + 1 }));
+    const hole = [
+      { x: 55, y: 50 },
+      { x: 55, y: 55 },
+      { x: 50, y: 55 },
+      { x: 50, y: 50 },
+    ];
+    for (const reflect of [false, true]) {
+      const transform = ({ x, y }: { x: number; y: number }) => ({ x: reflect ? 100 - x : x, y });
+      for (const loop of [[], hole]) {
+        const area = [...outline, ...connector, ...loop, ...[...connector].reverse()].map(
+          transform,
+        );
+        expect(enclosed(area)).toBe(loop.length === 0);
+      }
+    }
+  });
 });
 
 describe("self-crossing lasso overlap representatives", () => {

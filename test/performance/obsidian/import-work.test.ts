@@ -2,6 +2,21 @@ import { describe, expect, it, vi } from "vitest";
 
 import { importFixture, writingEmbed } from "../../integration/obsidian/import/import-fixture";
 
+function countEmbedSearches(note: string, embed: string) {
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- Observe searches of the imported note.
+  const indexOf = String.prototype.indexOf;
+  let count = 0;
+  const searches = vi.spyOn(String.prototype, "indexOf").mockImplementation(function (
+    this: string,
+    needle: string,
+    start?: number,
+  ) {
+    if (this === note && needle === embed) count++;
+    return indexOf.call(this, needle, start);
+  });
+  return { count: () => count, restore: () => searches.mockRestore() };
+}
+
 describe("Obsidian Ink import work ownership", () => {
   it("converts, backs up and restores one canonical source across a thousand references", async () => {
     const original = Array.from(
@@ -44,11 +59,18 @@ describe("Obsidian Ink import work ownership", () => {
     expect(fixture.files.get("Ink/example.svg")).toBe("private source body");
     const listFiles = vi.spyOn(fixture.ports, "listFiles");
     const resolveLink = vi.spyOn(fixture.ports, "resolveLink");
+    const searches = countEmbedSearches(
+      fixture.files.get("note.md")!,
+      "![[Ink/example.inkbook.svg]]",
+    );
     fixture.reads.length = 0;
     try {
       const restored = await fixture.service.undo(preview.id);
       expect(restored.journal.status).toBe("undone");
       expect(fixture.files.get("note.md")).toBe(original);
+      // One forward scan of the current note covers all identical replacement texts.
+      expect(searches.count()).toBeGreaterThan(0);
+      expect(searches.count()).toBeLessThanOrEqual(1001);
       // Reconciliation, evidence and source restoration each take one vault snapshot.
       expect(listFiles.mock.calls.length).toBeLessThanOrEqual(3);
       // Evidence resolves before/after links; the restored note is resolved once more.
@@ -56,6 +78,7 @@ describe("Obsidian Ink import work ownership", () => {
       // Evidence, undo preparation and write readback each read the live note once.
       expect(fixture.reads.filter((path) => path === "note.md").length).toBeLessThanOrEqual(3);
     } finally {
+      searches.restore();
       listFiles.mockRestore();
       resolveLink.mockRestore();
     }

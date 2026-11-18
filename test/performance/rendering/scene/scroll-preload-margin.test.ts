@@ -1,5 +1,9 @@
 import { beforeAll, expect, it, vi } from "vitest";
 import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "../../../../src/rendering/scene/constants";
+import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
+import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
+import { SceneVisibilityState } from "../../../../src/rendering/scene/visibility/visibility-state";
+import { PAGE_WIDTH, boundsIntersect } from "../../../../src/domain/geometry/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { takeImmutableElementOwnership } from "../../../../src/domain/store/records/immutability";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
@@ -46,6 +50,76 @@ function drainBoundedPublication(fixture: ReturnType<typeof createIndexedMarginF
     );
   }
 }
+
+it("finishes the latest fractional width-fit scroll fringe while the viewport keeps moving", () => {
+  const domain = new ElementStore(elements);
+  const store = new ElementSceneStore(domain);
+  const state = new SceneVisibilityState(store, createInstrumentation());
+  const viewport = { width: 360, height: 800, left: 0, top: 1_000 };
+  const camera = { zoom: viewport.width / PAGE_WIDTH, x: 0 };
+  const project = (top: number) => visibilityPageBounds({ ...viewport, top }, camera);
+  const initial = project(viewport.top);
+  const published = state.query(initial.envelope, initial.retained).visibility.content.ids;
+  const { query, work } = observeIndexedSceneQueries(domain);
+  const get = vi.spyOn(store, "get");
+  const bounds = vi.spyOn(store, "getBounds");
+  const now = () => work.indexedVisits + get.mock.calls.length + bounds.mock.calls.length;
+  try {
+    for (let step = 0; step < 120; step += 1) {
+      const target = project(viewport.top + 110 + step);
+      const result = state.query(target.envelope, target.retained, true, now() + 12, now);
+      if (result.pending) {
+        expect(result.visibility.content.ids).toBe(published);
+        continue;
+      }
+      const expected = elements
+        .filter(({ id }) => boundsIntersect(domain.get(id)!.bounds, target.envelope))
+        .map(({ id }) => id);
+      expect(result.visibility.content.ids).toEqual(expected);
+      expect(result.delta?.entered.length).toBeGreaterThan(0);
+      expect(result.delta?.exited.length).toBeGreaterThan(0);
+      // Each edge travels under six grid rows, each containing at most 28 overlapping boxes.
+      expect(query.mock.calls.length).toBeLessThanOrEqual(12);
+      expect(work.indexedVisits).toBeLessThanOrEqual(700);
+      expect(bounds.mock.calls.length).toBeGreaterThan(get.mock.calls.length);
+      expect(new Set(bounds.mock.calls.map(([id]) => id)).size).toBe(bounds.mock.calls.length);
+      expect(new Set(get.mock.calls.map(([id]) => id)).size).toBe(get.mock.calls.length);
+      return;
+    }
+    throw new Error("Overlapping scroll targets exhausted every slice without publication.");
+  } finally {
+    bounds.mockRestore();
+    get.mockRestore();
+    query.mockRestore();
+    state.release();
+    store.release();
+    expect(state.queryMemoryUsage()).toBe(0);
+  }
+});
+
+it("visits only the touched cell when both scroll edges move within one dense row of the index", () => {
+  const domain = new ElementStore(elements);
+  const store = new ElementSceneStore(domain);
+  const state = new SceneVisibilityState(store, createInstrumentation());
+  const first = { minX: 0, maxX: 100, minY: 520, maxY: 535 };
+  state.query(first);
+  const { query, work } = observeIndexedSceneQueries(domain);
+  const rank = vi.spyOn(domain, "getRank");
+  try {
+    const next = { ...first, minY: 525, maxY: 540 };
+    const result = state.query(next);
+    expect(result.delta?.entered).toEqual([elements[54]!.id]);
+    expect(result.visibility.content.ids).toEqual(elements.slice(51, 55).map(({ id }) => id));
+    // A 256-unit row has at most 28 intersecting boxes spaced ten units apart.
+    expect(work.indexedVisits).toBeLessThanOrEqual(28 + 8);
+    expect(rank.mock.calls).toEqual([[elements[54]!.id]]);
+  } finally {
+    rank.mockRestore();
+    query.mockRestore();
+    state.release();
+    store.release();
+  }
+});
 
 it.each([100, 300, 800])(
   "bounds actual indexed visits and roots for a %s-pixel margin within 10,000 rows",

@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import * as backgroundGuides from "../../../../src/domain/geometry/background-guides";
 import type { SceneCamera, SceneViewport } from "../../../../src/rendering/scene/types";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { ScenePathCache } from "../../../../src/rendering/scene/content/path-cache";
@@ -21,7 +22,37 @@ import {
 } from "../../../fixtures/rendering/scene-publication";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
-import { FakeSceneStore, fakeNode } from "../../../unit/rendering/scene/fakes";
+import { FakeNode, FakeSceneStore, fakeNode } from "../../../unit/rendering/scene/fakes";
+
+it.each(["lines", "squares", "dots"] as const)(
+  "changes only zoom-dependent SVG attributes of a retained %s background",
+  (type) => {
+    const page = { ...NAVIGATION_PAGE, background: { type, spacing: 25 } as const };
+    const { renderer, scheduler } = createSceneFixture(page, new FakeSceneStore());
+    renderer.setPage(page, 1_048.6);
+    scheduler.runAll();
+    const layout = vi.spyOn(backgroundGuides, "backgroundGuideLayout");
+    const writes = vi.spyOn(FakeNode.prototype, "setAttribute");
+    const removals = vi.spyOn(FakeNode.prototype, "removeAttribute");
+    try {
+      renderer.setCamera({ x: -3, zoom: 1.25 });
+      scheduler.runAll();
+      const names = writes.mock.calls.map(([name]) => name);
+      const allowed = new Set(["d", "stroke-width", "transform", "y"]);
+      if (type !== "lines") allowed.add("x");
+      expect(names.filter((name) => !allowed.has(name))).toEqual([]);
+      // Two paths and two stroke widths change along with the camera and tile origin.
+      expect(names.length).toBeLessThanOrEqual(type === "lines" ? 6 : 7);
+      expect(removals).not.toHaveBeenCalled();
+      expect(layout).not.toHaveBeenCalled();
+    } finally {
+      layout.mockRestore();
+      writes.mockRestore();
+      removals.mockRestore();
+      renderer.destroy();
+    }
+  },
+);
 
 function createZoomRecords(): FakeSceneStore {
   const records = new FakeSceneStore();

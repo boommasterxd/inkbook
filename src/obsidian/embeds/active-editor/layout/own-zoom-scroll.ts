@@ -59,11 +59,11 @@ export class OwnZoomScrollProof {
 
   public consume(owner: BrowserScrollElement): boolean {
     const container = this.#options.container;
-    const revision = this.#revision();
     const pending = this.#pending;
     this.clear();
+    if (pending === undefined) return false;
+    const revision = this.#revision();
     if (
-      pending === undefined ||
       pending.revision.scene !== revision.scene ||
       pending.revision.host !== revision.host ||
       pending.layout.scrollOwner !== owner ||
@@ -80,10 +80,9 @@ export class OwnZoomScrollProof {
     // Host content can move without resizing the widget or changing scrollTop.
     // Validate raw rectangles, retaining the already measured content insets.
     const currentBorder = container.getBoundingClientRect();
-    const currentViewport = readScrollOwnerViewport(owner);
     return (
       sameBounds(expectedBorder, currentBorder) &&
-      sameBounds(pending.layout.ownerViewport, currentViewport)
+      sameBounds(pending.layout.ownerViewport, readScrollOwnerViewport(owner))
     );
   }
 

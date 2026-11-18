@@ -132,7 +132,7 @@ export class DocumentModelRuntime {
         stagedDerivations = derivations;
         await onValidatedSnapshot?.(stagedSnapshot, derivations, signal);
       },
-      "safe",
+      this.ownsTransferredSamples ? "worker-safe" : "safe",
       this.#serializer.sampleEncodingCache,
       safeStaticProof,
     );

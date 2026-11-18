@@ -30,6 +30,7 @@ export interface LockedPreviewPresentation {
 
 export interface InkbookLockedPreviewSurface {
   readonly releaseHiddenSurface: () => void;
+  readonly setLayoutVisible: (visible: boolean) => void;
   readonly element: HTMLButtonElement;
   readonly refresh: () => void;
   readonly ensureReady: () => Promise<void>;
@@ -41,16 +42,19 @@ export interface InkbookLockedPreviewSurface {
   readonly setSource: (source: string) => Promise<PreviewContentIdentity | undefined>;
 }
 
+interface LockedPreviewOptions {
+  readonly documentId: string;
+  readonly documents: InkbookDocumentRecognitionPort;
+  readonly waitForLayout?: boolean;
+}
+
 export function createInkbookLockedPreview(
   button: HTMLButtonElement,
   descriptor: InkbookLockedPreviewDescriptor,
   workScheduler: WorkScheduler,
-  sourceLoader?: {
-    readonly documentId: string;
-    readonly documents: InkbookDocumentRecognitionPort;
-  },
+  options?: LockedPreviewOptions,
 ): InkbookLockedPreviewSurface {
-  return new LockedPreview(button, descriptor, workScheduler, sourceLoader);
+  return new LockedPreview(button, descriptor, workScheduler, options);
 }
 
 class LockedPreview implements InkbookLockedPreviewSurface {
@@ -71,21 +75,19 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   #readinessRequests = 0;
   #failure: Error | undefined;
   #releaseRequested = false;
+  #layoutVisible: boolean;
 
   public constructor(
     public readonly element: HTMLButtonElement,
     descriptor: InkbookLockedPreviewDescriptor,
     private readonly workScheduler: WorkScheduler,
-    private readonly sourceLoader?: {
-      readonly documentId: string;
-      readonly documents: InkbookDocumentRecognitionPort;
-    },
+    private readonly sourceLoader?: LockedPreviewOptions,
   ) {
     if (Platform.isAndroidApp) element.classList.add("inkbook-locked-preview-android");
     this.#media = element.createDiv({ cls: "inkbook-locked-preview-media" });
     this.#media.setAttribute("aria-hidden", "true");
     this.#media.dataset.inkbookScheme = "light";
-    this.#surface = new StaticPreviewSurface(this.#media);
+    this.#layoutVisible = sourceLoader?.waitForLayout !== true;
     this.#scheduler = new PreviewIdleScheduler(workScheduler);
     this.#descriptor = descriptor;
     this.#mountedIdentity = undefined;
@@ -101,6 +103,14 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   public readonly setColorScheme = (scheme: InkbookColorScheme): void => {
     this.#media.dataset.inkbookScheme = scheme;
     this.#surface?.setColorScheme(scheme);
+  };
+
+  public readonly setLayoutVisible = (visible: boolean): void => {
+    if (this.#disposed || this.#layoutVisible === visible) return;
+    this.#layoutVisible = visible;
+    if (visible) this.refresh();
+    // The active scene owns its hidden button until handoff, reversal or disposal.
+    else if (this.#readinessRequests === 0 && !this.element.hidden) this.#releaseSurface();
   };
 
   public readonly refresh = (): void => {
@@ -145,6 +155,10 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   public readonly releaseHiddenSurface = (): void => {
     if (this.#disposed || !this.element.hidden) return;
     this.#releaseRequested = true;
+    this.#releaseSurface();
+  };
+
+  #releaseSurface(): void {
     this.#generation += 1;
     this.#preparationAbort?.abort();
     this.#mountAbort?.abort();
@@ -154,7 +168,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     if (this.#readinessRequests > 0) return;
     this.#surface?.dispose();
     this.#surface = undefined;
-  };
+  }
 
   public readonly setDescriptor = (descriptor: InkbookLockedPreviewDescriptor): void => {
     if (this.#disposed) return;
@@ -244,6 +258,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     if (samePreviewContentIdentity(this.#descriptor.contentIdentity, descriptor.contentIdentity))
       return;
     this.#descriptor = descriptor;
+    if (!this.#layoutVisible) this.setAspectRatio(descriptor.aspectRatio);
     this.#generation += 1;
     this.#preparationAbort?.abort();
     this.#prepared = undefined;
@@ -256,7 +271,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     if (
       this.#disposed ||
       (this.#releaseRequested && this.element.hidden) ||
-      (this.element.hidden && this.#readinessRequests === 0) ||
+      ((!this.#layoutVisible || this.element.hidden) && this.#readinessRequests === 0) ||
       this.#prepared !== undefined ||
       this.#failure !== undefined ||
       this.#matchesMounted(this.#descriptor.contentIdentity)

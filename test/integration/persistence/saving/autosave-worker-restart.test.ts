@@ -57,7 +57,7 @@ async function harness(failure: "export" | "active-write" | "sync" | "external")
     confirmedBase: { type: "confirmed", revision: 0, outputHash: initial.hash },
     executor: primary,
     createReplacement,
-    initialSnapshot: snapshot(),
+    initialRevision: 0,
     path: "restart.svg",
     sessionId: "restart",
     vault,

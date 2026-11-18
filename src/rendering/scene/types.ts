@@ -59,6 +59,8 @@ export interface SceneStorePort {
     import("../../domain/geometry/prepared-scene-paths").ScenePathPreparation | undefined;
   pressureGeometry?(id: string, geometryVersion: number): PreparedPressureGeometryPort;
   get(id: string): SceneElementRecord | undefined;
+  /** Reads the same indexed geometry without materializing paint or order for a retained root. */
+  getBounds?(id: string): Bounds | undefined;
   /** Document-wide presence stays independent of the currently culled presentation. */
   bandSize?(band: SceneBand): number;
   beginOrder?(): import("../../domain/store/mutations/order-cursor").StoreOrderCursor;

@@ -29,6 +29,13 @@ interface PressureHitIndex {
 
 const pressureHitIndexes = new WeakMap<object, PressureHitIndex>();
 
+export function hasStrokeHitGeometry(stroke: {
+  readonly style: { readonly opacity: number };
+  readonly points: ArrayLike<number>;
+}): boolean {
+  return !(stroke.style.opacity <= 0 || stroke.points.length < 3);
+}
+
 /** Cache compact centers and bounds; test only nearby swept nibs. */
 export function pressureStrokeContainsPoint(
   stroke: StrokeElementV1,
@@ -36,7 +43,7 @@ export function pressureStrokeContainsPoint(
   tolerance: number,
   prepared?: PreparedPressureGeometryPort,
 ): boolean {
-  if (stroke.style.opacity <= 0 || stroke.points.length < 3) return false;
+  if (!hasStrokeHitGeometry(stroke)) return false;
   const source = stroke;
   if (stroke.offset !== undefined) {
     point = { x: point.x - stroke.offset.x, y: point.y - stroke.offset.y };

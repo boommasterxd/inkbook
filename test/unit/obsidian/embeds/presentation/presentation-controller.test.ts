@@ -137,30 +137,39 @@ describe("persistent presentation shell measurement", () => {
     },
   );
 
-  it("waits for a positive root width before releasing queued activation", () => {
-    const owner = new FakePresentationElement();
-    const root = new FakePresentationElement(owner.ownerDocument);
-    owner.append(root);
-    let width = 0;
-    root.getBoundingClientRect = () => ({
-      bottom: 100,
-      height: 100,
-      left: 0,
-      right: width,
-      top: 0,
-      width,
-    });
-    const activate = vi.fn();
-    const controller = mountShellMeasurement(root, "zero-width", activate);
-    controller.activate();
-    expect(activate).not.toHaveBeenCalled();
-    expect(root.style).not.toHaveProperty("--inkbook-shell-radius");
-    width = 600;
-    root.ownerDocument.defaultView?.dispatchEvent(new Event("resize"));
-    expect(activate).toHaveBeenCalledOnce();
-    expect(root.style).toHaveProperty("--inkbook-shell-radius", "12px");
-    controller.dispose();
-  });
+  it.each([0, 600])(
+    "restores a hidden widget in a %i-pixel scrollport without a window resize",
+    (initialWidth) => {
+      const owner = new FakePresentationElement();
+      owner.clientWidth = initialWidth;
+      const root = new FakePresentationElement(owner.ownerDocument);
+      owner.append(root);
+      const observers = installObservers(root.ownerDocument.defaultView as Window);
+      const styles = root.style as unknown as Record<string, string>;
+      root.style.setProperty("--inkbook-embed-inline-size", "400px");
+      let visible = false;
+      root.getBoundingClientRect = () => {
+        const limit = Number.parseFloat(styles["--inkbook-owner-inline-limit"] ?? "Infinity");
+        const naturalWidth = Number.parseFloat(styles["--inkbook-embed-inline-size"]!);
+        const width = visible ? Math.min(naturalWidth, owner.clientWidth, limit) : 0;
+        return { bottom: 100, height: 100, left: 0, right: width, top: 0, width };
+      };
+      const activate = vi.fn();
+      const controller = mountShellMeasurement(root, "zero-width", activate);
+      controller.activate();
+      expect(activate).not.toHaveBeenCalled();
+      expect(root.style).not.toHaveProperty("--inkbook-shell-radius");
+      visible = true;
+      owner.clientWidth = 600;
+      // Only a real change in the widget's box can notify its existing observer.
+      expect(root.getBoundingClientRect().width).toBe(400);
+      observers.resize();
+      expect(activate).toHaveBeenCalledOnce();
+      expect(root.style).toHaveProperty("--inkbook-owner-inline-limit", "600px");
+      expect(root.style).toHaveProperty("--inkbook-container-width", "400px");
+      controller.dispose();
+    },
+  );
 });
 
 describe("presentation owner measurement", () => {

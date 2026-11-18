@@ -23,6 +23,8 @@ export type CoalescedCreationSample = GesturePreviewStart["pointer"] & {
 };
 
 interface CoalescedGesturePreview extends GesturePreview {
+  /** The preview owns its frame and consumes the last validated sample of each incoming batch. */
+  readonly latestBatchSampleOnly?: boolean;
   updateSamples(samples: readonly CoalescedCreationSample[]): void;
 }
 
@@ -156,6 +158,7 @@ export class CoalescedPointerInput {
     const frame = isCoalescedFramePreview(preview)
       ? new CoalescedPreviewFrame(preview, project, this.#frameScheduler)
       : null;
+    const latestOnly = isCoalescedGesturePreview(preview) && preview.latestBatchSampleOnly === true;
     return {
       commit: () => {
         frame?.flush();
@@ -171,8 +174,11 @@ export class CoalescedPointerInput {
         if (observesRawSamples(preview)) {
           preview.observeInputSamples(incoming);
         }
-        if (frame === null) updateGesturePreview(preview, incoming.map(project));
-        else frame.update(incoming);
+        if (frame !== null) frame.update(incoming);
+        else if (latestOnly) {
+          const latest = incoming[incoming.length - 1];
+          if (latest !== undefined) preview.update(project(latest));
+        } else updateGesturePreview(preview, incoming.map(project));
       },
     };
   }

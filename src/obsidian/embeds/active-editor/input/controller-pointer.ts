@@ -176,16 +176,16 @@ export class ActiveEditorPointerController {
     }
     const pagePointer = this.#options.navigation.pageSample(pointer);
     this.#options.setLastPointer(pagePointer, pointer);
+    const normalPrimary =
+      classification.handleEligible && this.#options.cursor.penRole(event.pointerId) === "normal";
     if (
       beginHandlePointer(event, pagePointer, this.#options, {
-        eligible:
-          classification.handleEligible &&
-          this.#options.cursor.penRole(event.pointerId) === "normal",
+        eligible: normalPrimary,
         preferredHandle,
       })
     )
       return;
-    const target = this.#pointerDownTarget(pagePointer, event.button);
+    const target = this.#pointerDownTarget(pagePointer, event.button, normalPrimary);
     this.#options.menus.dispatchFromEvent(
       classification.isPlatformContextClick ? event : undefined,
       () =>
@@ -262,14 +262,23 @@ export class ActiveEditorPointerController {
     );
   }
 
-  #pointerDownTarget(pointer: PointerSample, button: number) {
+  #pointerDownTarget(pointer: PointerSample, button: number, normalPrimary: boolean) {
     if (pointer.pointerType === "mouse") {
       this.#secondaryContextOwned = false;
       if (button === 2) return this.#selectionTarget(pointer, "mouse", true);
     }
-    return this.#options.getInput().activeTool === "select" && pointer.pointerType !== "touch"
-      ? this.#selectedTarget(pointer)
-      : this.#selectionTarget(pointer, pointer.pointerType);
+    if (pointer.pointerType !== "touch") {
+      const { activeTool } = this.#options.getInput();
+      if (activeTool === "select") return this.#selectedTarget(pointer);
+      const freehand = activeTool === "draw" || activeTool === "highlighter";
+      if (
+        normalPrimary &&
+        (freehand || activeTool === "eraser") &&
+        this.#options.selection().size === 0
+      )
+        return undefined;
+    }
+    return this.#selectionTarget(pointer, pointer.pointerType);
   }
 
   #pendingSelectTarget(pointer: PointerSample) {

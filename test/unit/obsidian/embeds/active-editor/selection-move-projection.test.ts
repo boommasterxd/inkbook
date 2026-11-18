@@ -4,6 +4,7 @@ import type { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/act
 import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import type { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { ElementStore } from "../../../../../src/domain/store/public";
+import { rectangle } from "../../../domain/store/fixtures";
 
 const pointer = (x: number, y: number) => ({ pointerId: 10, pointerType: "mouse" as const, x, y });
 
@@ -22,21 +23,24 @@ describe("selection move edge-scroll projection", () => {
       }),
     };
     const setPreviewTransform = vi.fn();
+    const setSelectionOverlayPath = vi.fn();
     const flushPointerFeedbackFrame = vi.fn();
+    const element = rectangle(undefined, 0, 0);
     const preview = new MovePreview({
       history: {} as ActiveEditorHistory,
-      pageToScreen: (point) => point,
-      pageToViewport: ({ x, y }) => ({ x, y: y - scrollOffset }),
+      pageToScreen: ({ x, y }) => ({ x: x * zoom, y: y * zoom }),
+      pageToViewport: ({ x, y }) => ({ x: x * zoom, y: y * zoom - scrollOffset }),
       preparedHistory: {} as PreparedElementHistory,
       renderer: {
         clearPreviewTransforms: vi.fn(),
         flushPointerFeedbackFrame,
         setOverlayPath: vi.fn(),
         setPreviewTransform,
+        setSelectionOverlayPath,
         suppressMotionForNextDelta: vi.fn(),
       },
       sceneStore: {} as ElementSceneStore,
-      selection: () => new Set(),
+      selection: () => new Set([element.id]),
       selectionEdgeDrag: edgeDrag,
       setSelection: vi.fn(),
       start: {
@@ -45,13 +49,17 @@ describe("selection move edge-scroll projection", () => {
         pointer: pointer(10, 20),
         tool: "select",
       },
-      store: new ElementStore([]),
-      viewportToPage: ({ x, y }) => ({ x, y: y + scrollOffset }),
+      store: new ElementStore([element]),
+      viewportToPage: ({ x, y }) => ({ x: x / zoom, y: (y + scrollOffset) / zoom }),
       zoom: () => zoom,
     });
 
     preview.update(pointer(30, 50));
-    expect(setPreviewTransform.mock.lastCall?.slice(0, 3)).toEqual([[], "translate(20 30)", 1]);
+    expect(setPreviewTransform.mock.lastCall?.slice(0, 3)).toEqual([
+      [element.id],
+      "translate(20 30)",
+      1,
+    ]);
     refreshViewport?.();
     refreshViewport?.();
     expect(setPreviewTransform).toHaveBeenCalledOnce();
@@ -60,7 +68,13 @@ describe("selection move edge-scroll projection", () => {
     scrollOffset = 40;
     refreshViewport?.();
 
-    expect(setPreviewTransform.mock.lastCall?.slice(0, 3)).toEqual([[], "translate(20 70)", 2]);
+    expect(setPreviewTransform.mock.lastCall?.slice(0, 3)).toEqual([
+      [element.id],
+      "translate(20 70)",
+      2,
+    ]);
+    // The rotation handle stays 28 screen pixels above the translated top edge.
+    expect(setSelectionOverlayPath.mock.lastCall?.[2]).toContain("M 115 42 a ");
     expect(flushPointerFeedbackFrame).toHaveBeenCalledTimes(2);
     refreshViewport?.();
     expect(setPreviewTransform).toHaveBeenCalledTimes(2);
@@ -68,6 +82,8 @@ describe("selection move edge-scroll projection", () => {
     zoom = 2;
     refreshViewport?.();
     expect(setPreviewTransform).toHaveBeenCalledTimes(3);
+    expect(setPreviewTransform.mock.lastCall?.[1]).toBe("translate(5 25)");
+    expect(setSelectionOverlayPath.mock.lastCall?.[2]).toContain("M 205 22 a ");
     expect(flushPointerFeedbackFrame).toHaveBeenCalledTimes(3);
     preview.revert();
     refreshViewport?.();

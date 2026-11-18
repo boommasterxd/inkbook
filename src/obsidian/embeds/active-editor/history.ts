@@ -1,6 +1,7 @@
 import { AppliedCommandHistory } from "../../../domain/commands/history";
 import { RENDER_BANDS, type RenderBand } from "../../../domain/commands/render-bands";
-import type { InkElementV1, PageV1 } from "../../../domain/schema/public";
+import type { InkElementV1, PageV1, StrokeElementV1 } from "../../../domain/schema/public";
+import { prepareStrokeInsertion } from "../../../domain/store/mutations/prepared-insertion-element";
 import type {
   DocumentMutationAvailability,
   EditableDocumentModel,
@@ -91,10 +92,25 @@ export class ActiveEditorHistory {
 
   public create(elements: readonly InkElementV1[]): boolean {
     if (elements.length === 0) return false;
+    const first = elements[0];
+    if (elements.length === 1 && first?.kind === "stroke") return this.#createStroke(first);
     return this.#execute({
       apply: () => this.#model.commitElements(elements),
       payloadBytes: estimateElementHistoryPayloadBytes(elements),
       revert: () => this.#model.removeElements(elements.map(({ id }) => id)),
+    });
+  }
+
+  #createStroke(stroke: StrokeElementV1): boolean {
+    return this.#execute({
+      apply: () => {
+        stroke = prepareStrokeInsertion(stroke);
+        this.#model.commitElements([stroke]);
+      },
+      get payloadBytes() {
+        return estimateElementPayloadBytes(stroke);
+      },
+      revert: () => this.#model.removeElements([stroke.id]),
     });
   }
 

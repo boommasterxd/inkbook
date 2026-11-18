@@ -5,7 +5,10 @@ import * as centers from "../../../src/domain/geometry/stroke-path";
 import * as simplification from "../../../src/domain/geometry/stroke-simplification";
 import * as pressureUnion from "../../../src/domain/geometry/pressure/pressure-union";
 import * as position from "../../../src/domain/geometry/stroke-position";
+import { calculateElementBounds } from "../../../src/domain/geometry/public";
+import { registerImmutableLassoPoints } from "../../../src/editor/selection/query/lasso-edge-index";
 import {
+  createLassoSelectionArea,
   createRectangleSelectionArea,
   elementMatchesSelectionAreaSteps,
 } from "../../../src/editor/selection/query/selection-area";
@@ -43,6 +46,50 @@ function completeQuery(steps: Generator<number | void, boolean>): boolean {
   while (!step.done) step = steps.next();
   return step.value;
 }
+
+it("bounds coordinate reads for enclosure across a partially retraced lasso", () => {
+  const area = createLassoSelectionArea([
+    { x: 0, y: 50 },
+    { x: 0, y: 0 },
+    { x: 1000, y: 0 },
+    { x: 1000, y: 100 },
+    { x: 0, y: 100 },
+    { x: 0, y: 50 },
+    ...Array.from({ length: 250 }, (_, i) => ({ x: 3.5 * (i + 1), y: 50 })),
+    ...Array.from({ length: 250 }, (_, i) => ({ x: 3.5 * (249.25 - i), y: 50 })),
+  ]);
+  let reads = 0;
+  const points = Object.freeze(
+    area.points.map(({ x, y }) =>
+      Object.freeze({
+        get x() {
+          reads += 1;
+          return x;
+        },
+        get y() {
+          reads += 1;
+          return y;
+        },
+      }),
+    ),
+  );
+  registerImmutableLassoPoints(points);
+  const shape = rectangle(undefined, 10, 10);
+  shape.width = 850;
+  shape.height = 80;
+  shape.pivot = { x: 435, y: 50 };
+  shape.style = { ...shape.style, fillColor: shape.style.outlineColor, fillOpacity: 1 };
+  const query = elementMatchesSelectionAreaSteps(
+    { kind: "lasso", bounds: area.bounds, points },
+    shape,
+    "fully-enclosed",
+    calculateElementBounds(shape),
+  );
+  expect(completeQuery(query)).toBe(true);
+  // About 450 enclosed edges each straddle only a few local ranges on the two passes.
+  expect(reads).toBeGreaterThan(0);
+  expect(reads).toBeLessThan(2_000_000);
+});
 
 function frameFixture(rotation: number) {
   const source = { ...maximumStroke(0), rotation };

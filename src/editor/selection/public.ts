@@ -6,6 +6,7 @@ export { LassoSelectionSession } from "./query/lasso-selection-session";
 export { ConnectedSelectionPreviewSession } from "./connection-preview";
 export type { ConnectedSelectionPreview } from "./connection-preview";
 export { elementContainsPoint, HitTestScratch } from "./query/hit-test";
+export { hasStrokeHitGeometry } from "./query/pressure-hit-test";
 export { moveSelectionWithSnap } from "./transform/move-snap";
 export type { SelectionMoveSnap } from "./transform/move-snap";
 export { moveSelectionTimeSliced } from "./transform/transforms";
@@ -16,7 +17,11 @@ export {
   selectionBounds,
 } from "./handles";
 export type { SelectionHandle } from "./handles";
-export { selectionOverlayContainsPoint, selectionOverlayGeometry } from "./overlay-geometry";
+export {
+  selectionOverlayContainsPoint,
+  selectionOverlayGeometry,
+  transformSelectionOverlay,
+} from "./overlay-geometry";
 export type { SelectionOutline, SelectionOverlayGeometry } from "./overlay-geometry";
 export {
   createSelectionFrameAtRotation,

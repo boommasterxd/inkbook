@@ -1,6 +1,17 @@
 import type { ValidationError } from "../../../domain/schema/public";
 import type { DocumentCodecError, DocumentCodecErrorCode, DocumentCodecResult } from "../types";
 
+export async function writeInputByteChunks(
+  parser: { write(chunk: Uint8Array): Promise<DocumentCodecResult<undefined>> },
+  input: Uint8Array,
+  chunkBytes: number,
+): Promise<void> {
+  for (let offset = 0; offset < input.byteLength; offset += chunkBytes) {
+    const written = await parser.write(input.subarray(offset, offset + chunkBytes));
+    if (!written.ok) return;
+  }
+}
+
 export function combineInputBytes(chunks: readonly Uint8Array[], totalBytes: number): Uint8Array {
   if (chunks.length === 1) return chunks[0]!;
   const combined = new Uint8Array(totalBytes);
@@ -44,4 +55,13 @@ export function staticInputFailure(
         "static-path-mismatch",
         "Static SVG paths do not match the canonical snapshot rendering.",
       );
+}
+
+export function metadataJsonFailure(code: string): DocumentCodecResult<never> {
+  return inputFailure(
+    "invalid-json",
+    code === "duplicate-key"
+      ? "Snapshot metadata is not canonical compact JSON."
+      : "Snapshot metadata is not valid JSON.",
+  );
 }

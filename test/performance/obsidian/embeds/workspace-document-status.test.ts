@@ -165,7 +165,7 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz: bounds native save-status DOM
     confirmedBase: { outputHash: serialized.hash, revision: 0, type: "confirmed" },
     documentSource,
     executor: { execute, terminate: vi.fn() },
-    initialSnapshot: documentSource.snapshot(),
+    initialRevision: documentSource.currentRevision(),
     observer: {
       statusChanged: (value) => status.update({ dirty: coordinator.dirty, status: value }),
     },

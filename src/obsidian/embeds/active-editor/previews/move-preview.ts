@@ -5,11 +5,14 @@ import { ScheduledMoveSnap } from "../../../../editor/selection/transform/schedu
 import {
   ConnectedSelectionPreviewSession,
   moveSelectionWithSnap,
+  selectionOverlayGeometry,
+  transformSelectionOverlay,
   type ConnectedSelectionPreview,
   type OrientedSelectionFrame,
   type SelectedElementGeometry,
   type SelectionFrameHistoryEffect,
   type SelectionMoveSnap,
+  type SelectionOverlayGeometry,
   type SelectionPreviewTransform,
 } from "../../../../editor/selection/public";
 
@@ -23,11 +26,10 @@ import { hasLinearConnectionDependencies } from "../../../../editor/selection/se
 import { LockedElementMutationError } from "../../../../domain/store/public";
 
 export class MovePreview implements GesturePreview {
+  public readonly latestBatchSampleOnly = true;
   readonly #connectionPreparation: ConnectionPreviewPreparation;
   readonly #connectedPreview: ConnectedSelectionPreviewSession;
   readonly #elements: readonly InkElementV1[];
-  readonly #frameScheduler: SelectionPreviewOptions["frameScheduler"];
-  readonly #ids: readonly string[];
   readonly #options: SelectionPreviewOptions;
   readonly #selectedIds: ReadonlySet<string>;
   readonly #selectedGeometry: readonly SelectedElementGeometry[];
@@ -42,13 +44,14 @@ export class MovePreview implements GesturePreview {
   #lastPointer: SelectionPreviewOptions["start"]["pointer"];
   #lastRenderedZoom: number | undefined;
   #moveSnap: SelectionMoveSnap | null = null;
+  #overlay:
+    { readonly zoom: number; readonly geometry: SelectionOverlayGeometry | null } | undefined;
   #previewMaximumBottomValue: number | undefined;
   #pendingPointer: SelectionPreviewOptions["start"]["pointer"] | undefined;
   #version = 0;
 
   public constructor(options: SelectionPreviewOptions) {
     this.#options = options;
-    this.#frameScheduler = options.frameScheduler;
     const selectedGeometry = options.selectionGeometry?.() ?? this.#readSelectedGeometry();
     const sourceSelection = options.selection();
     this.#selectedIds =
@@ -73,16 +76,17 @@ export class MovePreview implements GesturePreview {
       Number.NEGATIVE_INFINITY,
     );
     this.#selectionFrame = options.selectionFrames?.current(selectedGeometry) ?? null;
-    this.#ids = this.#elements.map(({ id }) => id);
+    const ids = this.#elements.map(({ id }) => id);
     this.#connectedPreview = new ConnectedSelectionPreviewSession(
       options.store,
       this.#elements,
       this.#selectedIds,
     );
     this.#transformIds =
-      options.renderer.setElementPreviews === undefined
-        ? this.#ids
-        : this.#ids.filter((id) => !this.#connectedPreview.selectedPreviewIds.has(id));
+      options.renderer.setElementPreviews === undefined ||
+      this.#connectedPreview.selectedPreviewIds.size === 0
+        ? ids
+        : ids.filter((id) => !this.#connectedPreview.selectedPreviewIds.has(id));
     this.#lastPointer = options.start.pointer;
     this.#currentViewport = (options.pageToViewport ?? options.pageToScreen)(options.start.pointer);
     options.selectionEdgeDrag?.begin(() => this.#refreshAfterViewportChange());
@@ -346,17 +350,35 @@ export class MovePreview implements GesturePreview {
         ? this.#connectedSelectionGeometry(connected.elements)
         : null;
     const selected = exact ?? this.#selectedGeometry;
-    const paths = selectionOverlayPaths(selected, {
-      pageToScreen: this.#options.pageToScreen,
-      frame: exact === null ? this.#selectionFrame : null,
-      transform: exact === null ? transform : null,
-      zoom: this.#selectionZoom(),
-    });
+    const zoom = this.#selectionZoom();
+    const paths = selectionOverlayPaths(
+      selected,
+      { pageToScreen: this.#options.pageToScreen, zoom },
+      exact === null ? this.#overlayAt(zoom, transform) : undefined,
+    );
     this.#options.renderer.setSelectionOverlayPath?.(
       paths.outline,
       selectionOverlayFill(selected),
       paths.handles,
     );
+  }
+
+  #overlayAt(
+    zoom: number,
+    transform: SelectionPreviewTransform | null,
+  ): SelectionOverlayGeometry | null {
+    if (this.#overlay?.zoom !== zoom) {
+      this.#overlay = {
+        zoom,
+        geometry: selectionOverlayGeometry(
+          this.#selectedGeometry,
+          zoom,
+          null,
+          this.#selectionFrame,
+        ),
+      };
+    }
+    return transformSelectionOverlay(this.#overlay.geometry, transform, zoom);
   }
 
   #connectedSelectionGeometry(
@@ -431,7 +453,7 @@ export class MovePreview implements GesturePreview {
   }
 
   #schedulePointerFrame(): void {
-    const scheduler = this.#frameScheduler;
+    const scheduler = this.#options.frameScheduler;
     if (scheduler === undefined) {
       this.#applyPendingPointer();
       return;
@@ -472,7 +494,7 @@ export class MovePreview implements GesturePreview {
 
   #cancelPointerFrame(): void {
     if (this.#frameHandle === undefined) return;
-    this.#frameScheduler?.cancelFrame(this.#frameHandle);
+    this.#options.frameScheduler?.cancelFrame(this.#frameHandle);
     this.#frameHandle = undefined;
   }
 }

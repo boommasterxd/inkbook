@@ -1,6 +1,6 @@
 import { createInputStaticMatcher, finishInputStaticMatcher } from "./input-static-matcher";
 import { StreamingSafeStaticValidator } from "./streaming-safe-static";
-import { SafeStaticProof } from "./safe-static-proof";
+import type { SafeStaticProof } from "./safe-static-proof";
 import { StrokeSampleEncodingCache } from "../metadata/stroke-sample-encoding-cache";
 import {
   ValidatedSnapshotAdoption,
@@ -26,8 +26,10 @@ import {
 import {
   positiveInputInteger,
   inputFailure as failure,
+  metadataJsonFailure,
   metadataSliceEnd,
   staticInputFailure,
+  writeInputByteChunks,
 } from "./chunked-input-utils";
 import { requiresTextLengthRewrite } from "./text-length-rewrite";
 import { isCanonicalLockedHeight } from "../output/locked-height";
@@ -81,21 +83,29 @@ export class ChunkedInkbookInputParser {
     this.#onValidatedSnapshot = options.onValidatedSnapshot;
     this.#staticValidation = options.staticValidation ?? "canonical";
     this.#inputHash = new ChunkedInputHash(options);
-    if (
-      options.safeStaticProof !== undefined &&
-      !SafeStaticProof.isAuthentic(options.safeStaticProof)
-    ) {
-      throw new TypeError("Safe SVG proof must come from an owned validation producer.");
-    }
-    if (options.safeStaticProof !== undefined && this.#inputHash.hasCustomHasher) {
-      throw new TypeError("Safe SVG proof requires hashing the complete actual input bytes.");
-    }
     this.#safeStaticProof = this.#staticValidation === "safe" ? options.safeStaticProof : undefined;
     this.#sampleEncodingCache = options.sampleEncodingCache;
     this.#stagedSampleEncodings =
       options.sampleEncodingCache === undefined ? undefined : new StrokeSampleEncodingCache();
     this.#signal = options.signal;
     this.#adoption = new ValidatedSnapshotAdoption(options.signal);
+  }
+
+  /** The confirmed allocation never escapes this parse, including during adoption callbacks. */
+  public static async parseWorkerPreview(
+    input: Uint8Array,
+    options: ChunkedInkbookInputOptions & { readonly safeStaticProof: SafeStaticProof },
+    chunkBytes: number,
+  ) {
+    const parser = new ChunkedInkbookInputParser(options);
+    const bytes = await parser.#inputHash.bindWorkerPreview(
+      input,
+      options.safeStaticProof,
+      chunkBytes,
+    );
+    if (bytes === undefined) return undefined;
+    await writeInputByteChunks(parser, bytes, chunkBytes);
+    return parser.finish();
   }
 
   public get bytesReceived(): number {
@@ -269,14 +279,7 @@ export class ChunkedInkbookInputParser {
       return { ok: true, value };
     } catch (error) {
       if (error instanceof ChunkedJsonCancelledError) this.#throwIfCancelled();
-      if (error instanceof ChunkedJsonParseError) {
-        return failure(
-          "invalid-json",
-          error.code === "duplicate-key"
-            ? "Snapshot metadata is not canonical compact JSON."
-            : "Snapshot metadata is not valid JSON.",
-        );
-      }
+      if (error instanceof ChunkedJsonParseError) return metadataJsonFailure(error.code);
       throw error;
     }
   }

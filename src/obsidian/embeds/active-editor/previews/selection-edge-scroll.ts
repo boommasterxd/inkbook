@@ -54,17 +54,19 @@ export class SelectionEdgeAutoScroller {
   }
 
   #schedule(): void {
-    this.#frame = this.#options.requestFrame((timestamp) => {
-      const viewport = this.#options.readViewport();
-      // Keep the running frame owned while pointer reprojection may call update().
-      this.#options.onFrame?.();
-      this.#frame = undefined;
-      const delta = this.#delta(this.#frameScale(timestamp), viewport);
-      if (delta === undefined) return;
-      this.#options.onScroll({ x: delta.x, y: delta.y });
-      this.#schedule();
-    });
+    this.#frame = this.#options.requestFrame(this.#onFrame);
   }
+
+  readonly #onFrame = (timestamp: number): void => {
+    const viewport = this.#options.readViewport();
+    // Keep the running frame owned while pointer reprojection may call update().
+    this.#options.onFrame?.();
+    this.#frame = undefined;
+    const delta = this.#delta(this.#frameScale(timestamp), viewport);
+    if (delta === undefined) return;
+    this.#options.onScroll(delta);
+    this.#schedule();
+  };
 
   #frameScale(timestamp: number): number {
     const previous = this.#lastFrameTime;

@@ -116,7 +116,7 @@ function createRecovery(options: RecoveryOptions = {}) {
   };
   const coordinator = new AutosaveCoordinator({
     workScheduler: createTestWorkScheduler(),
-    initialSnapshot: initial,
+    initialRevision: initial.revision,
     sessionId: "recovery",
     workerEpoch: 1,
     path: "recovery.svg",

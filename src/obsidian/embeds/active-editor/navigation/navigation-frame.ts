@@ -1,9 +1,10 @@
 import {
-  applyAnchoredZoom,
+  anchoredCameraX,
   anchoredScrollTop,
   calculateFitZoom,
   calculateZoomLimits,
   clampCameraX,
+  clampScrollTop,
   renderedContainerHeight,
   type ZoomFrameState,
   type ScrollBounds,
@@ -95,7 +96,18 @@ export function resolveNavigationFrame(
       zoom,
     };
   }
-  const pageHeight = Math.max(0, input.pageHeight());
+  if (input.pinch !== undefined) {
+    const { blockSize, scrollBounds } = navigationScrollRange(input, zoom);
+    return resolvePinchFrame(input, input.pinch, { blockSize, fitZoom, zoom }, scrollBounds);
+  }
+  return resolveAnchoredFrame(input, fitZoom, zoom);
+}
+
+function resolveAnchoredFrame(
+  input: NavigationFrameInput,
+  fitZoom: number,
+  zoom: number,
+): NavigationFrameResult {
   const anchor =
     input.frame.anchor ??
     pagePointAnchor(
@@ -104,41 +116,49 @@ export function resolveNavigationFrame(
       input.cameraX,
       input.zoom,
     );
-  const blockSize = renderedContainerHeight(pageHeight, zoom);
-  const scrollBounds = projectedScrollBounds(input.scrollOwner, input.layout, blockSize);
-  if (input.pinch !== undefined) {
-    return resolvePinchFrame(input, input.pinch, { blockSize, fitZoom, zoom }, scrollBounds);
+  const width = input.layout.containerWidth;
+  const anchoredX = anchoredCameraX(anchor.anchorX, input.zoom, input.cameraX, zoom, width);
+  const pannedX = anchoredX + input.frame.panX / zoom;
+  const cameraX = input.frame.panX === 0 ? pannedX : clampCameraX(pannedX, width, zoom);
+  const anchoredTop = anchoredScrollTop(
+    input.layout.scrollTop,
+    anchor.anchorViewportY,
+    input.layout.embedTopInScrollContent,
+    input.zoom,
+    zoom,
+  );
+  const unclampedScrollTop = anchoredTop - input.frame.panY;
+  // An upward pan reaching the origin lands at zero for every possible maximum.
+  if (zoom === input.zoom && input.frame.panY >= 0 && unclampedScrollTop <= 0) {
+    return {
+      blockSize: input.layout.containerBounds.height,
+      cameraX,
+      fitZoom,
+      scrollTop: 0,
+      unclampedScrollTop,
+      zoom,
+    };
   }
-  const anchored = applyAnchoredZoom({
-    anchor,
-    containerWidth: input.layout.containerWidth,
-    derivedPageHeight: pageHeight,
-    embedTopInScrollContent: input.layout.embedTopInScrollContent,
-    oldCameraX: input.cameraX,
-    oldScrollTop: input.layout.scrollTop,
-    oldZoom: input.zoom,
-    requestedZoom: zoom,
-    scrollBounds,
-    zoomLimits: limits,
-  });
+  const { blockSize, scrollBounds } = navigationScrollRange(input, zoom);
   return {
     blockSize,
-    cameraX: clampCameraX(
-      anchored.camera.x + input.frame.panX / anchored.camera.zoom,
-      input.layout.containerWidth,
-      anchored.camera.zoom,
-    ),
+    cameraX,
     fitZoom,
-    unclampedScrollTop:
-      anchoredScrollTop(
-        input.layout.scrollTop,
-        anchor.anchorViewportY,
-        input.layout.embedTopInScrollContent,
-        input.zoom,
-        anchored.camera.zoom,
-      ) - input.frame.panY,
-    scrollTop: applyNativePan(anchored.scrollTop, input.frame.panY, scrollBounds),
-    zoom: anchored.camera.zoom,
+    unclampedScrollTop,
+    scrollTop: applyNativePan(
+      clampScrollTop(anchoredTop, scrollBounds),
+      input.frame.panY,
+      scrollBounds,
+    ),
+    zoom,
+  };
+}
+
+function navigationScrollRange(input: NavigationFrameInput, zoom: number) {
+  const blockSize = renderedContainerHeight(Math.max(0, input.pageHeight()), zoom);
+  return {
+    blockSize,
+    scrollBounds: projectedScrollBounds(input.scrollOwner, input.layout, blockSize),
   };
 }
 

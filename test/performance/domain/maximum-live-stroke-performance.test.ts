@@ -6,7 +6,14 @@ import * as simplification from "../../../src/domain/geometry/stroke-simplificat
 import * as strokeSlices from "../../../src/domain/geometry/pressure/pressure-outline";
 import * as intersections from "../../../src/domain/geometry/pressure/pressure-boundary-intersections";
 import * as geometryBounds from "../../../src/domain/geometry/primitives";
+import * as sampleValidation from "../../../src/domain/schema/stroke-sample-range-validation";
+import * as sampleCopy from "../../../src/domain/elements/runtime-sample-copy";
+import * as elementBounds from "../../../src/domain/geometry/bounds";
+import { createBuiltInSettings } from "../../../src/domain/settings/defaults";
+import { ElementStore } from "../../../src/domain/store/public";
+import { createFreehandElement } from "../../../src/editor/tools/creation";
 import { LiveStrokeBuilder, type LiveStrokeChunk } from "../../../src/editor/tools/live-stroke";
+import { activeEditorStoreHistory } from "../../fixtures/obsidian/active-editor";
 import { createMaximumStroke } from "./standard-domain-fixture";
 
 afterEach(() => vi.restoreAllMocks());
@@ -171,7 +178,7 @@ describe("maximum live-stroke capacity", () => {
   );
 });
 
-it("retains maximum highlighter geometry without unused pressure work or raw-prefix allocation", () => {
+it("retains maximum highlighter geometry and bounds release and replay work", () => {
   const style = { ...createMaximumStroke().style, pressureEnabled: false };
   const builder = new LiveStrokeBuilder({
     input: { pressureSource: "simulated", zoom: 1 },
@@ -204,7 +211,45 @@ it("retains maximum highlighter geometry without unused pressure work or raw-pre
   expect(commit.geometry[0]!.paint).toBe("stroke");
   expect(pressureResponse).not.toHaveBeenCalled();
   expect(outlines).not.toHaveBeenCalled();
+  assertStrokeCreationWork(commit.points);
 });
+
+function assertStrokeCreationWork(samples: number[]): void {
+  const store = new ElementStore();
+  const history = activeEditorStoreHistory(store);
+  const validate = vi.spyOn(sampleValidation, "assertStrokeSampleRange");
+  const copy = vi.spyOn(sampleCopy, "copySampleRange");
+  const bounds = vi.spyOn(elementBounds, "calculateElementBoundsSteps");
+  const element = createFreehandElement(
+    {
+      defaults: createBuiltInSettings().toolDefaults,
+      identity: { id: "00000000-0000-4000-8000-000000000001", createdAt: 1 },
+      tool: "highlighter",
+      samples,
+    },
+    "store",
+  );
+  expect(history.create([element])).toBe(true);
+  const checked = validate.mock.calls.reduce(
+    (n, [, , , , range]) => n + range.end - range.start,
+    0,
+  );
+  const copied = copy.mock.calls.reduce((n, [, , start, end]) => n + end - start, 0);
+  expect(checked).toBeLessThanOrEqual(samples.length);
+  expect(copied).toBeLessThanOrEqual(samples.length);
+  expect(bounds).toHaveBeenCalledOnce();
+  const first = store.get(element.id)!;
+  expect(first.element).toBe(element);
+  validate.mockClear();
+  copy.mockClear();
+  bounds.mockClear();
+  expect(history.undo()).toBe(true);
+  expect(history.redo()).toBe(true);
+  expect(store.get(element.id)?.element).toBe(first.element);
+  expect(validate).not.toHaveBeenCalled();
+  expect(copy).not.toHaveBeenCalled();
+  expect(bounds).not.toHaveBeenCalled();
+}
 
 function assertGeometryWork(
   retainedSamples: number,

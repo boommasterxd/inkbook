@@ -13,8 +13,8 @@ beforeEach(() => {
   installObsidianDomHelpers();
 });
 
-it.each(["lock reversal", "disposal"])(
-  "settles a pending native frame mount on %s",
+it.each(["lock reversal", "disposal", "layout collapse"])(
+  "preserves the lock handoff contract during a pending native frame mount and %s",
   async (action) => {
     const button = document.body.appendChild(createHtmlElement("button"));
     const preview = createInkbookLockedPreview(
@@ -29,6 +29,7 @@ it.each(["lock reversal", "disposal"])(
     await preview.ensureReady();
     button.hidden = true;
     const frame = button.firstElementChild!.shadowRoot!.querySelector("iframe")!;
+    const nativeDocument = frame.contentDocument;
     // Native frame contexts can be unavailable while a pop-out document is loading.
     Object.defineProperty(frame, "contentDocument", { configurable: true, value: null });
     const mounting = vi.spyOn(StaticPreviewSurface.prototype, "ensureMounted");
@@ -45,10 +46,21 @@ it.each(["lock reversal", "disposal"])(
     try {
       await vi.waitFor(() => expect(mounting).toHaveBeenCalledOnce());
       if (action === "lock reversal") preview.releaseHiddenSurface();
-      else preview.dispose();
+      else if (action === "layout collapse") {
+        preview.setLayoutVisible(false);
+        // A connected lock target must still mount its exact SVG before handoff.
+        Object.defineProperty(frame, "contentDocument", {
+          configurable: true,
+          value: nativeDocument,
+        });
+        frame.dispatchEvent(new Event("load"));
+      } else preview.dispose();
       await vi.waitFor(() => expect(settled).toBe(true), { timeout: 100 });
       expect(await ready).toBe("ready");
-      expect(button.firstElementChild!.shadowRoot!.querySelector("iframe")).toBeNull();
+      if (action === "layout collapse") {
+        expect(button.firstElementChild!.shadowRoot!.querySelector("iframe")).toBe(frame);
+        expect(lockedPreviewRoot(button).querySelector("path")?.getAttribute("d")).toBe("M1 0");
+      } else expect(button.firstElementChild!.shadowRoot!.querySelector("iframe")).toBeNull();
     } finally {
       preview.dispose();
       await ready;
@@ -71,6 +83,7 @@ it("cancels a paused lock rebuild on reversal and reconstructs only the next dem
   preview.setBackgroundWait(wait);
   const cancelled = preview.ensureReady();
   await vi.waitFor(() => expect(wait).toHaveBeenCalled());
+  preview.setLayoutVisible(false);
   preview.releaseHiddenSurface();
   await cancelled;
   expect(button.firstElementChild?.shadowRoot?.querySelector("iframe")).toBeNull();
@@ -81,6 +94,18 @@ it("cancels a paused lock rebuild on reversal and reconstructs only the next dem
   await preview.ensureReady();
   expect(lockedPreviewRoot(button).querySelector("path")?.getAttribute("d")).toBe("M2 0");
   expect(button.firstElementChild?.shadowRoot?.querySelectorAll("iframe")).toHaveLength(1);
+  const prepared = lockedPreviewRoot(button).querySelector("svg");
+  vi.spyOn(window, "fetch").mockResolvedValue(new Response("<svg/>"));
+  const invalidSource = preview.setSource("app://unsafe.svg");
+  await Promise.all([
+    expect(invalidSource).rejects.toThrow("not safe SVG"),
+    expect(preview.ensureReady()).rejects.toThrow("not safe SVG"),
+  ]);
+  button.hidden = false;
+  preview.setLayoutVisible(true);
+  preview.refresh();
+  expect(lockedPreviewRoot(button).querySelector("svg")).toBe(prepared);
+  button.hidden = true;
   preview.releaseHiddenSurface();
   preview.dispose();
   preview.refresh();

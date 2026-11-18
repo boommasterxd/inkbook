@@ -29,6 +29,10 @@ import { preparedInsertionBounds } from "../mutations/prepared-insertion-element
 import { textRecordGeometrySteps } from "./text-record-geometry";
 
 export function createInitialRecord(element: InkElementV1): ElementRecord {
+  if (element.kind === "stroke") {
+    const bounds = preparedInsertionBounds(element);
+    if (bounds !== undefined) return drainRecordSteps(initialRecordSteps(element, bounds));
+  }
   return drainRecordSteps(createInitialRecordSteps(element));
 }
 

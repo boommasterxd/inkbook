@@ -36,7 +36,7 @@ export interface AutosaveSessionBaseOptions {
   readonly createReplacement?: (workerEpoch: number) => Promise<DocumentRuntimePort>;
   readonly currentRevision: () => number;
   readonly executor: DocumentRuntimePort;
-  readonly initialSnapshot: InkSnapshotV1;
+  readonly initialRevision: number;
   readonly isGestureActive: () => boolean;
   readonly outputHash: string;
   readonly requiresCanonicalRewrite?: boolean;
@@ -80,7 +80,7 @@ export interface AutosaveCoordinatorOptions {
   readonly createReplacement?: (workerEpoch: number) => Promise<DocumentRuntimePort>;
   readonly documentSource: AutosaveDocumentSource;
   readonly executor: DocumentRuntimePort;
-  readonly initialSnapshot: InkSnapshotV1;
+  readonly initialRevision: number;
   readonly observer?: AutosaveObserver;
   readonly path: string;
   readonly requiresCanonicalRewrite?: boolean;

@@ -237,9 +237,15 @@ it("keeps repeated native pan at the boundary free of scroll writes and readback
   harness.navigation.scroll(10_000);
   harness.frames.flush();
   expectMeasuredScrollNoOp(harness, () => harness.navigation.scroll(10));
+  expect(harness.workReads).toEqual({ page: 0, scrollHeight: 0 });
   // The adapter keeps a fixed container top after the first projected scroll;
   // the next fresh measurement therefore applies that external geometry once.
   expect(harness.cameraWrites).toBe(1);
+  harness.owner.scrollTop = 48.5;
+  harness.navigation.scroll(10);
+  harness.frames.flush();
+  expect(harness.owner.scrollTop).toBe(38.5);
+  expect(harness.workReads).toEqual({ page: 1, scrollHeight: 1 });
   disposeActiveNavigation(harness);
 });
 
@@ -293,6 +299,8 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation work`, () => 
     expect(harness.layoutReads).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.workReads.scrollHeight).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.workReads.page).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    // Each completed zoom frame starts its quiet tail. Wheel input holds that frame directly.
+    expect(harness.frames.scheduledTimers).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     // Keep the post-height-write read: browsers may clamp the requested offset.
     expect(harness.scrollReads).toBe(INTERACTION_REFRESH_PROFILE.sampleCount * 2);
 

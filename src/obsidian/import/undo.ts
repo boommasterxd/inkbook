@@ -85,7 +85,7 @@ async function undoNote(options: {
     references.map((reference) => [reference.start, reference.sourcePath]),
   );
   const canonical = applyImportPatches(original, remaining);
-  const eligible = withImportedContexts(canonical, remaining).filter(
+  const planned = withImportedContexts(canonical, remaining).filter(
     (patch) =>
       !blocked.has(patch.sourcePath) && originalSources.get(patch.start) === patch.sourcePath,
   );
@@ -103,7 +103,6 @@ async function undoNote(options: {
       { code: "undoChangedLink", path: note.path },
     );
   }
-  const planned = eligible.map((patch) => ({ ...patch }));
   const next = await reverseImportPatches(current, planned, ports.workScheduler);
   const changed = planned.filter((patch) => patch.status === "undone");
   if (planned.some((patch) => patch.status === "conflict")) {
@@ -113,16 +112,14 @@ async function undoNote(options: {
       { code: "undoChangedEmbed", path: note.path },
     );
   }
-  const patchIndexes = changed.map((patch) =>
-    note.patches.findIndex(
-      (candidate) => candidate.start === patch.start && candidate.sourcePath === patch.sourcePath,
-    ),
-  );
   if (changed.length === 0) {
     note.status = "conflict";
     await store.save();
     return;
   }
+  // Journal evidence requires non-overlapping, nonempty originals, so each start is unique.
+  const indexByStart = new Map(note.patches.map((patch, index) => [patch.start, index]));
+  const patchIndexes = changed.map((patch) => indexByStart.get(patch.start) ?? -1);
   note.undoIntent = {
     expectedHash: await ports.hash(current),
     resultHash: await ports.hash(next),

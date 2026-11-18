@@ -3,6 +3,7 @@ import * as bounds from "../../../../../src/domain/geometry/bounds";
 import * as validation from "../../../../../src/domain/schema/element-validation";
 import {
   prepareInsertionElementSteps,
+  prepareStrokeInsertion,
   preparedInsertionBounds,
 } from "../../../../../src/domain/store/mutations/prepared-insertion-element";
 import { ElementStore } from "../../../../../src/domain/store/public";
@@ -49,6 +50,17 @@ it.each(["id", "points"])("rejects an accessor %s without invoking it", (field) 
   expect(() => completeSerializationSteps(prepareInsertionElementSteps(source))).toThrow(TypeError);
   expect(getter).not.toHaveBeenCalled();
   expect(preparedInsertionBounds(source)).toBeUndefined();
+});
+
+it("keeps raw runtime buffers outside synchronous JSON stroke creation", () => {
+  const source = highlighter();
+  const input = Object.freeze({
+    ...source,
+    points: new Float64Array(source.points) as unknown as number[],
+  });
+  expect(() => prepareStrokeInsertion(input)).toThrow(/JSON samples/);
+  expect(() => new ElementStore().create(input)).toThrow();
+  expect(preparedInsertionBounds(input)).toBeUndefined();
 });
 
 it.each([

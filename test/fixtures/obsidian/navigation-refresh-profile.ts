@@ -16,6 +16,7 @@ class FrameQueue {
   readonly #callbacks = new Map<number, FrameRequestCallback>();
   readonly #timers = new Map<number, { callback: () => void; due: number }>();
   #maxTimers = 0;
+  #scheduledTimers = 0;
   #handle = 0;
   #maxPending = 0;
   #time = 1_000;
@@ -23,6 +24,7 @@ class FrameQueue {
   public readonly window = {
     clearTimeout: (handle: number) => this.#timers.delete(handle),
     setTimeout: (callback: () => void, delay: number) => {
+      this.#scheduledTimers += 1;
       const handle = ++this.#handle;
       this.#timers.set(handle, { callback, due: this.#time + delay });
       this.#maxTimers = Math.max(this.#maxTimers, this.#timers.size);
@@ -60,6 +62,9 @@ class FrameQueue {
 
   public get maxTimers(): number {
     return this.#maxTimers;
+  }
+  public get scheduledTimers(): number {
+    return this.#scheduledTimers;
   }
   public get pendingTimers(): number {
     return this.#timers.size;

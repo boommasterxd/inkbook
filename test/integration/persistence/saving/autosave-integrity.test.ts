@@ -110,7 +110,7 @@ async function createHarness(
     confirmedBase: { outputHash: initial.hash, revision: 0, type: "confirmed" },
     documentSource: document,
     executor: wrap(runtime),
-    initialSnapshot: snapshot(),
+    initialRevision: 0,
     path: "drawing.svg",
     sessionId: "session-a",
     vault,

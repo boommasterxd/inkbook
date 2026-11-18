@@ -38,10 +38,18 @@ export function selectionOverlayGeometry(
   const outline = selectionOutline(selected, frame);
   const handles = layoutSelectionHandles(selected, { frame, zoom });
   if (outline === null) return null;
-  if (transform === null) return { handles, outline };
-  const transformedOutline = transformOutline(outline, transform);
+  return transformSelectionOverlay({ handles, outline }, transform, zoom);
+}
+
+export function transformSelectionOverlay(
+  geometry: SelectionOverlayGeometry | null,
+  transform: SelectionPreviewTransform | null,
+  zoom: number,
+): SelectionOverlayGeometry | null {
+  if (geometry === null || transform === null) return geometry;
+  const transformedOutline = transformOutline(geometry.outline, transform);
   return {
-    handles: handles.map((handle) =>
+    handles: geometry.handles.map((handle) =>
       transformedHandle(handle, transform, transformedOutline, zoom),
     ),
     outline: transformedOutline,

@@ -6,13 +6,17 @@ describe("Live Preview widget height", () => {
   it("retains the latest border-box height and releases its observer", () => {
     const fixture = createFixture();
     const height = new LivePreviewWidgetHeight();
+    const setLayoutVisible = vi.fn();
     expect(height.value).toBe(-1);
-    const release = height.observe(fixture.root);
+    const release = height.observe(fixture.root, setLayoutVisible);
     expect(fixture.observe).toHaveBeenCalledExactlyOnceWith(fixture.root, { box: "border-box" });
     fixture.resize(7000);
     expect(height.value).toBe(7000);
     fixture.resize(3500.5);
     expect(height.value).toBe(3500.5);
+    fixture.resize(0, fixture.root, 0);
+    expect(height.value).toBe(3500.5);
+    expect(setLayoutVisible.mock.calls).toEqual([[true], [true], [false]]);
     release();
     expect(fixture.disconnect).toHaveBeenCalledOnce();
     expect(height.value).toBe(-1);
@@ -69,12 +73,12 @@ function createFixture() {
     root,
     observe,
     disconnect,
-    resize: (blockSize: number | undefined, target = root) => {
+    resize: (blockSize: number | undefined, target = root, inlineSize = 600) => {
       callback?.(
         [
           {
             target,
-            borderBoxSize: blockSize === undefined ? [] : [{ blockSize }],
+            borderBoxSize: blockSize === undefined ? [] : [{ blockSize, inlineSize }],
           } as unknown as ResizeObserverEntry,
         ],
         {} as ResizeObserver,

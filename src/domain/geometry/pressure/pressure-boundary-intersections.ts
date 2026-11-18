@@ -1,4 +1,5 @@
 import type { PointV1 } from "../../schema/types";
+import { boundsContainPoint, type Bounds } from "../primitives";
 import { pressureArcPoint } from "./pressure-joins";
 import type { PressureBoundaryArc, PressureBoundaryLine } from "./pressure-joins";
 import type {
@@ -136,22 +137,28 @@ function initialArcAngle(arc: PressureBoundaryArc, arcAngles?: PressureArcAngleC
   return initial;
 }
 
-/** Includes overlap endpoints; a coincident interval is split at every arc/line endpoint. */
+/** Full intersections include both endpoints. Union clipping needs only interior first parameters. */
 export function intersectPressureBoundaries(
   first: PressureBoundarySegment,
   second: PressureBoundarySegment,
   arcAngles?: PressureArcAngleCache,
   scalarCache?: PressureBoundaryScalarCache,
+  clip?: { readonly first: Bounds; readonly second: Bounds },
 ): readonly PressureBoundaryIntersection[] {
   if (separatedCarriers(first, second)) return [];
   const secondScalars = scalarCache?.read(second);
   const firstScalars = scalarCache?.read(first);
   const result: PressureBoundaryIntersection[] = [];
-  addEndpoints(first, second, result, arcAngles, firstScalars, secondScalars);
+  if (clip === undefined)
+    addEndpoints(first, second, result, arcAngles, firstScalars, secondScalars);
+  else addInteriorEndpoints(first, second, result, arcAngles, firstScalars, clip.first);
   for (const point of intersectionPoints(first, second)) {
+    if (clip && (!boundsContainPoint(clip.first, point) || !boundsContainPoint(clip.second, point)))
+      continue;
     const a = boundaryParameter(first, point, arcAngles, firstScalars);
+    if (a === undefined || (clip && (a === 0 || a === 1))) continue;
     const b = boundaryParameter(second, point, arcAngles, secondScalars);
-    if (a !== undefined && b !== undefined) addIntersection(result, a, b);
+    if (b !== undefined) addIntersection(result, a, b);
   }
   return result;
 }
@@ -216,6 +223,24 @@ function addEndpoints(
     const other = fraction === 0 ? second.start : second.end;
     const reverse = boundaryParameter(first, other, arcAngles, firstScalars);
     if (reverse !== undefined) addIntersection(result, reverse, fraction);
+  }
+}
+
+function addInteriorEndpoints(
+  first: PressureBoundarySegment,
+  second: PressureBoundarySegment,
+  result: PressureBoundaryIntersection[],
+  arcAngles: PressureArcAngleCache | undefined,
+  firstScalars: PressureBoundaryScalars | undefined,
+  firstBounds: Bounds,
+): void {
+  // The first boundary's own endpoints never subdivide its surviving intervals.
+  for (let fraction = 0; fraction <= 1; fraction += 1) {
+    const point = fraction === 0 ? second.start : second.end;
+    if (!boundsContainPoint(firstBounds, point)) continue;
+    const parameter = boundaryParameter(first, point, arcAngles, firstScalars);
+    if (parameter !== undefined && parameter > 0 && parameter < 1)
+      addIntersection(result, parameter, fraction);
   }
 }
 

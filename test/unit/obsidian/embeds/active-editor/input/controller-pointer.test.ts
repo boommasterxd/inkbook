@@ -17,13 +17,13 @@ import {
 import { toolCursorHarness } from "../../../../../fixtures/obsidian/tool-cursor";
 
 describe("active editor pointer controller", () => {
-  it("uses screen pixels for arbitration and page coordinates for indexed hit testing", () => {
+  it("uses screen pixels for arbitration and page coordinates to hit test with a selection", () => {
     const dispatch = vi.fn();
     const hit = vi.fn(() => null);
     const setLastPointer = vi.fn();
     const interruptForInput = vi.fn();
     const navigation = navigationPort();
-    const getInput = () => createInputState();
+    const getInput = () => createInputState({ hasSelection: true });
     const controller = new ActiveEditorPointerController({
       cursor: cursorPort(getInput),
       beginHandlePointer: vi.fn(),
@@ -41,7 +41,7 @@ describe("active editor pointer controller", () => {
       renderer: rendererPort(),
       releasePointer: vi.fn(),
       sceneStore: { hit } as unknown as ElementSceneStore,
-      selection: () => new Set(),
+      selection: () => new Set(["selected-stroke"]),
       setLastPointer,
     });
 

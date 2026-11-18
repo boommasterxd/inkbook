@@ -196,7 +196,7 @@ function createAutosaveSceneFixture(fixture: ReturnType<typeof createSuspendedEx
     documentSource: value,
     confirmedBase: { type: "confirmed", revision: 0, outputHash: initial.hash },
     executor: fixture.port,
-    initialSnapshot: document,
+    initialRevision: document.revision,
     path: "navigation.svg",
     sessionId: executor.sessionId,
     vault,

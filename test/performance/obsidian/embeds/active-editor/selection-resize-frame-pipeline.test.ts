@@ -384,8 +384,9 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
     ["mixed connected S Pen move", longPressureElements],
     ["10,000-stroke S Pen move", fallbackElements],
   ] as const)("keeps %s with coalesced work", (_name, createElements) => {
-    const result = runMovePipeline(createElements());
-    expect(result.layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    const overlay = vi.spyOn(overlayGeometry, "selectionOverlayGeometry");
+    runMovePipeline(createElements());
+    expect(overlay).toHaveBeenCalledOnce();
   });
 });
 
@@ -425,7 +426,7 @@ function runMovePipeline(elements: readonly InkElementV1[]) {
   preview.revert();
   fixture.renderer.destroy();
   fixture.sceneStore.release();
-  return { layoutUpdates };
+  expect(layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
 }
 
 function runResizePipeline(elements: readonly InkElementV1[]) {

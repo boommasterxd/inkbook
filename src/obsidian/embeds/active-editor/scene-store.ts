@@ -3,7 +3,7 @@ import type { Bounds } from "../../../domain/geometry/public";
 import { FILE_SCHEMA_LIMITS, type InkElementV1, type PointV1 } from "../../../domain/schema/public";
 import { SpatialQueryScratch } from "../../../domain/spatial/index";
 import type { ElementStore } from "../../../domain/store/public";
-import { HitTestScratch } from "../../../editor/selection/public";
+import { elementContainsPoint, hasStrokeHitGeometry } from "../../../editor/selection/public";
 import type { SnapTarget } from "../../../editor/snapping/snap-candidate";
 import type { SceneStorePort, SpatialQuerySink } from "../../../rendering/scene/index";
 import type { ActiveDocumentMemoryStorePort } from "../../../editor/session/active-document-memory-coordinator";
@@ -13,8 +13,6 @@ import { isAnchorTarget } from "../../../domain/geometry/anchors";
 import { mayHaveAnchorInBounds } from "../../../domain/geometry/anchor-query";
 
 export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemoryStorePort {
-  readonly #hitScratch = new HitTestScratch();
-  readonly #hitSink: SpatialQuerySink = { add: (id) => this.#considerHit(id) };
   readonly #scratch = new SpatialQueryScratch<string>();
   readonly #store: ElementStore;
   readonly #connections: ConnectionCycleCache;
@@ -47,6 +45,10 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
 
   public pressureGeometry(id: string, geometryVersion: number) {
     return this.#store.pressureGeometry(id, geometryVersion);
+  }
+
+  public getBounds(id: string): Bounds | undefined {
+    return this.#store.get(id)?.bounds;
   }
 
   public beginQuery(bounds: Bounds): ReturnType<ElementStore["beginQuery"]> {
@@ -128,30 +130,59 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
   public hit(point: PointV1, pointerType: "mouse" | "pen" | "touch", zoom: number): string | null {
     if (!Number.isFinite(zoom) || zoom <= 0) return null;
     const radius = (pointerType === "touch" ? 14 : 8) / zoom;
-    this.#hitScratch.begin(point, pointerType, zoom);
-    this.query(
+    const count = this.#store.query(
       {
         minX: point.x - radius,
         minY: point.y - radius,
         maxX: point.x + radius,
         maxY: point.y + radius,
       },
-      this.#hitSink,
+      this.#scratch,
     );
-    return this.#hitScratch.finish();
+    if (count === 0) return null;
+    if (count === 1) return this.#paintedHit(this.#scratch.at(0), point, radius);
+
+    // When every ID survived the spatial query, the Store already holds their
+    // complete paint order. A partial query orders only its local candidates.
+    const local = count === this.#store.size ? undefined : this.#candidateRanks(count);
+    for (const band of ["content", "highlight", "image"] as const) {
+      const ranks = local?.[band];
+      const length = ranks?.length ?? this.#store.bandSize(band);
+      for (let index = length - 1; index >= 0; index -= 1) {
+        const id = this.#store.idAtRank(band, ranks?.[index] ?? index);
+        if (id !== undefined && this.#paintedHit(id, point, radius) !== null) return id;
+      }
+    }
+    return null;
   }
 
-  #considerHit(id: string): void {
-    const record = this.get(id);
-    if (record === undefined) return;
-    this.#hitScratch.consider(
-      id,
-      record.band,
-      record.element,
-      record.rank,
-      this.pressureGeometry(id, record.geometryVersion),
+  #candidateRanks(count: number): Record<RenderBand, number[]> {
+    const ranks: Record<RenderBand, number[]> = { content: [], highlight: [], image: [] };
+    for (let index = 0; index < count; index += 1) {
+      const rank = this.#store.getRank(this.#scratch.at(index));
+      if (rank !== undefined) ranks[rank.band].push(rank.rank);
+    }
+    for (const band of Object.values(ranks)) band.sort((left, right) => left - right);
+    return ranks;
+  }
+
+  #paintedHit(id: string, point: PointV1, radius: number): string | null {
+    const record = this.#store.get(id);
+    if (
+      record === undefined ||
+      (record.element.kind === "stroke" && !hasStrokeHitGeometry(record.element))
+    )
+      return null;
+    const hit = elementContainsPoint(
+      record.element as InkElementV1,
+      point,
+      radius,
+      record.element.kind === "stroke"
+        ? this.pressureGeometry(id, record.geometryVersion)
+        : undefined,
       record.textPaintGeometry,
     );
+    return hit ? id : null;
   }
 
   public release(): void {

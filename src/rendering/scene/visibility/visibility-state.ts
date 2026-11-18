@@ -1,7 +1,8 @@
 import { RENDER_BANDS, type RenderBand } from "../../../domain/commands/render-bands";
 import type { Bounds } from "../../../domain/geometry/primitives";
-import type { MutableSceneInstrumentation, SceneStorePort } from "../types";
+import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "../types";
 import {
+  insertVisibleId,
   mergeVisibleBand,
   refreshVisibleRanks,
   sortVisibleBand,
@@ -274,9 +275,24 @@ export class SceneVisibilityState {
       this.#bands[record.band].newIds.push(record.id);
     }
     this.#retainedRanksStable = true;
-    const delta = this.publishNextVisibility();
+    const single =
+      changes.exited.length === 0 && changes.entered.length === 1 ? changes.entered[0] : undefined;
+    const delta = single === undefined ? this.publishNextVisibility() : this.publishEntrant(single);
     this.#edges.release();
     return { changed: true, visibility: this.currentResult(), ...(delta ? { delta } : {}) };
+  }
+
+  private publishEntrant(record: SceneElementRecord): VisibilityDelta {
+    const state = this.#bands[record.band];
+    state.ids = insertVisibleId(state.ids, state.count, record.id, (retained, entrant) =>
+      this.compare(retained, entrant, record.band),
+    );
+    state.count += 1;
+    state.newIds.length = 0;
+    this.#enteredIds.length = 0;
+    this.#enteredIds.push(record.id);
+    this.#exitedIds.length = 0;
+    return { entered: this.#enteredIds, exited: this.#exitedIds };
   }
 
   private queryFull(bounds: Bounds, deadline: number, now: () => number): VisibilityQueryResult {

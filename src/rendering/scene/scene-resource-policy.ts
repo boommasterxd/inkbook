@@ -18,6 +18,7 @@ import type {
 import type { SceneBackgroundCache } from "./content/background-cache";
 import * as stats from "./instrumentation";
 import type { VisibilityResult } from "./visibility/visibility-state";
+import { ProjectedViewportBounds } from "./visibility/visibility-bounds";
 import type { ActiveDocumentMemoryScenePort } from "../../editor/session/active-document-memory-coordinator";
 
 export class SceneResourcePolicy implements ActiveDocumentMemoryScenePort {
@@ -119,22 +120,6 @@ export class SceneResourcePolicy implements ActiveDocumentMemoryScenePort {
   }
 }
 
-function visiblePageBounds(
-  viewport: SceneViewport,
-  camera: SceneCamera,
-  overscanScreenPx: number,
-  verticalOverscanScreenPx = overscanScreenPx,
-): Bounds {
-  const overscan = overscanScreenPx / camera.zoom;
-  const verticalOverscan = verticalOverscanScreenPx / camera.zoom;
-  return {
-    minX: viewport.left / camera.zoom - camera.x - overscan,
-    minY: viewport.top / camera.zoom - verticalOverscan,
-    maxX: (viewport.left + viewport.width) / camera.zoom - camera.x + overscan,
-    maxY: (viewport.top + viewport.height) / camera.zoom + verticalOverscan,
-  };
-}
-
 export function visibilityPageBounds(
   viewport: SceneViewport,
   camera: SceneCamera,
@@ -143,28 +128,33 @@ export function visibilityPageBounds(
   direction?: SceneVisibilityDirection,
 ): { readonly envelope: Bounds; readonly retained: Bounds } {
   if (initialVisibleOnly) {
-    const bounds = visiblePageBounds(viewport, camera, 0);
+    const bounds = new ProjectedViewportBounds(viewport, camera, 0);
     return { envelope: bounds, retained: bounds };
   }
-  const retained = visiblePageBounds(
+  const retained = new ProjectedViewportBounds(
     viewport,
     camera,
     VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX,
     (scrollPreloadMarginPx * 2) / 3,
   );
-  if (direction !== undefined && Math.abs(direction.y) >= Math.abs(direction.x)) {
-    const earlierReserve = scrollPreloadMarginPx / (6 * camera.zoom);
-    if (direction.y > 0) retained.maxY += earlierReserve;
-    if (direction.y < 0) retained.minY -= earlierReserve;
-  }
+  const earlierReserve = scrollPreloadMarginPx / (6 * camera.zoom);
+  const leadingY =
+    direction !== undefined && Math.abs(direction.y) >= Math.abs(direction.x) ? direction.y : 0;
   return {
-    envelope: visiblePageBounds(
+    envelope: new ProjectedViewportBounds(
       viewport,
       camera,
       VIEWPORT_OVERSCAN_SCREEN_PX,
       scrollPreloadMarginPx,
     ),
-    retained,
+    retained:
+      leadingY === 0
+        ? retained
+        : {
+            ...retained,
+            minY: leadingY < 0 ? retained.minY - earlierReserve : retained.minY,
+            maxY: leadingY > 0 ? retained.maxY + earlierReserve : retained.maxY,
+          },
   };
 }
 

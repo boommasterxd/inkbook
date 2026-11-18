@@ -1,4 +1,5 @@
 import type { ChunkedInkbookInputParser } from "../../../serialization/input/chunked-input-codec";
+import { writeInputByteChunks } from "../../../serialization/input/chunked-input-utils";
 
 export async function writeRuntimeInput(
   parser: ChunkedInkbookInputParser,
@@ -6,18 +7,7 @@ export async function writeRuntimeInput(
   chunkBytes: number,
 ): Promise<void> {
   if (typeof input === "string") await writeStringInput(parser, input, chunkBytes);
-  else await writeByteInput(parser, input, chunkBytes);
-}
-
-async function writeByteInput(
-  parser: ChunkedInkbookInputParser,
-  input: Uint8Array,
-  chunkBytes: number,
-): Promise<void> {
-  for (let offset = 0; offset < input.byteLength; offset += chunkBytes) {
-    const written = await parser.write(input.subarray(offset, offset + chunkBytes));
-    if (!written.ok) return;
-  }
+  else await writeInputByteChunks(parser, input, chunkBytes);
 }
 
 async function writeStringInput(

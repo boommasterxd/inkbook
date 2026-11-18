@@ -403,7 +403,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     this.#startAutosave(snapshot, outputHash, requiresCanonicalRewrite, executor, store);
   }
   #startAutosave(
-    snapshot: InkSnapshotV1,
+    { revision, version }: Pick<InkSnapshotV1, "revision" | "version">,
     outputHash: string,
     requiresCanonicalRewrite: boolean,
     executor: DocumentRuntimePort,
@@ -432,10 +432,10 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       executor,
       files: this.files,
       identity: this.#identity,
-      initialSnapshot: snapshot,
+      initialRevision: revision,
       fontResources: () => this.#model?.fontResources ?? [],
       imageResources: () => this.#model?.imageResources ?? [],
-      formatVersion: () => this.#model?.formatVersion ?? snapshot.version,
+      formatVersion: () => this.#model?.formatVersion ?? version,
       isGestureActive: () => this.#workPriority.inputActive,
       outputHash,
       requiresCanonicalRewrite,

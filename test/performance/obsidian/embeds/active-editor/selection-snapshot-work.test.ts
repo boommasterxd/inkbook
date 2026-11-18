@@ -98,15 +98,73 @@ it("shares 10,000 selected records across handles, target lookup and move startu
   }
 });
 
+function coincidentStrokes() {
+  return Array.from({ length: 10_000 }, (_, index) => ({
+    ...indexedStroke(index),
+    pivot: { x: 20, y: 20 },
+    points: [20, 20, 0.5],
+  }));
+}
+
+it("tests only frontmost painted candidates when secondary navigation starts over dense ink", () => {
+  const elements = coincidentStrokes();
+  const hollow = {
+    ...indexedStroke(elements.length),
+    pivot: { x: 20, y: 20 },
+    points: [0, 0, 0.5, 0, 40, 0.5, 40, 40, 0.5],
+  };
+  const store = new ElementStore([...elements, hollow]);
+  const scene = new ElementSceneStore(store);
+  const geometry = vi.spyOn(scene, "pressureGeometry");
+  const ranks = vi.spyOn(store, "getRank");
+  const hits = (): string | null => scene.hit({ x: 20, y: 20 }, "mouse", 2);
+  try {
+    expect(hits()).toBe(elements[elements.length - 1]!.id);
+    expect(geometry).toHaveBeenCalledTimes(2);
+    expect(ranks).not.toHaveBeenCalled();
+    const outside = { ...indexedStroke(elements.length + 1), points: [500, 500, 0.5] };
+    store.create(outside);
+    const reversed = elements.map(({ id }) => id).reverse();
+    store.reorderBands({ image: [], highlight: [], content: [...reversed, hollow.id, outside.id] });
+    geometry.mockClear();
+    ranks.mockClear();
+    expect(hits()).toBe(elements[0]!.id);
+    expect(geometry).toHaveBeenCalledTimes(2);
+    expect(ranks).not.toHaveBeenCalledWith(outside.id);
+    expect(store.instrumentation.fullStoreScans).toBe(0);
+  } finally {
+    scene.release();
+  }
+});
+
+it("starts primary ink and eraser previews over 10,000 strokes without a selection hit test", () => {
+  const h = activeEditorPointerHarness(coincidentStrokes());
+  try {
+    for (const tool of ["draw", "highlighter", "eraser"] as const) {
+      h.controls.input = createInputState({ activeTool: tool });
+      const contact = sample(10, {
+        pointerType: tool === "highlighter" ? "mouse" : "pen",
+        pressure: 0.5,
+        buttons: 1,
+        button: 0,
+        clientX: 40,
+        clientY: 50,
+      });
+      h.pointer.handlePointerDown(contact);
+      expect(h.effects[h.effects.length - 1]).toMatchObject({ type: "begin-preview", tool });
+      expect(h.hit).not.toHaveBeenCalled();
+      h.pointer.handlePointerCancel(contact);
+    }
+  } finally {
+    h.pointer.dispose();
+    h.controller.dispose();
+  }
+});
+
 it.each(["mouse", "pen"] as const)(
   "performs zero document queries or candidate reads when %s area dragging over 10,000 coincident strokes",
   (pointerType) => {
-    const elements = Array.from({ length: 10_000 }, (_, index) => ({
-      ...indexedStroke(index),
-      pivot: { x: 20, y: 20 },
-      points: [20, 20, 0.5],
-    }));
-    const h = activeEditorPointerHarness(elements);
+    const h = activeEditorPointerHarness(coincidentStrokes());
     const query = vi.spyOn(h.store, "query");
     const read = vi.spyOn(h.store, "get");
     const pressure = vi.spyOn(h.store, "pressureGeometry");

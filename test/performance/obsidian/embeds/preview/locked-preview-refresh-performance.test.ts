@@ -58,6 +58,69 @@ afterEach(async () => {
   await new Promise<void>((resolve) => setImmediate(resolve));
 });
 
+it("builds only laid-out copies of the same drawing and cancels a hidden editor's pending tree", async () => {
+  const svgAllocations = observePreviewBuildAllocations();
+  const split = document.body.appendChild(createHtmlElement("button"));
+  const sibling = document.body.appendChild(createHtmlElement("button"));
+  const source = {
+    documentId: "drawing.svg",
+    documents: {
+      cached: () => undefined,
+      recognize: async () => false as const,
+      subscribe: () => () => undefined,
+    },
+  };
+  const descriptor = {
+    aspectRatio: 2,
+    contentIdentity: { revision: 1, outputHash: "a".repeat(64) },
+    safeSvg: `<svg xmlns="http://www.w3.org/2000/svg">${'<path d="M0 0"/>'.repeat(10_000)}</svg>`,
+  };
+  const visible = createInkbookLockedPreview(split, descriptor, immediateWorkScheduler(), source);
+  const editor = createInkbookLockedPreview(sibling, descriptor, immediateWorkScheduler(), {
+    ...source,
+    waitForLayout: true,
+  });
+  try {
+    editor.refresh();
+    await visible.ensureReady();
+    const splitSvg = lockedPreviewRoot(split).querySelector("svg");
+    expect(splitSvg).not.toBeNull();
+    expect(svgAllocations()).toBe(10_001);
+    expect(sibling.firstElementChild?.shadowRoot).toBeNull();
+
+    const wait = vi.fn(() => new Promise<void>(() => {}));
+    editor.setBackgroundWait(wait);
+    editor.setLayoutVisible(true);
+    await Promise.resolve();
+    expect(wait).toHaveBeenCalledOnce();
+    editor.setLayoutVisible(false);
+    const current = {
+      ...descriptor,
+      aspectRatio: 3,
+      contentIdentity: { revision: 2, outputHash: "b".repeat(64) },
+      safeSvg: '<svg xmlns="http://www.w3.org/2000/svg"><path d="M2 0"/></svg>',
+    };
+    editor.setDescriptor(current);
+    expect(sibling.firstElementChild?.getAttribute("style")).toContain(
+      "--inkbook-preview-aspect-ratio: 3",
+    );
+    editor.setBackgroundWait(undefined);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(svgAllocations()).toBe(10_001);
+    expect(sibling.firstElementChild?.shadowRoot?.querySelector("iframe")).toBeNull();
+    editor.setLayoutVisible(true);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(lockedPreviewRoot(sibling).querySelector("path")?.getAttribute("d")).toBe("M2 0");
+    expect(svgAllocations()).toBe(10_003);
+    editor.setLayoutVisible(false);
+    expect(sibling.firstElementChild?.shadowRoot?.querySelector("iframe")).toBeNull();
+    expect(lockedPreviewRoot(split).querySelector("svg")).toBe(splitSvg);
+  } finally {
+    editor.dispose();
+    visible.dispose();
+  }
+});
+
 it("defers hidden descriptor trees across saves and builds only the latest on demand", async () => {
   const button = document.body.appendChild(createHtmlElement("button"));
   const safeSvg = `<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata>${'<path d="M0 0L1 1"/>'.repeat(10_000)}</svg>`;

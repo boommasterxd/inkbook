@@ -136,10 +136,14 @@ it("bounds own-scroll proof reads without repeating complete scene measurements"
     expect(h.box).toHaveBeenCalledTimes(count * 2);
     expect(h.ownerBox).toHaveBeenCalledTimes(count * 2);
     expect(h.onScroll).toHaveBeenCalledTimes(count);
-    h.h.renderer.invalidateLayout();
+    h.zoom(200.123, 200);
+    // Fractional CSS heights can be rounded by native layout.
+    h.h.rect.height = Math.round(h.h.rect.height * 64) / 64;
+    h.reset();
     h.scroll();
     expect(h.fullRead).toHaveBeenCalledOnce();
-    expect(h.style).toHaveBeenCalledTimes(count + 1);
+    expect(h.ownerBox).toHaveBeenCalledOnce();
+    expect(h.style).toHaveBeenCalledOnce();
     h.binding.dispose();
     h.scroll();
     expect(h.fullRead).toHaveBeenCalledOnce();

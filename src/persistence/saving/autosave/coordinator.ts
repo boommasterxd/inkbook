@@ -59,9 +59,9 @@ export class AutosaveCoordinator {
     this.#status = this.dirty ? "debouncing" : "clean";
     this.#timer = new AutosaveTimer(options.clock, () => this.#kick());
     this.#terminalVault = createTerminalVaultPort(options.vault, () => this.#disposed);
-    this.#workerModel = new AutosaveWorkerModelState(options.initialSnapshot.revision);
+    this.#workerModel = new AutosaveWorkerModelState(options.initialRevision);
     if (this.#canonicalRewritePending) {
-      this.#workerModel.requireFull(options.initialSnapshot.revision);
+      this.#workerModel.requireFull(options.initialRevision);
       this.#timer.schedule(AUTOSAVE_DELAY_MS);
     }
     this.#verifier = new AutosavePersistedOutputVerifier({

@@ -13,12 +13,21 @@ export interface ElementBoxMeasurement {
   readonly contentBox: ElementContentBox;
 }
 
+/** Pointer projection needs only the fresh content origin, even when the host reflows. */
+export function measureElementOrigin(
+  element: HTMLElement,
+): Pick<ElementContentBox, "left" | "top"> {
+  const bounds = element.getBoundingClientRect();
+  const style = element.ownerDocument.defaultView?.getComputedStyle?.(element);
+  return { left: bounds.left + leftContentInset(style), top: bounds.top + topContentInset(style) };
+}
+
 export function measureElementBox(element: HTMLElement): ElementBoxMeasurement {
   const borderBox = element.getBoundingClientRect();
   const style = element.ownerDocument.defaultView?.getComputedStyle?.(element);
-  const leftInset = cssPixels(style?.borderLeftWidth) + cssPixels(style?.paddingLeft);
+  const leftInset = leftContentInset(style);
   const rightInset = cssPixels(style?.borderRightWidth) + cssPixels(style?.paddingRight);
-  const topInset = cssPixels(style?.borderTopWidth) + cssPixels(style?.paddingTop);
+  const topInset = topContentInset(style);
   const bottomInset = cssPixels(style?.borderBottomWidth) + cssPixels(style?.paddingBottom);
   const width = Math.max(0, borderBox.width - leftInset - rightInset);
   const height = Math.max(0, borderBox.height - topInset - bottomInset);
@@ -36,6 +45,14 @@ export function measureElementBox(element: HTMLElement): ElementBoxMeasurement {
       width,
     },
   };
+}
+
+function leftContentInset(style: CSSStyleDeclaration | undefined): number {
+  return cssPixels(style?.borderLeftWidth) + cssPixels(style?.paddingLeft);
+}
+
+function topContentInset(style: CSSStyleDeclaration | undefined): number {
+  return cssPixels(style?.borderTopWidth) + cssPixels(style?.paddingTop);
 }
 
 function cssPixels(value: string | undefined): number {

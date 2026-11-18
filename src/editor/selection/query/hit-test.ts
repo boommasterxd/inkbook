@@ -9,7 +9,7 @@ import {
   simplifyStrokeCenters,
   STROKE_SIMPLIFICATION_WINDOW,
 } from "../../../domain/geometry/stroke-simplification";
-import { pressureStrokeContainsPoint } from "./pressure-hit-test";
+import { hasStrokeHitGeometry, pressureStrokeContainsPoint } from "./pressure-hit-test";
 import type { RenderBand } from "../../../domain/commands/render-bands";
 import { isStoredStroke } from "../../../domain/elements/stroke-replacement-proof";
 import { shapeVertices, tableColumnOffsets, tableWidth } from "../../../domain/geometry/creation";
@@ -244,7 +244,7 @@ function hitStroke(
   prepared?: PreparedPressureGeometryPort,
 ): boolean {
   const samples = stroke.points;
-  if (samples.length < 3 || stroke.style.opacity <= 0) return false;
+  if (!hasStrokeHitGeometry(stroke)) return false;
   const radiusSquared = radius * radius;
   if (pointDistanceSquared(point.x, point.y, samples[0]!, samples[1]!) <= radiusSquared)
     return true;

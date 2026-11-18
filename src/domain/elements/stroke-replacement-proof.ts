@@ -2,7 +2,8 @@ import { sampleOffsetWithinRange } from "../schema/stroke-sample-extrema";
 import { canonicalizeGeometryNumber } from "../schema/canonical";
 import { MAX_ABSOLUTE_COORDINATE } from "../schema/constants";
 import { validateRuntimeInkElementV1 } from "../schema/element-validation";
-import type { StrokeElementV1 } from "../schema/public";
+import { translatedStroke } from "../geometry/stroke-position";
+import type { PointV1, StrokeElementV1 } from "../schema/public";
 
 export interface CanonicalStrokeReplacementProof {
   readonly source: object;
@@ -42,15 +43,43 @@ export function markCanonicalStrokeReplacement(
       throw new TypeError("Canonical stroke replacements must be immutable.");
     }
     assertCanonicalTranslation(source as StrokeElementV1, replacement, translation);
-    const immutableTranslation = Object.isFrozen(translation)
-      ? translation
-      : Object.freeze({ ...translation });
-    canonicalReplacementProofs.set(
-      replacement,
-      Object.freeze({ source, translation: immutableTranslation }),
-    );
+    retainTranslation(source, replacement, translation);
   }
   return replacement;
+}
+
+/** Only the producer can reuse all unchanged fields of the exact immutable Store record. */
+export function translateStrokeForReplacement(
+  source: StrokeElementV1,
+  delta: PointV1,
+): StrokeElementV1 {
+  const replacement = translatedStroke(source, delta);
+  for (const point of [replacement.pivot, replacement.offset!]) {
+    if (Math.abs(point.x) > MAX_ABSOLUTE_COORDINATE || Math.abs(point.y) > MAX_ABSOLUTE_COORDINATE)
+      throw new RangeError("Transformed stroke coordinates exceed the supported range.");
+    Object.freeze(point);
+  }
+  Object.freeze(replacement);
+  if (!isStoredStroke(source)) return replacement;
+  if (!Object.isFrozen(source)) return markCanonicalStrokeReplacement(source, replacement, delta);
+  if (!storedStrokeOffsetWithinRange(replacement))
+    throw new RangeError("Invalid canonical stroke translation.");
+  retainTranslation(source, replacement, delta);
+  return replacement;
+}
+
+function retainTranslation(
+  source: object,
+  replacement: StrokeElementV1,
+  translation: PointV1,
+): void {
+  const immutableTranslation = Object.isFrozen(translation)
+    ? translation
+    : Object.freeze({ ...translation });
+  canonicalReplacementProofs.set(
+    replacement,
+    Object.freeze({ source, translation: immutableTranslation }),
+  );
 }
 
 export function getCanonicalStrokeReplacementProof(

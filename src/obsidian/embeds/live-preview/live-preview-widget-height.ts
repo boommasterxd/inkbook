@@ -6,14 +6,17 @@ export class LivePreviewWidgetHeight {
     return this.#value;
   }
 
-  public observe(root: HTMLElement): () => void {
+  public observe(root: HTMLElement, setLayoutVisible?: (visible: boolean) => void): () => void {
     const ownerWindow = root.ownerDocument.defaultView;
     if (ownerWindow === null) return () => undefined;
     const observer = new ownerWindow.ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.target !== root) continue;
-        const height = entry.borderBoxSize[0]?.blockSize;
+        const size = entry.borderBoxSize[0];
+        const height = size?.blockSize;
         if (height !== undefined && Number.isFinite(height) && height > 0) this.#value = height;
+        // Obsidian can keep the CodeMirror widget attached behind Reading view.
+        setLayoutVisible?.((size?.inlineSize ?? entry.contentRect.width) > 0);
       }
     });
     observer.observe(root, { box: "border-box" });

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
-import { rectangle } from "../../../domain/store/fixtures";
+import { ElementStore } from "../../../../../src/domain/store/public";
+import { activeEditorStoreHistory } from "../../../../fixtures/obsidian/active-editor";
+import { highlighter, rectangle } from "../../../domain/store/fixtures";
 
 const model = {
   commitBandOrder: vi.fn(),
@@ -10,6 +12,28 @@ const model = {
   removeElements: vi.fn(),
   replaceElements: vi.fn(),
 };
+
+it("restores the committed stroke after the creator changes its mutable inputs", () => {
+  const source = highlighter();
+  const inputs = [source];
+  const store = new ElementStore();
+  const history = activeEditorStoreHistory(store);
+  expect(history.create(inputs)).toBe(true);
+  const first = store.get(source.id)!;
+  const original = structuredClone(source);
+  inputs.length = 0;
+  source.points.fill(0);
+  source.style.width = 22;
+  expect(history.undo()).toBe(true);
+  expect(store.size).toBe(0);
+  expect(history.redo()).toBe(true);
+  const restored = store.get(original.id)!;
+  expect(restored.element).toEqual(original);
+  expect(restored.element).toBe(first.element);
+  expect(restored.bounds).toBe(first.bounds);
+  expect(restored.geometryVersion).toBeGreaterThan(first.geometryVersion);
+  expect(history.commandCount).toBe(1);
+});
 
 describe("history replay origin", () => {
   it.each(["sync", "async"] as const)(
