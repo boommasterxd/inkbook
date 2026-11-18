@@ -29,11 +29,13 @@ import {
 
 const LEASES_BY_DOCUMENT = new WeakMap<Document, ScrollbarLeaseRegistry<HTMLElement>>();
 
-interface PresentationMeasurement {
-  readonly availableWidth: number;
-  readonly contentWidth: number;
-  readonly requiresSettledRead: boolean;
-}
+type PresentationMeasurement =
+  | {
+      readonly availableWidth: number;
+      readonly contentWidth: number;
+      readonly requiresSettledRead: boolean;
+    }
+  | undefined;
 
 export interface PresentationPreviewLifecycle {
   readonly releaseHiddenSurface?: () => void;
@@ -293,6 +295,13 @@ export class PresentationController {
   }
 
   #applyMeasurement(measurement: PresentationMeasurement): void {
+    if (measurement === undefined) {
+      // The hidden scrollport has no client edge yet. Let the widget regain
+      // its natural width so its existing ResizeObserver can see it reappear.
+      this.#attachment.root.style.removeProperty("--inkbook-owner-inline-limit");
+      this.#measured = false;
+      return;
+    }
     this.#attachment.root.style.setProperty(
       "--inkbook-owner-inline-limit",
       `${String(measurement.availableWidth)}px`,
@@ -401,10 +410,12 @@ function readPresentationMeasurement(
   owner: HTMLElement,
   owningWindow: Window,
 ): PresentationMeasurement {
+  const ownerWidth = owner.clientWidth;
+  if (ownerWidth === 0) return undefined;
   const rootRect = root.getBoundingClientRect();
   const ownerRect = owner.getBoundingClientRect();
   const rootLeft = finiteLayoutValue(rootRect.left);
-  const ownerClientRight = finiteLayoutValue(ownerRect.left) + owner.clientLeft + owner.clientWidth;
+  const ownerClientRight = finiteLayoutValue(ownerRect.left) + owner.clientLeft + ownerWidth;
   const availableWidth = Math.max(0, ownerClientRight - rootLeft);
   const requiresSettledRead = rootRect.width > availableWidth + 0.5;
   const contentWidth = Math.max(

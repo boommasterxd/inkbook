@@ -2,24 +2,21 @@ import type { InputPoint, InputState, PointerSample } from "../../../../editor/i
 import type { Bounds } from "../../../../domain/geometry/public";
 import { reduceInput } from "../../../../editor/input/index";
 import {
-  accumulateWheelSteps,
   accumulateZoomInput,
   calculateFitZoom,
   calculateZoomLimits,
   clampCameraX,
-  continuousWheelZoomFactor,
   renderedContainerHeight,
   zoomFactorForSteps,
 } from "../../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../../scrolling/index";
 import { pointerSampleFromEvent } from "../controller-helpers";
-import { measureElementBox, type ElementBoxMeasurement } from "../layout/element-content-box";
+import { measureElementOrigin, type ElementBoxMeasurement } from "../layout/element-content-box";
 import {
   localScreenPointAnchor,
   projectNavigationCursorLayout,
   readNavigationLayout,
   visibleCenterPoint,
-  wheelAnchor,
   type NavigationLayoutRead,
   navigationResizeAnchor,
 } from "./navigation-layout";
@@ -31,12 +28,10 @@ import type {
 } from "./navigation-types";
 import {
   horizontalPanWheel,
-  isContinuousZoomWheel,
   isZoomWheel,
   positiveOr,
   validViewState,
   validResizeUpdate,
-  wheelZoomNormalization,
 } from "./navigation-helpers";
 import { applyNavigationFrameLayout, resolveNavigationFrame } from "./navigation-frame";
 import { NavigationActivity } from "./navigation-activity";
@@ -134,15 +129,14 @@ export class ActiveEditorNavigation {
     return layout !== undefined;
   }
   public pagePoint(event: Pick<MouseEvent, "clientX" | "clientY">): InputPoint {
-    const bounds = measureElementBox(this.#container).contentBox;
+    const bounds = measureElementOrigin(this.#container);
     return {
       x: (event.clientX - bounds.left) / this.#zoom - this.#cameraX,
       y: (event.clientY - bounds.top) / this.#zoom,
     };
   }
   public localScreenPoint(event: Pick<MouseEvent, "clientX" | "clientY">): InputPoint {
-    const bounds =
-      this.#gestureLayout?.containerBounds ?? measureElementBox(this.#container).contentBox;
+    const bounds = this.#gestureLayout?.containerBounds ?? measureElementOrigin(this.#container);
     return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
   }
   public pointer(event: PointerEvent): PointerSample {
@@ -338,29 +332,18 @@ export class ActiveEditorNavigation {
   public updateWheel(event: ActiveEditorWheelInput, physicallyHeldModifier = false): boolean {
     if (!Number.isFinite(event.deltaY) || !Number.isFinite(event.deltaX ?? 0)) return false;
     this.#boundsReveal.cancel();
-    if (event.deltaY !== 0 || (event.deltaX ?? 0) !== 0) this.#activity.pulse();
-    if (isZoomWheel(event)) {
+    const zoomWheel = isZoomWheel(event);
+    if (zoomWheel && event.deltaY !== 0) {
       this.cancelPanMomentum();
-      if (event.deltaY === 0) return true;
-      const point = { clientX: event.clientX, clientY: event.clientY };
-      this.#pending.anchorSource = (layout) => wheelAnchor(layout, point);
-      if (isContinuousZoomWheel(event)) {
-        this.#pending.continuous = accumulateZoomInput(this.#pending.continuous, {
-          factor: continuousWheelZoomFactor(
-            event.deltaY,
-            wheelZoomNormalization(physicallyHeldModifier),
-          ),
-        });
-      } else {
-        this.#pending.wheel = accumulateWheelSteps(this.#pending.wheel, -Math.sign(event.deltaY));
-      }
+      this.#pending.queueWheelZoom(event, physicallyHeldModifier);
       this.#scheduleFrame();
       return true;
     }
-    const horizontal = horizontalPanWheel(event, {});
-    if (this.#zoom <= this.#getInput().fitZoom || horizontal === undefined) {
+    const horizontal = zoomWheel ? undefined : horizontalPanWheel(event, {});
+    if (horizontal === undefined || this.#zoom <= this.#getInput().fitZoom) {
+      if (event.deltaY !== 0 || (event.deltaX ?? 0) !== 0) this.#activity.pulse();
       this.cancelPanMomentum();
-      return false;
+      return zoomWheel;
     }
     const pageHeight =
       event.deltaMode === 2 ? browserScrollMetrics.getClientHeight(this.#scrollOwner) : 0;
@@ -405,10 +388,12 @@ export class ActiveEditorNavigation {
       this.cancelPanMomentum();
       return;
     }
-    frame = accumulateZoomInput(
-      frame,
-      this.#boundsReveal.advance(timestamp, layout.scrollTop, this.#cameraX, this.#zoom),
-    );
+    if (this.#boundsReveal.active) {
+      frame = accumulateZoomInput(
+        frame,
+        this.#boundsReveal.advance(timestamp, layout.scrollTop, this.#cameraX, this.#zoom),
+      );
+    }
     const resolved = resolveNavigationFrame({
       cameraX: this.#cameraX,
       frame:
@@ -441,8 +426,7 @@ export class ActiveEditorNavigation {
     }
   }
   public screenPoint(point: InputPoint): InputPoint {
-    const bounds =
-      this.#gestureLayout?.containerBounds ?? measureElementBox(this.#container).contentBox;
+    const bounds = this.#gestureLayout?.containerBounds ?? measureElementOrigin(this.#container);
     const local = this.localPointFromPage(point);
     return {
       x: bounds.left + local.x,

@@ -16,7 +16,7 @@ import type {
 function createCoordinator(
   options: Pick<
     AutosaveCoordinatorOptions,
-    "initialSnapshot" | "executor" | "clock" | "createReplacement"
+    "initialRevision" | "executor" | "clock" | "createReplacement"
   > & {
     readonly documentSource: Pick<AutosaveDocumentSource, "currentRevision" | "snapshot">;
   },
@@ -93,7 +93,7 @@ it("bounds full Store reads and live executors across native restart and failed 
   });
   const snapshot = vi.fn(() => ({ ...initial, revision: 1 }));
   const { coordinator, process } = createCoordinator({
-    initialSnapshot: initial,
+    initialRevision: initial.revision,
     executor: failingExecutor(),
     createReplacement,
     documentSource: {
@@ -156,7 +156,7 @@ it("reads one complete standard Store for the single allowed same-call baseline 
     terminate: vi.fn(),
   };
   const { coordinator, process } = createCoordinator({
-    initialSnapshot: initial,
+    initialRevision: initial.revision,
     executor,
     documentSource: {
       currentRevision: () => revision,

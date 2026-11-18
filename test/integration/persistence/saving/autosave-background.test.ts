@@ -59,7 +59,7 @@ async function createBackgroundHarness() {
     confirmedBase: { outputHash: initial.hash, revision: 0, type: "confirmed" },
     documentSource: source,
     executor,
-    initialSnapshot,
+    initialRevision: initialSnapshot.revision,
     path: "background.svg",
     sessionId: "background-session",
     vault,

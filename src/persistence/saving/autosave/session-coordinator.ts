@@ -32,7 +32,7 @@ export function createAutosaveSession(options: AutosaveSessionOptions): Autosave
     clock: options.clock,
     confirmedBase: {
       outputHash: options.outputHash,
-      revision: options.initialSnapshot.revision,
+      revision: options.initialRevision,
       type: "confirmed",
     },
     ...(options.createFallback === undefined ? {} : { createFallback: options.createFallback }),
@@ -51,7 +51,7 @@ export function createAutosaveSession(options: AutosaveSessionOptions): Autosave
         : {}),
     },
     executor: options.executor,
-    initialSnapshot: options.initialSnapshot,
+    initialRevision: options.initialRevision,
     observer: {
       confirmed: options.confirmed,
       statusChanged: options.statusChanged ?? (() => undefined),

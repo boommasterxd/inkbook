@@ -3,17 +3,18 @@ import { describe, expect, it } from "vitest";
 
 import { validateInkElementV1 } from "../../../../src/domain/schema/public";
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
-import { createDragElement, createFreehandElement } from "../../../../src/editor/tools/creation";
+import { createDragElement, createFreehandElement } from "../../../../src/editor/tools/public";
 
 const identity = { id: "123e4567-e89b-42d3-a456-426614174000", createdAt: 42 };
 
 describe("freehand and linear tool element creation", () => {
   it("canonicalizes freehand samples and derives the unrotated bounds center", () => {
     const defaults = createBuiltInSettings().toolDefaults;
+    const samples = [10.12345, 30.5555, 0.77777, 20.98765, 10.1111, 0.2];
     const pen = createFreehandElement({
       identity,
       tool: "draw",
-      samples: [10.12345, 30.5555, 0.77777, 20.98765, 10.1111, 0.2],
+      samples,
       defaults,
     });
 
@@ -25,6 +26,12 @@ describe("freehand and linear tool element creation", () => {
       style: { width: 4, pressureEnabled: true, smoothing: 0.5 },
     });
     expect(validateInkElementV1(pen).ok).toBe(true);
+    expect(pen.points).toBe(samples);
+    expect(pen.style.color).not.toBe(defaults.pen.color);
+    pen.points[0] = 8;
+    pen.style.width = 22;
+    expect(samples[0]).toBe(8);
+    expect(defaults.pen.width).toBe(4);
   });
 
   it("forces highlighter pressure off without mutating the defaults", () => {

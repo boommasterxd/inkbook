@@ -39,7 +39,7 @@ describe("confirmed base ownership across exports", () => {
         confirmedBase: { type: "confirmed", revision: 0, outputHash: initial.hash },
         documentSource,
         executor,
-        initialSnapshot: documentSource.snapshot(),
+        initialRevision: documentSource.currentRevision(),
         path: "drawing.svg",
         sessionId: "confirmed",
         workerEpoch: 1,

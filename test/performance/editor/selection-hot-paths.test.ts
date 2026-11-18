@@ -4,6 +4,7 @@ import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import { elementMatchesSelectionAreaSteps } from "../../../src/editor/selection/query/selection-area";
 
 import * as strokePosition from "../../../src/domain/geometry/stroke-position";
+import * as elementValidation from "../../../src/domain/schema/element-validation";
 import * as pressureUnion from "../../../src/domain/geometry/pressure/pressure-union";
 import { strokePrimitiveSteps } from "../../../src/editor/selection/query/stroke-selection-geometry";
 import { activeActions } from "../../fixtures/obsidian/editor-actions";
@@ -189,12 +190,16 @@ describe("selection scale preview hot path", () => {
 });
 
 describe("selection commit hot paths", () => {
-  it("does not allocate a Promise per element for a 10,000-stroke move without yields", async () => {
+  it("moves 10,000 owned strokes without repeated header validation or per-element Promises", async () => {
     const strokes = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
-    const session = movedSession(strokes);
+    const store = new ElementStore(strokes);
+    const session = movedSession(
+      strokes.map(({ id }) => store.get(id)!.element as StrokeElementV1),
+    );
+    const validation = vi.spyOn(elementValidation, "validateRuntimeInkElementV1");
     let promises = 0;
-    let checks = 0;
-    let yields = 0;
+    const shouldYield = vi.fn(() => false);
+    const yieldControl = vi.fn(async () => undefined);
     const hook = createHook({
       init: (_id, type) => {
         if (type === "PROMISE") promises += 1;
@@ -203,21 +208,15 @@ describe("selection commit hot paths", () => {
     hook.enable();
     let prepared: Awaited<ReturnType<typeof session.prepareCommitTimeSliced>>;
     try {
-      prepared = await session.prepareCommitTimeSliced({
-        shouldYield: () => {
-          checks += 1;
-          return false;
-        },
-        yieldControl: async () => {
-          yields += 1;
-        },
-      });
+      prepared = await session.prepareCommitTimeSliced({ shouldYield, yieldControl });
+      expect(validation).not.toHaveBeenCalled();
     } finally {
       hook.disable();
+      validation.mockRestore();
     }
     expect(prepared.status).toBe("ready");
-    expect(checks).toBe(strokes.length);
-    expect(yields).toBe(0);
+    expect(shouldYield).toHaveBeenCalledTimes(strokes.length);
+    expect(yieldControl).not.toHaveBeenCalled();
     // Fixed async entry/return overhead is allowed; per-element Promises are not.
     expect(promises).toBeLessThanOrEqual(32);
   });

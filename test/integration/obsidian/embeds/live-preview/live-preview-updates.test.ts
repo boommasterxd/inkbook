@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LivePreviewBlocks } from "../../../../../src/obsidian/embeds/live-preview/live-preview-blocks";
 import { createLivePreviewExtension } from "../../../../../src/obsidian/embeds/live-preview/live-preview";
+import { MARKDOWN_EMBED_LIMITS } from "../../../../../src/obsidian/embeds/markdown-embed";
 import { documentRecognitionChanged } from "../../../../../src/obsidian/embeds/live-preview/live-preview-recognition-effects";
 import type { InkbookDocumentRecognition } from "../../../../../src/obsidian/embeds/preview/document-recognition";
 import type { InkbookLivePreviewWidget } from "../../../../../src/obsidian/embeds/live-preview/live-preview-widget";
@@ -88,13 +89,16 @@ describe("Live Preview targeted state updates", () => {
   });
 
   it("maps ordinary prose edits and retains widget identity contracts without resolving links again", () => {
-    const { state, resolveDocument } = harness();
+    const { state, resolveDocument } = harness(
+      "Grüße, Welt.\n\n![[a.svg|Bäume|240]]\n\n![[b.svg]]",
+    );
     const original = replacements(state);
-    const changed = state.update({ changes: { from: 2, to: 4, insert: "a longer edit" } }).state;
+    const insert = "üße aus Köln";
+    const changed = state.update({ changes: { from: 2, to: 4, insert } }).state;
     const mapped = replacements(changed);
     expect(resolveDocument).not.toHaveBeenCalled();
     for (const [index, entry] of mapped.entries()) {
-      expect(entry.from).toBe((original[index]?.from ?? 0) + 11);
+      expect(entry.from).toBe((original[index]?.from ?? 0) + insert.length - 2);
       expect(entry.widget.eq(original[index]!.widget.withRange(entry.from, entry.to))).toBe(true);
       expect(changed.doc.sliceString(entry.from, entry.to)).toMatch(/^!/u);
     }
@@ -143,6 +147,33 @@ describe("Live Preview targeted state updates", () => {
 });
 
 describe("Live Preview fallback and mapping", () => {
+  it("discovers a comment delimiter formed by simultaneous edits on the same prose line", () => {
+    const { state } = harness("Grüße <x!-y-\n![[a.svg]]\nEnde -->\n![[b.svg]]");
+    const line = state.doc.line(1).text;
+    const changes = ["x", "y"].map((letter) => {
+      const from = line.indexOf(letter);
+      return { from, to: from + 1 };
+    });
+    const changed = state.update({ changes }).state;
+    expect(replacements(changed).map(({ from, to }) => changed.doc.sliceString(from, to))).toEqual([
+      "![[b.svg]]",
+    ]);
+  });
+
+  it("rediscovers embeds when Unicode prose crosses the Markdown byte limit in either direction", () => {
+    const suffix = "\n![[a.svg]]";
+    const remaining = MARKDOWN_EMBED_LIMITS.inputBytes - suffix.length;
+    const line = "漢".repeat(Math.floor(remaining / 3)) + "a".repeat(remaining % 3);
+    const { state } = harness(line + suffix);
+    expect(replacements(state)).toHaveLength(1);
+    const over = state.update({ changes: { from: 0, insert: "é" } }).state;
+    expect(replacements(over)).toHaveLength(0);
+    const restored = over.update({ changes: { from: 0, to: 1 } }).state;
+    expect(replacements(restored)).toMatchObject([
+      { from: line.length + 1, to: restored.doc.length },
+    ]);
+  });
+
   it.each(["---", "    code", "Title\n---"])(
     "reparses structural or indented lines %j",
     (prefix) => {

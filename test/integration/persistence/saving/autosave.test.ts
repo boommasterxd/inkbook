@@ -59,7 +59,7 @@ function createCoordinator(
     ...(createFallback === undefined ? {} : { createFallback }),
     documentSource: harness.documentSource,
     executor,
-    initialSnapshot: snapshot(),
+    initialRevision: 0,
     path: "drawing.svg",
     sessionId: "session-a",
     vault: harness.vault,

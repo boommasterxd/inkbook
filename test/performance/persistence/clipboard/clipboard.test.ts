@@ -1,6 +1,8 @@
 import { createHook } from "node:async_hooks";
 
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import * as sampleValidation from "../../../../src/domain/schema/stroke-sample-range-validation";
+import * as geometry from "../../../../src/domain/geometry/bounds";
 
 import {
   decodeCustomClipboardText,
@@ -11,12 +13,48 @@ import { validateClipboardPayloadSliced } from "../../../../src/persistence/clip
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/public";
 import { encodeRuntimeSelectionChunked } from "../../../../src/persistence/worker/runtime/model/fallback-clipboard-codec";
-import { stroke } from "../../../unit/domain/schema/fixtures";
+import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/model/document-model";
+import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
+import { snapshot, stroke } from "../../../unit/domain/schema/fixtures";
+import { validImageFixture } from "../../../fixtures/persistence/images";
+import { textElement, validFontResource } from "../../../unit/persistence/clipboard/fixtures";
 import { CLIPBOARD_ELEMENTS, CLIPBOARD_POINTS, createClipboardLimitFixture } from "../fixtures";
 import { createMinimalPersistenceFixture } from "../fixtures";
 import { observeSchemaArray } from "../../../fixtures/domain/schema-array-work";
 
 const MIB = 1024 * 1024;
+it("reuses verified model resources on Copy and checks their bytes again on Paste", async () => {
+  const { asset, element: image } = await validImageFixture();
+  const font = await validFontResource();
+  const text = textElement();
+  const model = new DocumentModelRuntime();
+  const context = { checkpoint: () => undefined, signal: new AbortController().signal };
+  model.initialize({
+    ...snapshot([image, text]),
+    version: 5,
+    imageResources: [asset],
+    fontResources: [font],
+  });
+  const hashed = vi.spyOn(ChunkedSha256.prototype, "update");
+  try {
+    const encoded = await model.encodeClipboardSliced(0, [image.id, text.id], context);
+    if (!encoded.ok) throw new Error(encoded.error.message);
+    expect(hashed).not.toHaveBeenCalled();
+    const decoded = await model.decodeClipboardSliced(
+      0,
+      { plainText: encoded.value.plainText },
+      context,
+    );
+    expect(decoded.ok).toBe(true);
+    expect(hashed.mock.calls.reduce((sum, [bytes]) => sum + bytes.byteLength, 0)).toBe(
+      atob(font.data).length + atob(asset.data).length,
+    );
+  } finally {
+    hashed.mockRestore();
+    model.clear();
+  }
+});
+
 it("bounds postparse clipboard sample reads and discards cancelled validation", async () => {
   const observations = Array.from({ length: 1_000 }, (_, index) => {
     const element = stroke(index + 1);
@@ -72,7 +110,12 @@ it("bounds postparse clipboard sample reads and discards cancelled validation", 
 
 it("bounds Promise allocation in the 1,000-stroke sliced clipboard fallback", async () => {
   const elements = Array.from({ length: 1_000 }, (_, index) => stroke(index + 1));
-  let nodes = 0;
+  const stringify = JSON.stringify;
+  let numericWrites = 0;
+  const json = vi.spyOn(JSON, "stringify").mockImplementation((value) => {
+    if (typeof value === "number") numericWrites++;
+    return stringify(value);
+  });
   let checkpoints = 0;
   let promises = 0;
   const hook = createHook({
@@ -83,27 +126,22 @@ it("bounds Promise allocation in the 1,000-stroke sliced clipboard fallback", as
   hook.enable();
   let encoded: Awaited<ReturnType<typeof encodeRuntimeSelectionChunked>>;
   try {
-    encoded = await encodeRuntimeSelectionChunked(
-      elements,
-      elements.map(({ id }) => id),
-      {
-        checkpoint: async () => {
-          checkpoints += 1;
-        },
-        signal: {
-          throwIfAborted: () => {
-            nodes += 1;
-          },
-        } as AbortSignal,
-        workProfile: { inputByteLimit: 16_384, nodeLimit: 256, outputByteLimit: 65_536 },
+    encoded = await encodeRuntimeSelectionChunked(elements, {
+      checkpoint: async () => {
+        checkpoints += 1;
       },
-    );
+      signal: new AbortController().signal,
+      workProfile: { inputByteLimit: 16_384, nodeLimit: 256, outputByteLimit: 65_536 },
+    });
   } finally {
     hook.disable();
+    json.mockRestore();
   }
   expect(encoded.ok).toBe(true);
-  expect(nodes).toBe(24_004);
-  expect(checkpoints).toBe(102);
+  // Each stroke writes six sample scalars, six geometry/style scalars, and one shared version.
+  expect(numericWrites).toBe(12_001);
+  expect(checkpoints).toBeGreaterThanOrEqual(102);
+  expect(checkpoints).toBeLessThanOrEqual(125);
   // Checkpoints create Promises; the margin covers fixed test and serializer overhead.
   expect(promises).toBeLessThanOrEqual(300);
 });
@@ -168,12 +206,14 @@ it("keeps the maximum worker Clipboard model coherent across delta, zero-delta, 
       }),
     ).resolves.toMatchObject({ modelRevision: 1, type: "model-sync-success" });
 
-    const encoded = await runtime.execute({
-      basisRevision: 1,
-      identity: { ...clipboardIdentity, operationId: 3 },
-      selectedIds: elements.map(({ id }) => id),
-      type: "clipboard-encode",
-    });
+    const encoded = await observeClipboardEncode(() =>
+      runtime.execute({
+        basisRevision: 1,
+        identity: { ...clipboardIdentity, operationId: 3 },
+        selectedIds: elements.map(({ id }) => id),
+        type: "clipboard-encode",
+      }),
+    );
     if (encoded.type !== "clipboard-encode-success" || !encoded.result.ok) {
       throw new Error("Maximum worker Clipboard encoding failed.");
     }
@@ -234,6 +274,20 @@ function decodeAndPlanPaste(canonicalText: string, sample: number) {
 
 function uuid(value: number): string {
   return `10000000-0000-4000-8000-${value.toString(16).padStart(12, "0")}`;
+}
+
+async function observeClipboardEncode<T>(encode: () => Promise<T>): Promise<T> {
+  const samples = vi.spyOn(sampleValidation, "assertStrokeSampleRange");
+  const bounds = vi.spyOn(geometry, "calculateElementBoundsSteps");
+  try {
+    const result = await encode();
+    expect(samples).not.toHaveBeenCalled();
+    expect(bounds.mock.calls.some(([element]) => element.kind === "stroke")).toBe(false);
+    return result;
+  } finally {
+    samples.mockRestore();
+    bounds.mockRestore();
+  }
 }
 
 function encodeObservedClipboard(

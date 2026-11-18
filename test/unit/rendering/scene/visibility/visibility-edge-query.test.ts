@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import type { Bounds } from "../../../../../src/domain/geometry/primitives";
 import { UniformSpatialIndex } from "../../../../../src/domain/spatial/uniform-spatial-index";
 import { createInstrumentation } from "../../../../../src/rendering/scene/instrumentation";
+import { visibilityPageBounds } from "../../../../../src/rendering/scene/scene-resource-policy";
 import type { SceneStorePort } from "../../../../../src/rendering/scene/types";
 import {
   VisibilityEdgeQuery,
@@ -136,13 +137,47 @@ it("coalesces adjacent unstarted fringes before visiting a shared dense boundary
   expect(edge.memoryUsage()).toBe(0);
 });
 
+it.each([-256, 0, 256])("includes exact and fractional entries at cell boundary %i", (edgeY) => {
+  const { edge, records, index, work } = indexedEdges([]);
+  const threshold = edgeY === 0 ? -Number.MIN_VALUE : edgeY - Math.abs(edgeY) * Number.EPSILON;
+  for (const [id, y] of [
+    ["before", threshold],
+    ["on", edgeY],
+    ["after", edgeY + 0.5],
+  ] as const) {
+    const record = fakeRectangleRecord(id, 0, 20, y);
+    const bounds = { minX: 20, maxX: 20, minY: y, maxY: y };
+    records.records.set(id, { ...record, bounds });
+    index.insert(id, bounds);
+  }
+  const previous = { ...BASE, minY: edgeY - 32, maxY: edgeY - 2 };
+  const current = { ...previous, minY: edgeY - 30, maxY: edgeY };
+  expectChanges(
+    edge.collect(
+      previous,
+      current,
+      () => false,
+      Infinity,
+      () => 0,
+    ),
+    ["before", "on"],
+    [],
+  );
+  expect(work.indexedVisits).toBeGreaterThan(0);
+  edge.release();
+});
+
 it.each(["height", "width"] as const)(
   "keeps changed %s queries on exact fringes without acquiring neighboring cell records",
   (axis) => {
     const { edge, now, visible, get, beginQuery } = indexedEdges([0, 30, 110, 130], 128);
-    const current = axis === "height" ? { ...BASE, maxY: 140 } : { ...BASE, maxX: 140 };
+    const viewport = { width: 50, height: 50, left: 0, top: 0 };
+    const camera = { zoom: 0.5, x: 0 };
+    const baseline = visibilityPageBounds(viewport, camera, true).envelope;
+    const resized = { ...viewport, [axis]: 70.125 };
+    const current = visibilityPageBounds(resized, camera, true).envelope;
     const fringe = axis === "height" ? { ...current, minY: 100 } : { ...current, minX: 100 };
-    const result = edge.collect(BASE, current, visible, Infinity, now);
+    const result = edge.collect(baseline, current, visible, Infinity, now);
     const entered =
       axis === "height"
         ? Array.from({ length: 64 }, (_, i) => `entry-${2 + Math.floor(i / 2) * 4 + (i % 2)}`)

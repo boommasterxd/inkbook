@@ -3,6 +3,7 @@ import type { InkElementV1 } from "../../schema/public";
 import { isConnectable, resolveConnections } from "./connections";
 import { createInitialRecord } from "./record-factory";
 import { assertValidElement } from "../replacements/replacement-planner";
+import { preparedInsertionBounds } from "../mutations/prepared-insertion-element";
 import type { ElementRecord, ImmutableInkElement } from "../types";
 
 interface CreationPlannerPorts {
@@ -16,7 +17,9 @@ export function prepareCreatedRecords(
 ): ElementRecord[] {
   const staged = new Map<string, InkElementV1>();
   for (const element of elements) {
-    assertValidElement(element);
+    if (preparedInsertionBounds(element) === undefined || element.kind !== "stroke") {
+      assertValidElement(element);
+    }
     if (ports.hasExisting(element.id) || staged.has(element.id)) {
       throw new RangeError(`Element ID already exists: ${element.id}`);
     }

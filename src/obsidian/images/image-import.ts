@@ -15,6 +15,12 @@ export interface PreparedRasterImage {
   readonly resizedFrom?: ImageRasterSize;
 }
 
+/** Profiles with the same output dimensions share the encoding of this oriented source. */
+export function rasterPreparationKey(source: ImageRasterSize, maximumPixels: number): string {
+  const { width, height } = fitImageRasterSize(source.width, source.height, 1, maximumPixels);
+  return `raster:${width}x${height}`;
+}
+
 export async function readImageSource(
   file: File,
   signal: AbortSignal,

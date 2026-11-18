@@ -20,6 +20,7 @@ import {
   validateInkElementV1,
 } from "../../domain/schema/public";
 import type { ToolDefaultsV1 } from "../../domain/settings/types";
+import { prepareStrokeInsertion } from "../../domain/store/mutations/prepared-insertion-element";
 
 interface ElementIdentity {
   readonly id: string;
@@ -52,26 +53,36 @@ export interface DragCreation {
   readonly endConnection?: EndpointConnectionV1 | null;
 }
 
-export function createFreehandElement(creation: FreehandCreation): StrokeElementV1 {
-  const points = canonicalStrokeSamples(creation.samples);
+export function createFreehandElement(
+  creation: FreehandCreation,
+  ownership: "mutable" | "store" = "mutable",
+): StrokeElementV1 {
+  const element = freehandDraft(creation);
+  if (ownership === "store") return prepareStrokeInsertion(element);
+  element.style.color = structuredClone(element.style.color);
+  return validatedElement(element) as StrokeElementV1;
+}
+
+function freehandDraft(creation: FreehandCreation): StrokeElementV1 {
+  const points = creation.samples;
+  const pivot = canonicalizeStrokeAndFindPivot(points);
   const styleDefaults =
     creation.tool === "draw" ? creation.defaults.pen : creation.defaults.highlighter;
-  const element: StrokeElementV1 = {
+  return {
     ...creation.identity,
     kind: "stroke",
     tool: creation.tool === "draw" ? "pen" : "highlighter",
     points,
     rotation: 0,
-    pivot: strokePivot(points),
+    pivot,
     style: {
-      color: structuredClone(styleDefaults.color),
+      color: styleDefaults.color,
       width: styleDefaults.width,
       opacity: styleDefaults.opacity,
       pressureEnabled: creation.tool === "draw" ? creation.defaults.pen.pressureEnabled : false,
       smoothing: 0.5,
     },
   };
-  return validatedElement(element) as StrokeElementV1;
 }
 
 export function createDragElement(creation: DragCreation): InkElementV1 {
@@ -157,10 +168,14 @@ export function createDragElement(creation: DragCreation): InkElementV1 {
   });
 }
 
-function canonicalStrokeSamples(samples: number[]): number[] {
+function canonicalizeStrokeAndFindPivot(samples: number[]): PointV1 {
   if (samples.length === 0 || samples.length % 3 !== 0 || samples.length / 3 > MAX_STROKE_POINTS) {
     throw new RangeError("Stroke samples must contain complete x, y, pressure triples.");
   }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
   for (let index = 0; index < samples.length; index += 3) {
     const x = canonicalizeGeometryNumber(samples[index] as number);
     const y = canonicalizeGeometryNumber(samples[index + 1] as number);
@@ -174,18 +189,6 @@ function canonicalStrokeSamples(samples: number[]): number[] {
     samples[index] = x;
     samples[index + 1] = y;
     samples[index + 2] = pressure;
-  }
-  return samples;
-}
-
-function strokePivot(samples: readonly number[]): PointV1 {
-  let minX = samples[0] as number;
-  let maxX = minX;
-  let minY = samples[1] as number;
-  let maxY = minY;
-  for (let index = 3; index < samples.length; index += 3) {
-    const x = samples[index] as number;
-    const y = samples[index + 1] as number;
     minX = Math.min(minX, x);
     maxX = Math.max(maxX, x);
     minY = Math.min(minY, y);

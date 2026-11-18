@@ -1,5 +1,5 @@
 import { ChangeSet } from "@codemirror/state";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { LivePreviewEntrances } from "../../../../../src/obsidian/embeds/live-preview/live-preview-entrances";
 import { MARKDOWN_EMBED_LIMITS } from "../../../../../src/obsidian/embeds/markdown-embed";
 
@@ -23,6 +23,18 @@ function retainedEntrances() {
 }
 
 describe("Live Preview retained entrance performance", () => {
+  it("skips all retained positions for edits beyond the last occurrence", () => {
+    const { entrances, tokens } = retainedEntrances();
+    const changes = ChangeSet.of({ from: documentLength, insert: "Prose." }, documentLength);
+    const positions = vi.spyOn(changes, "mapPos");
+    const ranges = vi.spyOn(changes, "iterChangedRanges");
+    const mapped = entrances.update(changes, sourcePath);
+    expect(positions).not.toHaveBeenCalled();
+    expect(ranges).not.toHaveBeenCalled();
+    const last = capacity * spacing;
+    expect(mapped.stateFor(last, last + tokenLength, documentId)).toBe(tokens[capacity - 1]);
+  });
+
   it("maps a leading text insertion and retains ready and pending occurrences with bounded work", () => {
     const { entrances, tokens } = retainedEntrances();
     const changes = ChangeSet.of({ from: 0, insert: "x" }, documentLength);

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import * as intersections from "../../../src/domain/geometry/pressure/pressure-boundary-intersections";
 import {
   pressureBoundaryParameter,
   type PressureBoundarySegment,
@@ -194,9 +195,9 @@ describe("window-owned pressure boundary scalar work", () => {
       );
       expect(cached.distances).toBe(direct.distances);
       expect(cached.angles).toBe(direct.angles);
-      // The published endpoint-scale getter observes every real cached parameter
-      // check, including checks that share one pair read; preparation adds <=5 abs/entry.
-      expect(ownership.parameterChecks).toBeGreaterThan(cached.scalarReads);
+      // Clipping may reject both candidates of a pair before their exact queries.
+      // Each surviving query uses its published scale; preparation adds <=5 abs/entry.
+      expect(ownership.parameterChecks).toBeGreaterThan(ownership.entries);
       expect(cached.absolute).toBeLessThanOrEqual(
         direct.absolute - 6 * ownership.parameterChecks + 5 * ownership.entries,
       );
@@ -299,11 +300,9 @@ it("reuses bounded clipping cuts without allocating entry iterators", () => {
     this: unknown[],
     compare,
   ) {
-    if (this[0] === 0 && this[1] === 1) {
-      sorts += 1;
-      maximumCuts = Math.max(maximumCuts, this.length);
-      arrays.add(this);
-    }
+    sorts += 1;
+    maximumCuts = Math.max(maximumCuts, this.length);
+    arrays.add(this);
     return Reflect.apply(originalSort, this, [compare]) as unknown[];
   });
   const entries = vi.spyOn(Array.prototype, "entries");
@@ -319,7 +318,28 @@ it("reuses bounded clipping cuts without allocating entry iterators", () => {
   // Two directed half-circle boundaries per disk own one cut buffer each.
   expect(sorts).toBeGreaterThan(shapes.length * 2);
   expect(arrays.size).toBeLessThanOrEqual(shapes.length * 2);
-  expect(maximumCuts).toBeLessThanOrEqual(26);
+  // Four peer boundaries can contribute two interior endpoints and two crossings each.
+  expect(maximumCuts).toBeLessThanOrEqual(16);
   expect(intersections).toBeGreaterThan(0);
   expect(entryCalls).toBe(0);
+});
+
+it("avoids exact point queries outside the padded clipping bounds", () => {
+  const shapes = longWaveWindow();
+  const intersect = intersections.intersectPressureBoundaries;
+  const full = vi.spyOn(intersections, "intersectPressureBoundaries");
+  let complete;
+  try {
+    full.mockImplementation((a, b, angles, scalars) => intersect(a, b, angles, scalars));
+    complete = finishGeometrySteps(iteratePressureUnion(shapes));
+  } finally {
+    full.mockRestore();
+  }
+  const clipped = measureUnion(shapes, false);
+  expect(clipped.result).toEqual(complete);
+  expect(clipped.result.work.intersectionTests).toBeGreaterThan(0);
+  // These are the surviving native angle/distance calls for this 64-capsule window.
+  // Evaluating the full pair predicates would require 5,802 and 8,995 calls respectively.
+  expect(clipped.angles).toBeLessThanOrEqual(2_620);
+  expect(clipped.distances).toBeLessThanOrEqual(5_644);
 });

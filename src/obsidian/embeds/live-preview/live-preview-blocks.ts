@@ -5,6 +5,7 @@ import {
   type EditorState,
   type Range,
   type RangeSet,
+  type Text,
   type Transaction,
 } from "@codemirror/state";
 import { Decoration, type DecorationSet } from "@codemirror/view";
@@ -67,9 +68,10 @@ export class LivePreviewBlocks {
   }
 
   mapPlainTextEdit(transaction: Transaction): LivePreviewBlocks | undefined {
-    if (!isPlainTextEdit(transaction)) return undefined;
+    const shiftedFrom = proseEditShiftStart(transaction);
+    if (shiftedFrom === undefined) return undefined;
     return new LivePreviewBlocks(
-      mapDecorations(this.decorations, transaction),
+      mapDecorations(this.decorations, transaction, shiftedFrom),
       this.candidates,
       this.candidateRanges.map(transaction.changes),
       this.candidateChanges?.composeDesc(transaction.changes) ?? transaction.changes.desc,
@@ -156,35 +158,45 @@ function decorate(
   });
 }
 
-/** Only edits wholly inside an ordinary prose line can bypass global Markdown parsing. */
-function isPlainTextEdit(transaction: Transaction): boolean {
+function isProseRange(doc: Text, from: number, to: number): boolean {
+  const line = doc.lineAt(from);
+  // This prefix excludes blank lines, frontmatter delimiters, indents and opening fences.
+  // An inline image, code span, HTML comment or Markdown line boundary still needs discovery.
+  return (
+    to <= line.to &&
+    /^(?:- )?[\p{L}\p{N}]/u.test(line.text) &&
+    !/!\[|`|<!--|-->|[\r\u2028\u2029]/u.test(line.text)
+  );
+}
+
+/** Returns the earliest new position where prose edits can shift a later embed. */
+function proseEditShiftStart(transaction: Transaction): number | undefined {
   if (
     transaction.startState.doc.length > MARKDOWN_EMBED_LIMITS.inputBytes / 4 ||
     transaction.newDoc.length > MARKDOWN_EMBED_LIMITS.inputBytes / 4
   )
-    return false;
+    return undefined;
   let safe = true;
-  transaction.changes.iterChanges((from, to, _newFrom, _newTo, inserted) => {
-    const line = transaction.startState.doc.lineAt(from);
-    const insertedText = inserted.toString();
-    const updatedLine =
-      line.text.slice(0, from - line.from) + insertedText + line.text.slice(to - line.from);
-    if (
-      to > line.to ||
-      !/^[a-zA-Z0-9][a-zA-Z0-9 ]*$/u.test(line.text) ||
-      !/^[a-zA-Z0-9 ]*$/u.test(insertedText) ||
-      !/^[a-zA-Z0-9][a-zA-Z0-9 ]*$/u.test(updatedLine)
-    )
-      safe = false;
+  let shiftedFrom = transaction.newDoc.length;
+  transaction.changes.iterChangedRanges((from, to, newFrom, newTo) => {
+    safe &&=
+      isProseRange(transaction.startState.doc, from, to) &&
+      isProseRange(transaction.newDoc, newFrom, newTo);
+    if (to - from !== newTo - newFrom) shiftedFrom = Math.min(shiftedFrom, newTo);
   });
-  return safe;
+  return safe ? shiftedFrom : undefined;
 }
 
-function mapDecorations(decorations: DecorationSet, transaction: Transaction): DecorationSet {
+function mapDecorations(
+  decorations: DecorationSet,
+  transaction: Transaction,
+  shiftedFrom: number,
+): DecorationSet {
   const mapped = decorations.map(transaction.changes);
+  if (shiftedFrom === transaction.newDoc.length) return mapped;
   const replacements = new Set<number>();
   const add: Array<Range<Decoration>> = [];
-  mapped.between(0, transaction.newDoc.length, (from, to, decoration) => {
+  mapped.between(shiftedFrom, transaction.newDoc.length, (from, to, decoration) => {
     const widget = (decoration.spec as { readonly widget: unknown }).widget;
     if (!(widget instanceof InkbookLivePreviewWidget)) return;
     const updated = widget.withRange(from, to);
@@ -194,5 +206,5 @@ function mapDecorations(decorations: DecorationSet, transaction: Transaction): D
   });
   return replacements.size === 0
     ? mapped
-    : mapped.update({ filter: (from) => !replacements.has(from), add });
+    : mapped.update({ filterFrom: shiftedFrom, filter: (from) => !replacements.has(from), add });
 }

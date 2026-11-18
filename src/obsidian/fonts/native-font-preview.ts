@@ -16,17 +16,22 @@ export interface NativeFontPreview extends FontPreviewBudget {
   dispose(): void;
 }
 
+export interface NativeFontPreviewOptions {
+  readonly document: Document;
+  readonly scheduler: WorkScheduler;
+  readonly signal: AbortSignal;
+  readonly admit?: (budget: FontPreviewBudget) => boolean;
+}
+
 /** UI-only native faces have their own alias and never enter document stylesheets. */
 export async function loadNativeFontPreview(
   resource: FontResourceV2,
-  options: {
-    readonly document: Document;
-    readonly scheduler: WorkScheduler;
-    readonly signal: AbortSignal;
-    readonly admit?: (budget: FontPreviewBudget) => boolean;
-  },
+  options: NativeFontPreviewOptions,
+  preparedBytes?: Uint8Array<ArrayBuffer>,
 ): Promise<NativeFontPreview | undefined> {
-  const bytes = await decodeFontResource(resource, options.scheduler, options.signal);
+  options.signal.throwIfAborted();
+  const bytes =
+    preparedBytes ?? (await decodeFontResource(resource, options.scheduler, options.signal));
   const budget = { bytes: bytes.length, decodedBytes: inspectFont(bytes).decodedBytes };
   if (options.admit?.(budget) === false) return undefined;
   options.signal.throwIfAborted();

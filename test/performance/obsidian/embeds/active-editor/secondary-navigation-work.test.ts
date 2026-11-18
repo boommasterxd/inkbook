@@ -15,6 +15,23 @@ function navigationHarness() {
   );
 }
 
+it("reads only current origin insets when reprojecting after host movement", () => {
+  const h = navigationHarness();
+  const ownerWindow = h.owner.ownerDocument.defaultView!;
+  const inset = vi.fn(() => "2.25px");
+  const style = new Proxy({} as CSSStyleDeclaration, { get: inset });
+  vi.spyOn(ownerWindow, "getComputedStyle").mockReturnValue(style);
+  h.navigation.setZoom(1);
+  const pointer = { clientX: 125, clientY: 300 };
+  expect(h.navigation.pagePoint(pointer)).toEqual({ x: 120.5, y: 195.5 });
+  h.rect.left += 10;
+  h.rect.top -= 4;
+  expect(h.navigation.pagePoint(pointer)).toEqual({ x: 110.5, y: 199.5 });
+  expect(h.hostBoundsReads.container).toBe(2);
+  expect(inset).toHaveBeenCalledTimes(8);
+  h.navigation.dispose();
+});
+
 // These input contracts observe real navigation layout/scroll/camera boundaries.
 // Full-scene capacity and indexed culling remain covered by navigation-index-work.
 it.each(["horizontal", "vertical"])(

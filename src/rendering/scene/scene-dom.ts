@@ -57,6 +57,9 @@ export class SceneDom {
   readonly #backgroundPattern: SVGPatternElement;
   readonly #backgroundPatternPath: SVGPathElement;
   readonly #backgroundPatternId: string;
+  #patternType: BackgroundV1["type"] = "none";
+  #patternSpacing: number | undefined;
+  #patternOriginX: number | undefined;
   #livePathBand: RenderBand = "content";
   #liveStrokeBand: RenderBand = "content";
   readonly #listeners: { name: InputEventName; listener: EventListener }[] = [];
@@ -305,39 +308,40 @@ export class SceneDom {
     if (paint === "none" || background.type === "none") {
       this.backgroundPath.setAttribute("fill", "none");
       this.#backgroundPatternPath.setAttribute("d", "");
+      this.#patternType = "none";
       return;
     }
     const strokeWidth = background.type === "dots" ? 2 : 1;
     const inset = roundCanonical(strokeWidth / (2 * zoom));
-    const spacing = String(background.spacing);
-    const originX = background.type === "lines" ? patternX : patternX - inset;
-    this.#backgroundPattern.setAttribute("x", String(roundCanonical(originX)));
+    const originX = roundCanonical(background.type === "lines" ? patternX : patternX - inset);
+    if (this.#patternOriginX !== originX) {
+      this.#backgroundPattern.setAttribute("x", String(originX));
+      this.#patternOriginX = originX;
+    }
     this.#backgroundPattern.setAttribute("y", String(roundCanonical(patternY - inset)));
+    this.#backgroundPatternPath.setAttribute("d", patternPath(background, inset));
+    const width = String(roundCanonical(strokeWidth / zoom));
+    this.#backgroundPatternPath.setAttribute("stroke-width", width);
+    this.backgroundEdgePath.setAttribute("stroke-width", width);
+    if (this.#patternType !== background.type || this.#patternSpacing !== background.spacing)
+      this.setPatternStyle(background);
+  }
+
+  private setPatternStyle(background: Exclude<BackgroundV1, { type: "none" }>): void {
+    const spacing = String(background.spacing);
+    const cap = background.type === "dots" ? "round" : "butt";
     this.#backgroundPattern.setAttribute("width", spacing);
     this.#backgroundPattern.setAttribute("height", spacing);
-    this.#backgroundPatternPath.setAttribute("d", patternPath(background, inset));
-    this.#backgroundPatternPath.setAttribute(
-      "stroke-linecap",
-      background.type === "dots" ? "round" : "butt",
-    );
-    this.#backgroundPatternPath.setAttribute(
-      "stroke-width",
-      String(roundCanonical(strokeWidth / zoom)),
-    );
-    this.backgroundEdgePath.setAttribute(
-      "stroke-linecap",
-      background.type === "dots" ? "round" : "butt",
-    );
-    this.backgroundEdgePath.setAttribute(
-      "stroke-width",
-      String(roundCanonical(strokeWidth / zoom)),
-    );
+    this.#backgroundPatternPath.setAttribute("stroke-linecap", cap);
+    this.backgroundEdgePath.setAttribute("stroke-linecap", cap);
     if (background.type === "dots") {
       this.backgroundEdgePath.setAttribute("stroke-dasharray", `0 ${spacing}`);
     } else {
       this.backgroundEdgePath.removeAttribute("stroke-dasharray");
     }
     this.backgroundPath.setAttribute("fill", `url(#${this.#backgroundPatternId})`);
+    this.#patternType = background.type;
+    this.#patternSpacing = background.spacing;
   }
 
   public release(): void {

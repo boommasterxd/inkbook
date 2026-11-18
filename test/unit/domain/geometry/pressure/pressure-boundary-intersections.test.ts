@@ -10,6 +10,8 @@ import {
   pressureBoundaryPoint,
 } from "../../../../../src/domain/geometry/pressure/pressure-boundary-intersections";
 import { PressureBoundaryScalarCache } from "../../../../../src/domain/geometry/pressure/pressure-boundary-scalars";
+import { pressureArcBounds } from "../../../../../src/domain/geometry/pressure/pressure-arc-bounds";
+import { pressureLineBounds } from "../../../../../src/domain/geometry/pressure/pressure-line-bounds";
 
 function line(x1: number, y1: number, x2: number, y2: number): PressureBoundaryLine {
   return { kind: "line", start: { x: x1, y: y1 }, end: { x: x2, y: y2 } };
@@ -223,7 +225,9 @@ describe("pressure arc metadata reuse", () => {
         );
     },
   );
+});
 
+describe("complete intersections and interior clipping", () => {
   it.each([
     [line(-2, -2, 2, 2), line(-1, 1, 1, -1)],
     [line(-4, -2, 4, -2), line(2, -2, -2, -2)],
@@ -231,20 +235,38 @@ describe("pressure arc metadata reuse", () => {
     [line(-2, 1.000001, 2, 1.000001), arc(origin)],
     [arc(origin, 2, 0.2), arc({ x: 2, y: 0 }, 2, 0.2)],
     [arc(origin, 2, 0, Math.PI), arc(origin, 2, Math.PI * 1.5, -Math.PI)],
-  ])("preserves complete intersection output with bounded scalar reuse (%#)", (first, second) => {
-    const scalars = new PressureBoundaryScalarCache(2);
-    const angles = new WeakMap<PressureBoundaryArc, number>();
-    expect(intersectPressureBoundaries(first, second, angles, scalars)).toEqual(
-      intersectPressureBoundaries(first, second),
-    );
-    expect(intersectPressureBoundaries(second, first, angles, scalars)).toEqual(
-      intersectPressureBoundaries(second, first),
-    );
-    const full = new PressureBoundaryScalarCache(0);
-    expect(intersectPressureBoundaries(first, second, angles, full)).toEqual(
-      intersectPressureBoundaries(first, second),
-    );
-  });
+    [
+      line(-1_000_000, -999_999.65, -999_998, -999_999.65),
+      arc({ x: -999_999, y: -1_000_000 }, 0.35, 0.3),
+    ],
+    [line(0, -2, 0, 2), arc(origin, 1, Math.PI, 2 * Math.PI - 1e-14)],
+    [line(0, -2, 0, 2), arc(origin, 1, -Math.PI, -2 * Math.PI + 1e-14)],
+  ])(
+    "preserves full intersections and exact interior clipping cuts in either order (%#)",
+    (first, second) => {
+      const scalars = new PressureBoundaryScalarCache(2);
+      const angles = new WeakMap<PressureBoundaryArc, number>();
+      const bounds = (edge: typeof first) =>
+        edge.kind === "arc" ? pressureArcBounds(edge, angles) : pressureLineBounds(edge);
+      for (const [owner, peer] of [
+        [first, second],
+        [second, first],
+      ] as const) {
+        const full = intersectPressureBoundaries(owner, peer);
+        expect(intersectPressureBoundaries(owner, peer, angles, scalars)).toEqual(full);
+        expect(
+          intersectPressureBoundaries(owner, peer, angles, scalars, {
+            first: bounds(owner),
+            second: bounds(peer),
+          }),
+        ).toEqual(full.filter((hit) => hit.first > 0 && hit.first < 1));
+      }
+      const full = new PressureBoundaryScalarCache(0);
+      expect(intersectPressureBoundaries(first, second, angles, full)).toEqual(
+        intersectPressureBoundaries(first, second),
+      );
+    },
+  );
 
   it("preserves second-operand scalar admission and exact hits with a partial cache", () => {
     const first = line(-2, 0, 2, 0);

@@ -10,6 +10,10 @@ export function registerImmutableLassoPoints(points: readonly PointV1[]): void {
   ownedPoints.add(points);
 }
 
+export function ownsLassoPoints(points: readonly PointV1[]): boolean {
+  return ownedPoints.has(points);
+}
+
 interface Edge {
   readonly start: PointV1;
   readonly end: PointV1;

@@ -89,7 +89,7 @@ export function createVaultAutosaveSession(
     ...(options.createReplacement ? { createReplacement: options.createReplacement } : {}),
     currentRevision: options.currentRevision,
     executor: options.executor,
-    initialSnapshot: options.initialSnapshot,
+    initialRevision: options.initialRevision,
     isGestureActive: options.isGestureActive,
     orderByBand: (band) => ({ [band]: options.store.materializeBandOrder(band) }),
     outputHash: options.outputHash,

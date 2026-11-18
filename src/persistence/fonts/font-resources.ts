@@ -27,7 +27,7 @@ export async function createFontResource(
   scheduler: WorkScheduler,
   signal?: AbortSignal,
 ): Promise<FontResourceV2> {
-  validateDescriptor(descriptor);
+  validateFontDescriptor(descriptor);
   signal?.throwIfAborted();
   const { mimeType } = inspectFont(bytes);
   const encoded = await encodeBinaryResource(bytes, scheduler, signal);
@@ -85,7 +85,7 @@ export function* validateFontResourceSteps(
   resource: FontResourceV2,
   signal?: AbortSignal,
 ): Generator<void, void> {
-  validateDescriptor(resource);
+  validateFontDescriptor(resource);
   const bytes = yield* decodeFontResourceSteps(resource, signal);
   const container = inspectFont(bytes);
   const hash = new ChunkedSha256();
@@ -143,7 +143,7 @@ export function assertFontResourceSelection(resources: readonly FontResourceV2[]
   if (bytes > FONT_LIMITS.documentBytes) throw new RangeError("Document fonts exceed limit.");
 }
 
-function validateDescriptor(descriptor: FontDescriptor): void {
+export function validateFontDescriptor(descriptor: FontDescriptor): void {
   fontCssFamily(descriptor.family);
   if (!Number.isInteger(descriptor.weight) || descriptor.weight < 1 || descriptor.weight > 1000)
     throw new RangeError("Invalid font weight.");

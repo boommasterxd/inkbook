@@ -1,10 +1,26 @@
 import { ChunkedSha256 } from "../chunked-output-sha256";
-import { hashExactUtf8Output, MAX_NATIVE_HASH_BYTES } from "../output/chunked-output-assembler";
+import {
+  assembleAndHashPreparedUtf8Output,
+  hashExactUtf8Output,
+  MAX_NATIVE_HASH_BYTES,
+} from "../output/chunked-output-assembler";
 import type { ChunkedInkbookInputOptions } from "./chunked-input-types";
 import { combineInputBytes } from "./chunked-input-utils";
 import { SafeStaticProof } from "./safe-static-proof";
 import type { DocumentHashPort } from "../sha256";
 import type { ChunkedInputCheckpoint } from "./chunked-input-types";
+
+export function copyAndHashInputBytes(
+  input: Uint8Array,
+  options: Pick<ChunkedInkbookInputOptions, "checkpoint" | "signal">,
+  sliceByteLimit: number,
+) {
+  return assembleAndHashPreparedUtf8Output([input], input.byteLength, {
+    ...options,
+    maximumBytes: MAX_NATIVE_HASH_BYTES,
+    sliceByteLimit,
+  });
+}
 
 /** Owns decoded bytes; bounded runtime and export inputs may retain a terminal-digest buffer. */
 export class ChunkedInputHash {
@@ -14,6 +30,7 @@ export class ChunkedInputHash {
   readonly #incremental = new ChunkedSha256();
   readonly #chunks: Uint8Array[] = [];
   #output: Uint8Array<ArrayBuffer> | undefined;
+  #confirmedHash: string | undefined;
   #bytes = 0;
   #writing = false;
 
@@ -22,14 +39,16 @@ export class ChunkedInputHash {
     this.#signal = options.signal;
     this.#checkpoint = options.checkpoint;
     const proof = options.safeStaticProof;
+    if (proof !== undefined && !SafeStaticProof.isAuthentic(proof)) {
+      throw new TypeError("Safe SVG proof must come from an owned validation producer.");
+    }
+    if (proof !== undefined && this.#hasher !== undefined) {
+      throw new TypeError("Safe SVG proof requires hashing the complete actual input bytes.");
+    }
     const inputBytes = options.nativeInputBytes;
     const runtimeInput =
       inputBytes !== undefined && Number.isSafeInteger(inputBytes) && inputBytes >= 0;
-    const totalBytes = runtimeInput
-      ? inputBytes
-      : SafeStaticProof.isAuthentic(proof)
-        ? proof.totalBytes
-        : undefined;
+    const totalBytes = runtimeInput ? inputBytes : proof?.totalBytes;
     const exportInput =
       options.nativeExportHash === true &&
       options.onValidatedSnapshot === undefined &&
@@ -47,8 +66,21 @@ export class ChunkedInputHash {
     }
   }
 
-  public get hasCustomHasher(): boolean {
-    return this.#hasher !== undefined;
+  /** Only consecutive ranges of the privately hashed allocation may be consumed after a hit. */
+  public async bindWorkerPreview(input: Uint8Array, proof: SafeStaticProof, chunkBytes: number) {
+    const assembly = await copyAndHashInputBytes(
+      input,
+      {
+        ...(this.#checkpoint === undefined ? {} : { checkpoint: this.#checkpoint }),
+        ...(this.#signal === undefined ? {} : { signal: this.#signal }),
+      },
+      chunkBytes,
+    );
+    this.#signal?.throwIfAborted();
+    if (!proof.matches(assembly.hash, assembly.totalBytes)) return undefined;
+    this.#output = assembly.output;
+    this.#confirmedHash = assembly.hash;
+    return this.#output;
   }
 
   public get writePending(): boolean {
@@ -77,8 +109,14 @@ export class ChunkedInputHash {
     if (this.#output === undefined) owned = new Uint8Array(chunk);
     else {
       if (chunk.byteLength > this.#output.byteLength - this.#bytes) return undefined;
-      this.#output.set(chunk, this.#bytes);
-      owned = this.#output.subarray(this.#bytes, this.#bytes + chunk.byteLength);
+      if (this.#confirmedHash === undefined) {
+        this.#output.set(chunk, this.#bytes);
+        owned = this.#output.subarray(this.#bytes, this.#bytes + chunk.byteLength);
+      } else {
+        if (chunk.buffer !== this.#output.buffer || chunk.byteOffset !== this.#bytes)
+          return undefined;
+        owned = chunk;
+      }
     }
     if (this.#hasher !== undefined) this.#chunks.push(owned);
     this.#bytes += owned.byteLength;
@@ -94,7 +132,10 @@ export class ChunkedInputHash {
   public complete(): string | Promise<string> | undefined {
     if (this.#output !== undefined) {
       if (this.#bytes !== this.#output.byteLength) return undefined;
-      return hashExactUtf8Output(this.#output, this.#signal, undefined, this.#checkpoint);
+      return (
+        this.#confirmedHash ??
+        hashExactUtf8Output(this.#output, this.#signal, undefined, this.#checkpoint)
+      );
     }
     if (this.#hasher === undefined) return this.#incremental.digestHex();
     return this.#hasher.hash(combineInputBytes(this.#chunks, this.#bytes));
@@ -102,6 +143,7 @@ export class ChunkedInputHash {
 
   public release(): void {
     this.#output = undefined;
+    this.#confirmedHash = undefined;
     this.#chunks.length = 0;
   }
 }

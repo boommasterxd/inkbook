@@ -250,12 +250,15 @@ export class CreationPreview implements GesturePreview {
       if (this.#stroke === null) throw new Error("Freehand creation requires a live stroke.");
       const commit = this.#stroke.finish();
       this.#strokeCommit = commit;
-      return createFreehandElement({
-        defaults: this.#defaults,
-        identity: this.#identity,
-        samples: commit.points,
-        tool: this.#start.tool,
-      });
+      return createFreehandElement(
+        {
+          defaults: this.#defaults,
+          identity: this.#identity,
+          samples: commit.points,
+          tool: this.#start.tool,
+        },
+        "store",
+      );
     }
     return this.#createDragElement();
   }

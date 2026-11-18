@@ -39,6 +39,25 @@ export function mergeVisibleBand(
   return count;
 }
 
+/** Insert one camera entrant into an immutable, already ordered band. */
+export function insertVisibleId(
+  previous: readonly (string | undefined)[],
+  count: number,
+  id: string,
+  compare: (retained: string | undefined, entrant: string) => number,
+): (string | undefined)[] {
+  let start = 0;
+  let end = count;
+  while (start < end) {
+    const middle = Math.floor((start + end) / 2);
+    if (compare(previous[middle], id) <= 0) start = middle + 1;
+    else end = middle;
+  }
+  const next = previous.slice(0, count);
+  next.splice(start, 0, id);
+  return next;
+}
+
 /** Dense rank changes preserve the retained sequence when its current ranks remain ordered. */
 export function retainedVisibleOrderStable(
   previous: readonly (string | undefined)[],

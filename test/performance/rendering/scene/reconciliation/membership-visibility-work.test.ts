@@ -23,6 +23,34 @@ import { activeFades } from "../../../../fixtures/rendering/scene-fades";
 
 const VISIBLE_COUNT = 64;
 
+it("places a single scroll entrant in a 10,000-member band with logarithmic rank reads", () => {
+  const records = createViewportRectangleStore(10_000, (rank) => (rank === 5_000 ? 1_026 : 512));
+  const entrant = records.records.get("entry-5000")!;
+  records.records.set(entrant.id, { ...entrant, rank: 4_999 });
+  const { store } = createIndexedSceneStore(records);
+  const state = new SceneVisibilityState(store, createInstrumentation());
+  const first = { minX: 0, maxX: 100, minY: 0, maxY: 1_024 };
+  const original = state.query(first).visibility;
+  const lookup = vi.spyOn(Map.prototype, "get");
+  try {
+    const next = state.query({ ...first, minY: 2, maxY: 1_026 });
+    const reads = lookup.mock.calls.filter(
+      ([key]) => typeof key === "string" && key.startsWith("entry-"),
+    ).length;
+    lookup.mockRestore();
+    // Two rank slots per binary comparison, plus fringe acquisition and membership bookkeeping.
+    expect(reads).toBeLessThanOrEqual(2 * Math.ceil(Math.log2(original.content.count)) + 8);
+    expect(next.delta).toEqual({ entered: [entrant.id], exited: [] });
+    expect(next.visibility.content.ids).toEqual([...records.records.keys()]);
+    expect(original.content.ids).not.toContain(entrant.id);
+    expect(next.visibility.image.ids).toBe(original.image.ids);
+    expect(next.visibility.highlight.ids).toBe(original.highlight.ids);
+  } finally {
+    lookup.mockRestore();
+    state.release();
+  }
+});
+
 function expectSceneReleased(scene: ReturnType<typeof createSceneFixture>): void {
   expect(scene.scheduler.pendingCount).toBe(0);
   expect(scene.renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });

@@ -47,28 +47,19 @@ export class SceneBackgroundCache {
   }
 
   public resolve(request: BackgroundGeometryRequest): BackgroundGeometryResult {
-    if (request.background.type === "none") return this.resolveNone(request);
+    const spacing = request.background.type === "none" ? 0 : request.background.spacing;
+    const key = `${request.background.type}:${spacing}:${request.innerWidth}:${request.margin}:${request.pageHeight}`;
+    if (this.#entry?.key === key) {
+      this.#hits += 1;
+      return { ...this.#entry, hit: true };
+    }
+    if (request.background.type === "none") return this.resolveNone(request, key);
     const layout = backgroundGuideLayout({
       background: request.background,
       innerWidth: request.innerWidth,
       margin: request.margin,
       pageHeight: request.pageHeight,
     });
-    const key = [
-      request.background.type,
-      request.background.spacing,
-      request.innerWidth,
-      request.margin,
-      request.pageHeight,
-      layout.left,
-      layout.right,
-      layout.top,
-      layout.bottom,
-    ].join(":");
-    if (this.#entry?.key === key) {
-      this.#hits += 1;
-      return { ...this.#entry, hit: true };
-    }
     const hasGuides =
       request.background.type === "lines"
         ? layout.verticalPointCount > 0
@@ -105,12 +96,7 @@ export class SceneBackgroundCache {
     this.#hits = 0;
   }
 
-  private resolveNone(request: BackgroundGeometryRequest): BackgroundGeometryResult {
-    const key = `none:${String(request.innerWidth)}:${String(request.margin)}:${String(request.pageHeight)}`;
-    if (this.#entry?.key === key) {
-      this.#hits += 1;
-      return { ...this.#entry, hit: true };
-    }
+  private resolveNone(request: BackgroundGeometryRequest, key: string): BackgroundGeometryResult {
     this.#builds += 1;
     this.#entry = {
       d: "",

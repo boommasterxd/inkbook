@@ -76,7 +76,10 @@ export function installImageImportTestLifecycle(): void {
   });
 }
 
-export function setupImageImport(complete: ImageImportRequest["submit"] = async () => "committed") {
+export function setupImageImport(
+  complete: ImageImportRequest["submit"] = async () => "committed",
+  retainedResources?: ImageImportRequest["retainedResources"],
+) {
   const abort = new AbortController();
   let imported: ImportedImageBatch | undefined;
   const submit = vi.fn<ImageImportRequest["submit"]>(async (batch, signal) => {
@@ -92,20 +95,31 @@ export function setupImageImport(complete: ImageImportRequest["submit"] = async 
     signal: abort.signal,
     page: PAGE,
     centerX: PAGE.margin + PAGE.innerWidth / 2,
+    ...(retainedResources && { retainedResources }),
     submit,
   }).then(() => imported);
   return { pending, abort, submit };
 }
 
 /** Opens a fresh PDF review using one valid raster and an independently owned source. */
-export async function setupPdfImport(pageCount = 5, submit?: ImageImportRequest["submit"]) {
+export async function setupPdfImport(
+  pageCount = 5,
+  submit?: ImageImportRequest["submit"],
+  retainedResources?: ImageImportRequest["retainedResources"],
+) {
   const resource = await validImageResource();
   const render = vi.fn(async (_page: number) => resource);
   const renderThumbnail = vi.fn(renderImportThumbnail);
   const dispose = vi.fn(async () => undefined);
   vi.mocked(readImageSource).mockResolvedValue(new TextEncoder().encode("%PDF-1.7"));
   vi.mocked(openPdfImageSource).mockResolvedValue({ pageCount, render, renderThumbnail, dispose });
-  return { ...setupImageImport(submit), resource, render, renderThumbnail, dispose };
+  return {
+    ...setupImageImport(submit, retainedResources),
+    resource,
+    render,
+    renderThumbnail,
+    dispose,
+  };
 }
 
 export const renderImportThumbnail: PdfImageSource["renderThumbnail"] = async (_page, options) => {

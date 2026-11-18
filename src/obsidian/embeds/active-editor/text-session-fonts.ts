@@ -93,12 +93,11 @@ export class TextSessionFonts {
       signal,
     );
     for (const request of requests) {
-      const face = await this.#resolve(
-        request,
-        signal,
-        options.preserveEmbedded === true,
-        aliases.get(request.family),
-      );
+      const face = await this.#resolve(request, signal, {
+        preserveEmbedded: options.preserveEmbedded === true,
+        aliases: aliases.get(request.family),
+        missing,
+      });
       this.#assertActive(signal);
       selected.set(textFontRequestKey(request), face);
       if (!available.has(face.id)) missing.set(face.id, face);
@@ -153,17 +152,20 @@ export class TextSessionFonts {
   async #resolve(
     request: FontFaceRequest,
     signal: AbortSignal,
-    preserveEmbedded: boolean,
-    aliases?: ReadonlySet<string>,
+    options: {
+      readonly preserveEmbedded: boolean;
+      readonly aliases: ReadonlySet<string> | undefined;
+      readonly missing: ReadonlyMap<string, FontResourceV2>;
+    },
   ): Promise<FontResourceV2> {
     const available = this.options.model.fontResources ?? [];
     const candidates = available.map((resource) =>
-      aliases?.has(resource.id) ? { ...resource, family: request.family } : resource,
+      options.aliases?.has(resource.id) ? { ...resource, family: request.family } : resource,
     );
     const byId = new Map(available.map((resource) => [resource.id, resource]));
     const exact = matchFontFace(candidates, request, false);
     if (exact) return byId.get(exact.id)!;
-    if (preserveEmbedded) {
+    if (options.preserveEmbedded) {
       const retained = matchFontFace(candidates, request);
       if (retained) return byId.get(retained.id)!;
     }
@@ -174,6 +176,8 @@ export class TextSessionFonts {
       const best = matchFontFace([...candidates, matched], request);
       const embedded = available.find((resource) => resource.id === best?.id);
       if (embedded) return embedded;
+      const prepared = options.missing.get(matched.id);
+      if (best?.id === matched.id && prepared?.family === matched.family) return prepared;
     }
     const resolved = await this.options.library?.resolve(request, signal);
     signal.throwIfAborted();

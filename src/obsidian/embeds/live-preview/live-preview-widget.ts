@@ -122,7 +122,11 @@ export class InkbookLivePreviewWidget extends WidgetType {
       button,
       this.#embed.preview,
       this.#ports.workScheduler(button.ownerDocument.defaultView),
-      { documentId: this.#embed.resolved.documentId, documents: this.#ports.documents },
+      {
+        documentId: this.#embed.resolved.documentId,
+        documents: this.#ports.documents,
+        waitForLayout: true,
+      },
     );
     updateEmbedDescription(root, button, this.#embed.description, this.#ports.localization?.t);
 
@@ -177,7 +181,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
     );
     controller.mount();
     this.#height ??= new LivePreviewWidgetHeight();
-    const releaseHeight = this.#height.observe(root);
+    const releaseHeight = this.#height.observe(root, preview.setLayoutVisible);
     mountedControllers.set(root, { controller, widget: this });
     const activate = (event: MouseEvent): void => {
       event.preventDefault();

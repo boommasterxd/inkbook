@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { stroke } from "../../../../domain/schema/fixtures";
+import { line, rectangle, snapshot, stroke } from "../../../../domain/schema/fixtures";
 import { encodeRuntimeSelection } from "../../../../../../src/persistence/clipboard/codec";
 import { encodeRuntimeSelectionChunked } from "../../../../../../src/persistence/worker/runtime/model/fallback-clipboard-codec";
 import {
@@ -8,7 +8,27 @@ import {
   validateClipboardPayloadSliced,
 } from "../../../../../../src/persistence/clipboard/validation";
 import { decodeClipboardChunked } from "../../../../../../src/persistence/worker/runtime/model/fallback-clipboard-codec";
+import { DocumentModelRuntime } from "../../../../../../src/persistence/worker/runtime/model/document-model";
 import { validFontResource, textElement } from "../../../clipboard/fixtures";
+
+it("rejects a file-valid connection outside the clipboard endpoint tolerance before writing", async () => {
+  const connection = line();
+  const target = rectangle();
+  connection.start.x += 0.001;
+  const context = { checkpoint: () => undefined, signal: new AbortController().signal };
+  const model = new DocumentModelRuntime();
+  model.initialize(snapshot([target, connection]));
+  try {
+    await expect(
+      model.encodeClipboardSliced(0, [target.id, connection.id], context),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "invalid-schema" },
+    });
+  } finally {
+    model.clear();
+  }
+});
 
 it("retains the bound base face for formula-only clipboard layouts", async () => {
   const element = textElement("$x$");
@@ -32,7 +52,7 @@ it("retains the bound base face for formula-only clipboard layouts", async () =>
   const context = { checkpoint: () => undefined, signal: new AbortController().signal };
   const expected = encodeRuntimeSelection([element], new Set([element.id]), [font]);
   if (!expected.ok) throw new Error(expected.error.message);
-  const encoded = await encodeRuntimeSelectionChunked([element], [element.id], context, [font]);
+  const encoded = await encodeRuntimeSelectionChunked([element], context, [font]);
   if (!encoded.ok) throw new Error(encoded.error.message);
   expect(encoded.value.customText).toBe(expected.value.customText);
   expect(element.layout.baseFontResourceId).toBeUndefined();
@@ -71,7 +91,7 @@ it("slices large font and escaped text strings without changing canonical bytes"
   });
   let encoded;
   try {
-    encoded = await encodeRuntimeSelectionChunked([element], [element.id], context, [font]);
+    encoded = await encodeRuntimeSelectionChunked([element], context, [font]);
   } finally {
     spy.mockRestore();
   }
@@ -139,7 +159,7 @@ describe("sliced clipboard fallback", () => {
     expect(expected.ok).toBe(true);
     let checkpoints = 0;
 
-    const result = await encodeRuntimeSelectionChunked(elements, selectedIds, {
+    const result = await encodeRuntimeSelectionChunked(elements, {
       checkpoint: async () => {
         checkpoints += 1;
       },
@@ -153,7 +173,8 @@ describe("sliced clipboard fallback", () => {
     expect(result.value.plainText).toBe(expected.value.plainText);
     expect(result.value.byteLength).toBe(new TextEncoder().encode(result.value.customText).length);
     expect(checkpoints).toBeGreaterThan(90);
-    expect(checkpoints).toBeLessThan(120);
+    // Also admits the clipboard-specific identity, element and spatial validation passes.
+    expect(checkpoints).toBeLessThanOrEqual(125);
   });
 
   it("stops at a checkpoint when the request is aborted", async () => {
@@ -162,19 +183,15 @@ describe("sliced clipboard fallback", () => {
     let checkpoints = 0;
 
     await expect(
-      encodeRuntimeSelectionChunked(
-        elements,
-        elements.map(({ id }) => id),
-        {
-          checkpoint: async () => {
-            checkpoints += 1;
-            if (checkpoints === 3) controller.abort();
-            controller.signal.throwIfAborted();
-          },
-          signal: controller.signal,
-          workProfile: { inputByteLimit: 4096, nodeLimit: 64, outputByteLimit: 16384 },
+      encodeRuntimeSelectionChunked(elements, {
+        checkpoint: async () => {
+          checkpoints += 1;
+          if (checkpoints === 3) controller.abort();
+          controller.signal.throwIfAborted();
         },
-      ),
+        signal: controller.signal,
+        workProfile: { inputByteLimit: 4096, nodeLimit: 64, outputByteLimit: 16384 },
+      }),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(checkpoints).toBe(3);
   });

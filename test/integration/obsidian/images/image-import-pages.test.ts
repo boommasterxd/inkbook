@@ -3,6 +3,7 @@ import { Platform } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 import { Localization } from "../../../../src/domain/localization";
 import { dialogButton } from "../../../fixtures/obsidian/dialog";
+import { imageSourceButton } from "../../../fixtures/obsidian/image-dialog";
 import { deferredImageSession } from "../../../fixtures/obsidian/image-session";
 import { capacityImageResource, validImageResource } from "../../../fixtures/persistence/images";
 import {
@@ -65,7 +66,7 @@ it("keeps the PDF review stable while rapid navigation supersedes a pending rend
   expect(preview.closest("figure")!.hidden).toBe(false);
   expect(document.querySelector<HTMLFieldSetElement>("fieldset")!.hidden).toBe(false);
   expect(document.activeElement).toBe(next);
-  const sourceButton = dialogButton("pages.pdf · Change");
+  const sourceButton = imageSourceButton(/^pages\.pdf\s*PDF · \d+ pages\s*Change$/);
   expect(sourceButton.textContent).toContain("Change");
   expect(sourceButton.querySelector<HTMLElement>(".inkbook-image-import-replace")?.hidden).toBe(
     false,

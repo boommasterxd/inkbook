@@ -165,6 +165,103 @@ describe("safe-static proof trust and validation boundaries", () => {
   });
 });
 
+describe("worker-owned preview bytes", () => {
+  it.each([
+    { kind: "worker", validation: "worker-safe" as const, expected: true },
+    { kind: "fallback", validation: "safe" as const, expected: false },
+    { kind: "shared", validation: "worker-safe" as const, expected: false },
+    { kind: "subarray", validation: "worker-safe" as const, expected: false },
+  ])(
+    "preserves $kind byte ownership across the first digest",
+    async ({ kind, validation, expected }) => {
+      const input = previewInputBytes(kind);
+      const subtle = crypto.subtle;
+      const digest = subtle.digest.bind(subtle);
+      let changed = false;
+      const completeDigests: BufferSource[] = [];
+      vi.spyOn(subtle, "digest").mockImplementation((algorithm, source) => {
+        const pending = digest(algorithm, source);
+        if (source.byteLength === input.byteLength) {
+          completeDigests.push(source);
+          if (!changed) {
+            input[input.length - 1] = 0x20;
+            changed = true;
+          }
+        }
+        return pending;
+      });
+      const parsed = await parseRuntimeInput(
+        input,
+        undefined,
+        undefined,
+        validation,
+        undefined,
+        proof,
+      );
+      expect(changed).toBe(true);
+      expect(completeDigests).toHaveLength(expected ? 1 : 2);
+      if (expected)
+        expect(parsed).toMatchObject({
+          ok: true,
+          value: { hash: proof.outputHash, snapshot: expectedSnapshot },
+        });
+      else expect(parsed).toMatchObject({ ok: false, error: { code: "invalid-svg" } });
+    },
+  );
+
+  it("runs complete safe validation after an equally sized unsafe worker input misses its proof", async () => {
+    const input = new TextEncoder().encode(svg.replace("</svg>", "</sVg>"));
+    expect(input.byteLength).toBe(proof.totalBytes);
+    const scan = vi.spyOn(StreamingSafeStaticValidator.prototype, "write");
+    expect(
+      await parseRuntimeInput(input, undefined, undefined, "worker-safe", undefined, proof),
+    ).toMatchObject({ ok: false });
+    expect(scan).toHaveBeenCalled();
+  });
+
+  it("rejects invalid authoritative metadata even when the worker input matches its preview", async () => {
+    const changed = svg.replace('data-inkbook-revision="7"', 'data-inkbook-revision="8"');
+    const candidate = (await inspectTrustedSvgOutput(changed)).safeStaticProof;
+    const scan = vi.spyOn(StreamingSafeStaticValidator.prototype, "write");
+    expect(
+      await parseRuntimeInput(
+        new TextEncoder().encode(changed),
+        undefined,
+        undefined,
+        "worker-safe",
+        undefined,
+        candidate,
+      ),
+    ).toMatchObject({ ok: false, error: { code: "revision-mismatch" } });
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  it("discards a worker candidate cancelled during the native digest before delivering metadata", async () => {
+    const controller = new AbortController();
+    const adopt = vi.fn();
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    vi.spyOn(crypto.subtle, "digest").mockImplementation(async (algorithm, bytes) => {
+      const result = await digest(algorithm, bytes);
+      controller.abort();
+      return result;
+    });
+    await expect(
+      parseRuntimeInput(
+        previewInputBytes("worker"),
+        {
+          checkpoint: () => undefined,
+          signal: controller.signal,
+        },
+        adopt,
+        "worker-safe",
+        undefined,
+        proof,
+      ),
+    ).rejects.toThrow();
+    expect(adopt).not.toHaveBeenCalled();
+  });
+});
+
 describe("executor preview candidate binding", () => {
   it.each(["string", "bytes"])(
     "binds fresh %s input before skipping the static scan",
@@ -234,6 +331,17 @@ describe("executor preview candidate binding", () => {
     expect(staticWrite).not.toHaveBeenCalled();
   });
 });
+
+function previewInputBytes(kind: string): Uint8Array {
+  const encoded = new TextEncoder().encode(svg);
+  if (kind !== "shared" && kind !== "subarray") return encoded;
+  const input =
+    kind === "shared"
+      ? new Uint8Array(new SharedArrayBuffer(encoded.byteLength))
+      : new Uint8Array(encoded.byteLength + 1).subarray(1);
+  input.set(encoded);
+  return input;
+}
 
 it("keeps parsed private bytes intact when the caller changes already consumed input", async () => {
   const input = new TextEncoder().encode(svg);

@@ -2,10 +2,8 @@ import { FILE_SCHEMA_LIMITS } from "../../../../domain/schema/public";
 import { ChunkedSha256 } from "../../../serialization/chunked-output-sha256";
 import type { RuntimeSliceContext } from "../types";
 import { hashConfirmedSvgContent } from "../../../scheduling/trusted-svg-output";
-import {
-  assembleAndHashPreparedUtf8Output,
-  MAX_NATIVE_HASH_BYTES,
-} from "../../../serialization/output/chunked-output-assembler";
+import { MAX_NATIVE_HASH_BYTES } from "../../../serialization/output/chunked-output-assembler";
+import { copyAndHashInputBytes } from "../../../serialization/input/chunked-input-hash";
 
 /** Preflight and preview proofs digest bounded private copies inside the executor. */
 export async function hashConfirmedRuntimeInput(
@@ -37,22 +35,8 @@ async function hashConfirmedRuntimeBytes(
     crypto.subtle === undefined
   )
     return hashRuntimeInput(input, context, expectedBytes);
-  const size = inputChunkSize(context);
-  const result = await assembleAndHashPreparedUtf8Output(
-    runtimeInputChunks(input, size),
-    input.byteLength,
-    {
-      ...(context === undefined ? {} : { checkpoint: context.checkpoint, signal: context.signal }),
-      maximumBytes: MAX_NATIVE_HASH_BYTES,
-      sliceByteLimit: size,
-    },
-  );
+  const result = await copyAndHashInputBytes(input, context ?? {}, inputChunkSize(context));
   return result.hash;
-}
-
-function* runtimeInputChunks(input: Uint8Array, size: number): Generator<Uint8Array> {
-  for (let offset = 0; offset < input.byteLength; offset += size)
-    yield input.subarray(offset, offset + size);
 }
 
 export async function hashRuntimeInput(

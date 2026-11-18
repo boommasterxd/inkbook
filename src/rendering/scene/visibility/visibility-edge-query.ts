@@ -1,9 +1,11 @@
 import { unionBounds, type Bounds } from "../../../domain/geometry/primitives";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "../types";
 import {
+  ProjectedViewportBounds,
   cellRange,
   envelopeFringes,
   envelopesOverlap,
+  inclusiveCellQuery,
   intersects,
   sameBounds,
 } from "./visibility-bounds";
@@ -44,7 +46,7 @@ const EMPTY_PROOF: ClassificationProof = Object.freeze({
 /** Reuses one deduplicated fringe buffer across overlapping camera movements. */
 export class VisibilityEdgeQuery {
   readonly #ids: string[] = [];
-  readonly #records: (SceneElementRecord | undefined)[] = [];
+  readonly #sources: (SceneElementRecord | Bounds | undefined)[] = [];
   readonly #seen = new Set<string>();
   readonly #entered: SceneElementRecord[] = [];
   readonly #exited: string[] = [];
@@ -52,6 +54,8 @@ export class VisibilityEdgeQuery {
   readonly #proofs: ClassificationProof[] = [];
   #queryCursor = 0;
   #cursor = 0;
+  #classified = 0;
+  #reusableCells = false;
   #unstableStart = 0;
   #current: Bounds | undefined;
   #previous: Bounds | undefined;
@@ -85,7 +89,10 @@ export class VisibilityEdgeQuery {
         continue;
       }
       if (this.#spatialCursor === undefined) {
-        this.#spatialCursor = this.store.beginQuery(this.#fringes[this.#queryCursor]!);
+        const fringe = this.#fringes[this.#queryCursor]!;
+        this.#spatialCursor = this.store.beginQuery(
+          this.#reusableCells ? inclusiveCellQuery(fringe) : fringe,
+        );
         this.instrumentation.spatialQueries += 1;
       }
       // One indexed visit is indivisible; the owning frame deadline admits all further work.
@@ -104,10 +111,12 @@ export class VisibilityEdgeQuery {
       if (now() >= deadline) return "pending";
       const id = this.#ids[this.#cursor++]!;
       this.instrumentation.visibilityCandidateVisits += 1;
-      this.#records.push(this.store.get(id));
-      this.#unstableStart = this.#records.length;
+      this.#sources.push(
+        this.store.getBounds === undefined ? this.store.get(id) : this.store.getBounds(id),
+      );
+      this.#unstableStart = this.#sources.length;
     }
-    while (this.#proofs.length < this.#ids.length) {
+    while (this.#classified < this.#ids.length) {
       if (now() >= deadline) return "pending";
       this.classifyCurrent(current, wasVisible);
     }
@@ -115,15 +124,22 @@ export class VisibilityEdgeQuery {
   }
 
   private classifyCurrent(current: Bounds, wasVisible: (id: string) => boolean): void {
-    const index = this.#proofs.length;
+    const index = this.#classified++;
     const id = this.#ids[index]!;
-    const record = this.#records[index];
-    const bounds = record?.bounds;
+    const source = this.#sources[index];
+    const bounds = source !== undefined && "bounds" in source ? source.bounds : source;
     const visible = bounds !== undefined && intersects(current, bounds);
     if (visible !== wasVisible(id)) {
-      if (visible && record !== undefined) this.#entered.push(record);
-      else this.#exited.push(id);
+      if (visible) {
+        const record = source !== undefined && "bounds" in source ? source : this.store.get(id);
+        if (record !== undefined) {
+          this.#sources[index] = record;
+          this.#entered.push(record);
+        }
+      } else this.#exited.push(id);
     }
+    // Exact fringes cannot survive a change of extent or a non-indexed retarget.
+    if (!this.#reusableCells) return;
     this.#proofs.push(
       classificationProof(
         this.#proofs[index - 1] ?? EMPTY_PROOF,
@@ -136,16 +152,18 @@ export class VisibilityEdgeQuery {
   }
 
   private retarget(previous: Bounds, current: Bounds): void {
-    if (sameBounds(this.#current, current) && sameBounds(this.#previous, previous)) return;
-    const reusableCells = this.store.beginQuery !== undefined && sameExtent(previous, current);
+    if (sameTarget(this.#current, current) && sameTarget(this.#previous, previous)) return;
+    const reusableCells =
+      this.store.beginQuery !== undefined && ProjectedViewportBounds.sameExtent(previous, current);
     const compatible =
       reusableCells &&
-      sameBounds(this.#previous, previous) &&
+      sameTarget(this.#previous, previous) &&
       this.#current !== undefined &&
-      sameExtent(this.#current, current) &&
+      ProjectedViewportBounds.sameExtent(this.#current, current) &&
       envelopesOverlap(previous, current);
     if (!compatible) this.release();
     else this.retainClassification(current);
+    this.#reusableCells = reusableCells;
     this.#previous = previous;
     this.#current = current;
     for (const fringe of [
@@ -171,10 +189,11 @@ export class VisibilityEdgeQuery {
     this.#entered.length = proof.entered;
     this.#exited.length = proof.exited;
     this.#proofs.length = valid;
+    this.#classified = valid;
     // Each newly unstable candidate joins the tail; known unstable candidates stay there.
     if (valid >= this.#unstableStart) return;
     const tail = --this.#unstableStart;
-    [this.#records[valid], this.#records[tail]] = [this.#records[tail], this.#records[valid]];
+    [this.#sources[valid], this.#sources[tail]] = [this.#sources[tail], this.#sources[valid]];
     [this.#ids[valid], this.#ids[tail]] = [this.#ids[tail]!, this.#ids[valid]!];
   }
 
@@ -207,7 +226,7 @@ export class VisibilityEdgeQuery {
     this.#spatialCursor?.cancel();
     this.#spatialCursor = undefined;
     this.#ids.length = 0;
-    this.#records.length = 0;
+    this.#sources.length = 0;
     this.#seen.clear();
     this.#entered.length = 0;
     this.#exited.length = 0;
@@ -215,6 +234,7 @@ export class VisibilityEdgeQuery {
     this.#proofs.length = 0;
     this.#queryCursor = 0;
     this.#cursor = 0;
+    this.#classified = 0;
     this.#unstableStart = 0;
     this.#current = undefined;
     this.#previous = undefined;
@@ -225,14 +245,14 @@ export class VisibilityEdgeQuery {
       this.#current !== undefined &&
       (this.#queryCursor < this.#fringes.length ||
         this.#cursor < this.#ids.length ||
-        this.#proofs.length < this.#ids.length)
+        this.#classified < this.#ids.length)
     );
   }
 
   public memoryUsage(): number {
     return (
       this.#ids.length * 16 +
-      this.#records.length * 8 +
+      this.#sources.length * 8 +
       this.#fringes.length * 32 +
       this.#proofs.length * 80 +
       this.#seen.size * 32 +
@@ -243,10 +263,12 @@ export class VisibilityEdgeQuery {
   }
 }
 
-function sameExtent(left: Bounds, right: Bounds): boolean {
+function sameTarget(left: Bounds | undefined, right: Bounds): boolean {
   return (
-    left.maxX - left.minX === right.maxX - right.minX &&
-    left.maxY - left.minY === right.maxY - right.minY
+    left === right ||
+    (left !== undefined &&
+      sameBounds(left, right) &&
+      ProjectedViewportBounds.sameExtent(left, right))
   );
 }
 

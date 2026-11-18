@@ -263,7 +263,7 @@ function createCoordinator(
     confirmedBase: { outputHash: hash(0), revision: 0, type: "confirmed" },
     documentSource: document,
     executor,
-    initialSnapshot: document.snapshot(),
+    initialRevision: document.currentRevision(),
     path: "performance.svg",
     sessionId: "performance",
     vault,

@@ -211,20 +211,21 @@ function* clipBoundary(
     if (other === owner || !overlaps(extent, sources[other]!.bounds)) continue;
     const source = sources[other]!;
     cuts.length = 0;
-    cuts.push(0, 1);
     for (let index = 0; index < source.boundaries.length; index += 1) {
       const edge = source.boundaries[index]!;
-      if (!overlaps(extent, source.boundaryBounds[index]!)) continue;
+      const edgeBounds = source.boundaryBounds[index]!;
+      if (!overlaps(extent, edgeBounds)) continue;
       work.intersectionTests += 1;
       for (const intersection of intersectPressureBoundaries(
         boundary,
         edge,
         arcAngles,
         context.scalarCache,
+        { first: extent, second: edgeBounds },
       ))
         cuts.push(intersection.first);
     }
-    cuts.sort((a, b) => a - b);
+    if (cuts.length > 1) cuts.sort((a, b) => a - b);
     next.length = 0;
     clip.source = source;
     clip.earlier = other < owner;

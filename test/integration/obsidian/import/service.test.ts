@@ -149,7 +149,9 @@ describe("Obsidian Ink import undo", () => {
     );
     expect((await fixture.service.undo(preview.id)).journal.issues).toEqual(result.journal.issues);
   });
+});
 
+describe("Obsidian Ink import undo for repeated embeds", () => {
   it("reverses multiple nearby references from one note without context interference", async () => {
     const original = `${writingEmbed()}\n\n${writingEmbed()}`;
     const fixture = importFixture({ "Ink/example.svg": "source", "note.md": original });
@@ -157,6 +159,29 @@ describe("Obsidian Ink import undo", () => {
     await fixture.service.apply(preview);
     await fixture.service.undo(preview.id);
     expect(fixture.files.get("note.md")).toBe(original);
+  });
+
+  it("restores a moved section and leaves both copies of an ambiguous section intact", async () => {
+    const section = (label: string, embed: string) =>
+      `${label.repeat(90)}\n${embed}\n${label.repeat(90)}`;
+    const source = writingEmbed();
+    const embed = "![[Ink/example.inkbook.svg]]";
+    const fixture = importFixture({
+      "Ink/example.svg": "source",
+      "note.md": [section("A", source), section("B", source)].join("\n\n"),
+    });
+    const preview = await fixture.service.scan();
+    await fixture.service.apply(preview);
+    const copies = [section("B", embed), section("B", embed)];
+    fixture.files.set("note.md", [...copies, section("A", embed)].join("\n\n"));
+
+    const result = await fixture.service.undo(preview.id);
+    expect(result.journal.status).toBe("conflict");
+    expect(result.journal.notes[0]?.patches.map((patch) => patch.status)).toEqual([
+      "undone",
+      "applied",
+    ]);
+    expect(fixture.files.get("note.md")).toBe([...copies, section("A", source)].join("\n\n"));
   });
 });
 

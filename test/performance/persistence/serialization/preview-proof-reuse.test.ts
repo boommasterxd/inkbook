@@ -3,13 +3,13 @@ import { StreamingSafeStaticValidator } from "../../../../src/persistence/serial
 import { inspectTrustedSvgOutput } from "../../../../src/persistence/scheduling/trusted-svg-output";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { readVaultPreviewProofCandidate } from "../../../../src/obsidian/embeds/document-session/vault-preview-proof";
-import { parseRuntimeInput } from "../../../../src/persistence/worker/runtime/model/parse-runtime-input";
+import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/model/document-model";
 import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
 import { ChunkedInputHash } from "../../../../src/persistence/serialization/input/chunked-input-hash";
 import { MAX_NATIVE_HASH_BYTES } from "../../../../src/persistence/serialization/output/chunked-output-assembler";
 import { createStandardPersistenceFixture } from "../fixtures";
 
-it("moves complete preview-byte binding into the executor with zero host hashing and repeated static scans", async () => {
+it("binds and parses one private worker input with one full digest and no repeated static scan", async () => {
   const snapshot = createStandardPersistenceFixture();
   const serialized = serializeInkbookDocument(snapshot);
   if (!serialized.ok) throw new Error(serialized.error.code);
@@ -19,15 +19,29 @@ it("moves complete preview-byte binding into the executor with zero host hashing
   const digest = vi.spyOn(crypto.subtle, "digest");
   const release = vi.spyOn(ChunkedInputHash.prototype, "release");
   const staticWrite = vi.spyOn(StreamingSafeStaticValidator.prototype, "write");
+  const set = vi.spyOn(Uint8Array.prototype, "set");
+  const fullAllocations: ArrayBufferLike[] = [];
+  vi.stubGlobal(
+    "Uint8Array",
+    new Proxy(Uint8Array, {
+      construct(target, args: unknown[]) {
+        const result = Reflect.construct(target, args) as Uint8Array;
+        if (result.byteLength === bytes.byteLength && args[0] !== result.buffer)
+          fullAllocations.push(result.buffer);
+        return result;
+      },
+    }),
+  );
   try {
     const proof = readVaultPreviewProofCandidate(bytes, () => inspected.safeStaticProof);
     expect(proof).toBe(inspected.safeStaticProof);
     if (proof === undefined) throw new Error("Current complete preview proof was not matched.");
     expect(hashUpdate).not.toHaveBeenCalled();
     expect(digest).not.toHaveBeenCalled();
-    const result = await parseRuntimeInput(bytes, undefined, undefined, "safe", undefined, proof);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.snapshot.elements).toHaveLength(11_000);
+    const worker = new DocumentModelRuntime(true);
+    const result = await worker.unlock(bytes, undefined, undefined, proof);
+    expect(result.snapshot.elements).toHaveLength(11_000);
+    expect(result.outputHash).toBe(proof.outputHash);
     expect(staticWrite).not.toHaveBeenCalled();
     const freshByteChunks = hashUpdate.mock.calls
       .filter(([chunk]) => chunk.buffer === bytes.buffer)
@@ -37,12 +51,18 @@ it("moves complete preview-byte binding into the executor with zero host hashing
     const completeDigests = digest.mock.calls
       .map(([, input]) => input as Uint8Array)
       .filter((input) => input.byteLength === bytes.byteLength);
-    expect(completeDigests).toHaveLength(2);
-    expect(completeDigests[0]!.buffer).not.toBe(completeDigests[1]!.buffer);
-    for (const input of completeDigests) {
-      expect(input.buffer).not.toBe(bytes.buffer);
-      expect(input).toEqual(bytes);
-    }
+    expect(completeDigests).toHaveLength(1);
+    const confirmed = completeDigests[0]!;
+    expect(confirmed.buffer).not.toBe(bytes.buffer);
+    expect(fullAllocations).toEqual([confirmed.buffer]);
+    const completeCopies = new Map<ArrayBufferLike, number>();
+    set.mock.calls.forEach(([source], index) => {
+      const target = set.mock.contexts[index] as Uint8Array;
+      if (target.byteLength === bytes.byteLength) {
+        completeCopies.set(target.buffer, (completeCopies.get(target.buffer) ?? 0) + source.length);
+      }
+    });
+    expect([...completeCopies]).toEqual([[confirmed.buffer, bytes.byteLength]]);
     for (const owner of release.mock.contexts) expect(owner).toHaveProperty("retainedBytes", 0);
     const hashWork = new Map<unknown, number>();
     hashUpdate.mock.calls.forEach(([chunk], index) => {
@@ -59,11 +79,12 @@ it("moves complete preview-byte binding into the executor with zero host hashing
     expect(changed.byteLength).toBe(bytes.byteLength);
     expect(readVaultPreviewProofCandidate(changed, () => inspected.safeStaticProof)).toBe(proof);
     expect(hashUpdate).not.toHaveBeenCalled();
-    expect(
-      (await parseRuntimeInput(changed, undefined, undefined, "safe", undefined, proof)).ok,
-    ).toBe(true);
+    const parsed = await worker.unlock(changed, undefined, undefined, proof);
+    expect(parsed.outputHash).not.toBe(proof.outputHash);
     expect(staticWrite).toHaveBeenCalled();
   } finally {
+    vi.unstubAllGlobals();
+    set.mockRestore();
     hashUpdate.mockRestore();
     digest.mockRestore();
     release.mockRestore();

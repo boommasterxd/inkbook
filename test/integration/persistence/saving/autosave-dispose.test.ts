@@ -10,7 +10,7 @@ import {
   type DocumentRuntimeRequest,
   type DocumentRuntimeResult,
 } from "../../../../src/persistence/worker/runtime/public";
-import { rectangle, snapshot } from "../../../unit/persistence/worker/runtime/fixtures";
+import { rectangle } from "../../../unit/persistence/worker/runtime/fixtures";
 import { AutosaveDocumentFixture, serializeSnapshot } from "./fixtures";
 
 class DisposeRaceVault {
@@ -63,7 +63,7 @@ function createCoordinator(
     ...(createFallback === undefined ? {} : { createFallback }),
     documentSource,
     executor,
-    initialSnapshot: snapshot(),
+    initialRevision: 0,
     path: "drawing.svg",
     sessionId: "session-a",
     vault,

@@ -30,6 +30,14 @@ it("keeps existing synthetic bold bound while new text selects an imported real 
     serializer.reset({ ...createSnapshot([old]), version: 2, fontResources: [regular!] }).ok,
   ).toBe(true);
   const boundBefore = serializer.currentSnapshot()!.elements[0]!;
+  for (const changed of [
+    { ...regular!, mimeType: "font/otf" as const },
+    { ...regular!, weightRange: [700, 900] as [number, number] },
+  ]) {
+    expect(
+      serializer.applyDelta({ baseModelRevision: 7, modelRevision: 8, fontResources: [changed] }),
+    ).toMatchObject({ ok: false });
+  }
   expect(boundBefore).toMatchObject({
     layout: { lines: [{ runs: [{ fontResourceId: regular!.id }] }] },
   });

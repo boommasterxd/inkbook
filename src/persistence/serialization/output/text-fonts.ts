@@ -1,5 +1,9 @@
 import type { FontResourceV2, InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
-import { fontCssFamily, validateFontResourceSteps } from "../../fonts/font-resources";
+import {
+  fontCssFamily,
+  validateFontDescriptor,
+  validateFontResourceSteps,
+} from "../../fonts/font-resources";
 import { usedFontResourcesSteps } from "../../fonts/used-font-resources";
 import { assertFontResourcesSteps } from "../../../domain/schema/font-resource-validation";
 import { codecFailure } from "../codec-failure";
@@ -121,11 +125,14 @@ export function* prepareDeltaFontResourcesSteps(
   try {
     yield* assertFontResourcesSteps(proposed, "$.fontResources");
     for (const resource of proposed) {
-      fontCssFamily(resource.family);
-      if (
-        !current.some((previous) => previous.id === resource.id && previous.data === resource.data)
-      )
-        yield* validateFontResourceSteps(resource, signal);
+      const known = current.some(
+        (previous) =>
+          previous.id === resource.id &&
+          previous.data === resource.data &&
+          previous.mimeType === resource.mimeType,
+      );
+      if (known) validateFontDescriptor(resource);
+      else yield* validateFontResourceSteps(resource, signal);
     }
     return { ok: true, value: proposed.map(canonicalFontResource) };
   } catch {

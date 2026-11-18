@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FontSettingsPreview } from "../../../../src/obsidian/settings/fonts/font-settings-preview";
+import { loadNativeFontPreview } from "../../../../src/obsidian/fonts/native-font-preview";
 import type { LibraryFontFace } from "../../../../src/obsidian/fonts/vault-font-library";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
@@ -32,7 +33,10 @@ it("retains one loaded preview font and releases it when replaced or disposed", 
   const sample = document.body.createEl("p");
   const preview = new FontSettingsPreview<LibraryFontFace>(
     sample,
-    { resource: read, scheduler: new TestWorkScheduler() },
+    {
+      load: async (_face, options) => loadNativeFontPreview(await read(), options),
+      scheduler: new TestWorkScheduler(),
+    },
     (update) => update(),
   );
   await preview.show(face);

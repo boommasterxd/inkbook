@@ -7,7 +7,7 @@ import {
 import { calculateElementBoundsSteps } from "../../geometry/bounds";
 import type { Bounds } from "../../geometry/primitives";
 import { validateInkElementV1Steps } from "../../schema/element-validation";
-import type { InkElementV1 } from "../../schema/public";
+import type { InkElementV1, StrokeElementV1 } from "../../schema/public";
 import { takeImmutableElementOwnershipSteps } from "../records/immutability";
 
 const boundsByElement = new WeakMap<object, Readonly<Bounds>>();
@@ -16,9 +16,19 @@ export function preparedInsertionBounds(element: object): Readonly<Bounds> | und
   return boundsByElement.get(element);
 }
 
+/** Synchronous canvas creation accepts JSON strokes. Worker decoding owns typed buffer input. */
+export function prepareStrokeInsertion(stroke: StrokeElementV1): StrokeElementV1 {
+  if (boundsByElement.has(stroke)) return stroke;
+  const steps = prepareInsertionElementSteps(stroke, "json-stroke");
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value as StrokeElementV1;
+}
+
 /** Validation and bounds belong to the same privately staged, immutable JSON element. */
 export function* prepareInsertionElementSteps(
   element: InkElementV1,
+  input: "runtime" | "json-stroke" = "runtime",
 ): Generator<boolean | void, InkElementV1> {
   if (boundsByElement.has(element)) return element;
   const header =
@@ -27,6 +37,9 @@ export function* prepareInsertionElementSteps(
       ? yield* captureRuntimeTextElementSteps(element)
       : captureRuntimeElementHeader(element));
   const points = Object.getOwnPropertyDescriptor(element, "points");
+  if (input === "json-stroke" && (header.kind !== "stroke" || !Array.isArray(points?.value))) {
+    throw new RangeError("Stroke creation requires JSON samples.");
+  }
   if (
     header.kind === "stroke" &&
     (points === undefined || !("value" in points) || !points.enumerable)

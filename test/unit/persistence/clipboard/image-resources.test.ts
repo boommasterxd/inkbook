@@ -20,7 +20,6 @@ it("copies only selected resources and preserves canonical image bytes through s
   expect(encoded.value.payload).toMatchObject({ version: 5, imageResources: [asset] });
   const sliced = await encodeRuntimeSelectionChunked(
     [element],
-    [element.id],
     {
       checkpoint: () => undefined,
       signal: new AbortController().signal,

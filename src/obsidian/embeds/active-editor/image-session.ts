@@ -87,6 +87,8 @@ export class ActiveImageSession {
       return options.onImportImages!(signal, options.ownerWindow, {
         page: options.model.page,
         centerX: center.x,
+        retainedResources: () =>
+          this.#current(signal, options.model.revision) ? options.model.imageResources : undefined,
         submit: this.#importSubmission(center, signal),
       });
     });

@@ -7,23 +7,16 @@ import {
 } from "../../domain/schema/public";
 import {
   validateInkElementV1Steps,
-  validateRuntimeInkElementV1,
+  validateRuntimeInkElementV1Steps,
 } from "../../domain/schema/element-validation";
 import { hasReachableDependencyCycle } from "../../domain/schema/dependency-cycle";
-import {
-  assertImageResourcesSteps,
-  assertImageBindingsSteps,
-} from "../../domain/schema/image-validation";
 import { renderBandOf, RENDER_BANDS } from "../../domain/commands/render-bands";
-import { validateImageResourceSteps } from "../images/image-resources";
-import { assertFontResourcesSteps } from "../../domain/schema/font-resource-validation";
-import { usedFontResourcesSteps } from "../fonts/used-font-resources";
-import { validateFontResourceSteps } from "../fonts/font-resources";
 import {
-  calculateElementBounds,
-  isAnchorTarget,
-  resolveShapeAnchor,
-} from "../../domain/geometry/public";
+  validateClipboardResourcesSteps,
+  type ClipboardResourceSelection,
+} from "./resource-validation";
+import { isAnchorTarget, resolveShapeAnchor } from "../../domain/geometry/public";
+import { calculateElementBoundsSteps } from "../../domain/geometry/bounds";
 import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../domain/spatial/index";
 import type { ClipboardResult, ElementBounds } from "./types";
 import { hasMeasuredTextInkBounds } from "../../domain/schema/snapshot-version";
@@ -64,17 +57,15 @@ function* remapClipboardBodySteps(
     return failure("Clipboard element body must not contain document identity fields.");
   }
   if (body.kind !== "line" && body.kind !== "arrow") {
-    const validation = allowRuntimeStrokeBuffers
-      ? validateRuntimeInkElementV1(
-          { ...body, id, createdAt: 0 },
-          { limits: CLIPBOARD_SCHEMA_LIMITS },
-        )
-      : yield* validateInkElementV1Steps(
-          { ...body, id, createdAt: 0 },
-          { limits: CLIPBOARD_SCHEMA_LIMITS },
-          nodesPerStep,
-          samplesPerStep,
-        );
+    const validate = allowRuntimeStrokeBuffers
+      ? validateRuntimeInkElementV1Steps
+      : validateInkElementV1Steps;
+    const validation = yield* validate(
+      { ...body, id, createdAt: 0 },
+      { limits: CLIPBOARD_SCHEMA_LIMITS },
+      nodesPerStep,
+      samplesPerStep,
+    );
     return validation.ok
       ? { ok: true, value: validation.value }
       : failure(validation.error.message);
@@ -108,58 +99,37 @@ function* remapClipboardBodySteps(
   return validation.ok ? { ok: true, value: validation.value } : failure(validation.error.message);
 }
 
-const polygonVertices = (kind: string): number => {
-  if (kind === "triangle") return 3;
-  if (kind === "star") return 10;
-  if (kind === "diamond" || kind === "parallelogram") return 4;
-  if (kind === "octagon") return 8;
-  return 0;
-};
-
-const isCompatibleAnchor = (target: ClipboardElementBodyV1, anchor: ShapeAnchorV1): boolean => {
-  if (target.kind === "line" || target.kind === "arrow") {
-    return anchor.kind === "linear-endpoint";
-  }
-  if (target.kind === "rectangle" || target.kind === "table" || target.kind === "text")
-    return anchor.kind === "box";
-  if (target.kind === "ellipse") return anchor.kind === "ellipse-cardinal";
-  const vertices = polygonVertices(target.kind);
-  if (vertices > 0) {
-    return (
-      (anchor.kind === "polygon-vertex" || anchor.kind === "polygon-edge-midpoint") &&
-      anchor.index < vertices
-    );
-  }
-  if (target.kind !== "coordinate-system") return false;
-  return (
-    anchor.kind === "coordinate-origin" ||
-    (anchor.kind === "coordinate-axis-end" && anchor.index < target.axes.length)
-  );
-};
-
 interface ValidatedEntry {
   clipId: string;
   body: ClipboardElementBodyV1;
   element: InkElementV1;
+  spatial?: ClipboardStrokeFacts["spatial"];
 }
 
+export interface ClipboardStrokeFacts {
+  readonly element: Extract<InkElementV1, { kind: "stroke" }>;
+  readonly spatial: { readonly spatialMemberships: number; readonly spatialOverflow: number };
+}
+
+type RuntimeValidation = ClipboardResourceSelection & {
+  readonly strokes?: ReadonlyMap<unknown, ClipboardStrokeFacts>;
+};
+
 interface AggregateCounts {
-  strokes: number;
-  points: number;
   endpoints: number;
   fanout: Map<string, number>;
 }
 
-function* validateEntriesSteps(
+function* clipboardIdentitiesSteps(
   entries: unknown[],
-  allowRuntimeStrokeBuffers: boolean,
-  nodesPerStep: number,
-  samplesPerStep: number,
-): Generator<boolean | void, ClipboardResult<ValidatedEntry[]>> {
+  allowRuntimeSamples: boolean,
+): Generator<void, ClipboardResult<Map<string, string>>> {
   if (entries.length === 0 || entries.length > CLIPBOARD_SCHEMA_LIMITS.elements) {
     return failure("Clipboard element count is outside the supported range.");
   }
   const clipIds = new Map<string, string>();
+  let strokes = 0;
+  let points = 0;
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
     if (!isRecord(entry) || !hasExactKeys(entry, ["clipId", "element"])) {
@@ -173,16 +143,52 @@ function* validateEntriesSteps(
       return failure("Clipboard clipId values must be non-empty and unique.");
     }
     clipIds.set(entry.clipId, placeholderUuid(index));
+    if (isRecord(entry.element) && entry.element.kind === "stroke") {
+      strokes += 1;
+      const samples = entry.element.points;
+      if (Array.isArray(samples) || (allowRuntimeSamples && samples instanceof Float64Array))
+        points += samples.length / 3;
+      if (
+        strokes > CLIPBOARD_SCHEMA_LIMITS.strokes ||
+        points > CLIPBOARD_SCHEMA_LIMITS.strokePoints
+      )
+        return failure("Clipboard stroke limits are exceeded.");
+    }
     yield;
   }
+  return { ok: true, value: clipIds };
+}
+
+function* validateEntriesSteps(
+  entries: unknown[],
+  runtime: RuntimeValidation | undefined,
+  nodesPerStep: number,
+  samplesPerStep: number,
+): Generator<boolean | void, ClipboardResult<ValidatedEntry[]>> {
+  const identities = yield* clipboardIdentitiesSteps(entries, runtime !== undefined);
+  if (!identities.ok) return identities;
+  const clipIds = identities.value;
   const validated: ValidatedEntry[] = [];
   for (const entry of entries) {
     const wrapper = entry as UnknownRecord;
+    const retained = runtime?.strokes?.get(wrapper.element);
+    if (retained !== undefined) {
+      // The encoder binds its own identity-free body to the exact canonical worker record.
+      // File and clipboard stroke coordinates and per-stroke sample limits are identical.
+      validated.push({
+        clipId: wrapper.clipId as string,
+        body: wrapper.element as ClipboardElementBodyV1,
+        element: retained.element,
+        spatial: retained.spatial,
+      });
+      yield;
+      continue;
+    }
     const element = yield* remapClipboardBodySteps(
       wrapper.element,
       clipIds.get(wrapper.clipId as string)!,
       clipIds,
-      allowRuntimeStrokeBuffers,
+      runtime !== undefined,
       nodesPerStep,
       samplesPerStep,
     );
@@ -199,7 +205,6 @@ function* validateEntriesSteps(
 
 const validateConnections = (
   body: Extract<ClipboardElementBodyV1, { kind: "line" | "arrow" }>,
-  bodies: ReadonlyMap<string, ClipboardElementBodyV1>,
   elements: ReadonlyMap<string, InkElementV1>,
   counts: AggregateCounts,
 ): ClipboardResult<void> => {
@@ -208,10 +213,6 @@ const validateConnections = (
     [body.endConnection, body.end],
   ] as const) {
     if (connection === null) continue;
-    const target = bodies.get(connection.targetClipId);
-    if (target === undefined || !isCompatibleAnchor(target, connection.anchor)) {
-      return failure("Clipboard connection has a missing or incompatible target.");
-    }
     const targetElement = elements.get(connection.targetClipId);
     if (
       targetElement === undefined ||
@@ -234,37 +235,37 @@ const validateConnections = (
 
 function* validateAggregateLimitsSteps(
   entries: readonly ValidatedEntry[],
-): Generator<void, ClipboardResult<readonly ElementBounds[]>> {
+  samplesPerStep: number,
+): Generator<boolean | void, ClipboardResult<readonly ElementBounds[]>> {
   if (hasClipboardConnectionCycle(entries)) {
     return failure("Clipboard linear endpoint connections must not contain self-links or cycles.");
   }
   const counts: AggregateCounts = {
-    strokes: 0,
-    points: 0,
     endpoints: 0,
     fanout: new Map(),
   };
-  const bodies = new Map(entries.map(({ clipId, body }) => [clipId, body]));
   const elements = new Map(entries.map(({ clipId, element }) => [clipId, element]));
   const bounds: ElementBounds[] = [];
   let cellMemberships = 0;
   let overflowElements = 0;
-  for (const { body, element } of entries) {
-    if (element.kind === "stroke") {
-      counts.strokes += 1;
-      counts.points += element.points.length / 3;
-      if (
-        counts.strokes > CLIPBOARD_SCHEMA_LIMITS.strokes ||
-        counts.points > CLIPBOARD_SCHEMA_LIMITS.strokePoints
-      ) {
-        return failure("Clipboard stroke limits are exceeded.");
-      }
-    }
+  for (const { body, element, spatial } of entries) {
     if (body.kind === "line" || body.kind === "arrow") {
-      const connectionValidation = validateConnections(body, bodies, elements, counts);
+      const connectionValidation = validateConnections(body, elements, counts);
       if (!connectionValidation.ok) return connectionValidation;
     }
-    const elementBounds = calculateElementBounds(element);
+    if (spatial !== undefined) {
+      cellMemberships += spatial.spatialMemberships;
+      overflowElements += spatial.spatialOverflow;
+      yield;
+      continue;
+    }
+    const steps = calculateElementBoundsSteps(element, samplesPerStep);
+    let bound = steps.next();
+    while (!bound.done) {
+      yield true;
+      bound = steps.next();
+    }
+    const elementBounds = bound.value;
     bounds.push(elementBounds);
     const memberships = spatialCellMembershipCount(elementBounds);
     if (memberships > MAX_ELEMENT_CELLS) overflowElements += 1;
@@ -321,7 +322,7 @@ const connectionMatches = (
 
 function* validateClipboardPayloadSteps(
   value: unknown,
-  allowRuntimeStrokeBuffers: boolean,
+  runtime: RuntimeValidation | undefined,
   nodesPerStep: number,
   samplesPerStep: number,
 ): Generator<boolean | void, ClipboardResult<InkClipboardV1>> {
@@ -350,22 +351,26 @@ function* validateClipboardPayloadSteps(
   }
   const entries = yield* validateEntriesSteps(
     value.elements,
-    allowRuntimeStrokeBuffers,
+    runtime,
     nodesPerStep,
     samplesPerStep,
   );
   if (!entries.ok) return entries;
   const versions = validateClipboardElementVersions(entries.value, value.version);
   if (!versions.ok) return versions;
-  const resources = yield* validateClipboardResourcesSteps(value, entries.value);
+  const resources = yield* validateClipboardResourcesSteps(
+    value,
+    entries.value.map(({ element }) => element),
+    runtime ?? {},
+  );
   if (!resources.ok) return resources;
   if (!hasValidRenderBandOrder(entries.value)) {
     return failure("Clipboard elements violate fixed render-band order.");
   }
-  const limits = yield* validateAggregateLimitsSteps(entries.value);
+  const limits = yield* validateAggregateLimitsSteps(entries.value, samplesPerStep);
   if (!limits.ok) return limits;
   const payload = value as unknown as InkClipboardV1;
-  validatedBounds.set(payload, limits.value);
+  if (limits.value.length === entries.value.length) validatedBounds.set(payload, limits.value);
   return { ok: true, value: payload };
 }
 
@@ -391,7 +396,7 @@ function validateClipboardPayloadInternal(
 ): ClipboardResult<InkClipboardV1> {
   const steps = validateClipboardPayloadSteps(
     value,
-    allowRuntimeStrokeBuffers,
+    allowRuntimeStrokeBuffers ? {} : undefined,
     Number.POSITIVE_INFINITY,
     Number.POSITIVE_INFINITY,
   );
@@ -405,8 +410,9 @@ export async function validateClipboardPayloadSliced(
   checkpoint: () => Promise<void> | undefined,
   nodeLimit: number,
   sampleLimit: number,
+  runtime?: RuntimeValidation,
 ): Promise<ClipboardResult<InkClipboardV1>> {
-  const steps = validateClipboardPayloadSteps(value, false, nodeLimit * 3, sampleLimit);
+  const steps = validateClipboardPayloadSteps(value, runtime, nodeLimit * 3, sampleLimit);
   let step = steps.next();
   let visited = 0;
   while (!step.done) {
@@ -427,48 +433,3 @@ export const validateClipboardPayload = (value: unknown): ClipboardResult<InkCli
 
 export const validateRuntimeClipboardPayload = (value: unknown): ClipboardResult<InkClipboardV1> =>
   validateClipboardPayloadInternal(value, true);
-
-function* validateClipboardResourcesSteps(
-  value: UnknownRecord,
-  entries: readonly ValidatedEntry[],
-): Generator<boolean | void, ClipboardResult<void>> {
-  try {
-    const hasImages = entries.some(({ element }) => element.kind === "image");
-    if ((value.version as number) < 3 && (hasImages || value.imageResources !== undefined))
-      return failure("Images and image resources require clipboard version 3.");
-    if (value.imageResources !== undefined) {
-      yield* assertImageResourcesSteps(value.imageResources, "$.imageResources");
-      for (const resource of value.imageResources as NonNullable<
-        InkClipboardV1["imageResources"]
-      >) {
-        for (const _step of validateImageResourceSteps(resource)) {
-          void _step;
-          yield true;
-        }
-      }
-    }
-    yield* assertImageBindingsSteps(
-      entries.map(({ element }) => element),
-      (value.imageResources ?? []) as NonNullable<InkClipboardV1["imageResources"]>,
-    );
-    const hasText = entries.some(({ element }) => element.kind === "text");
-    if (value.version === 1 && (hasText || value.fontResources !== undefined)) {
-      return failure("Text and font resources require clipboard version 2.");
-    }
-    if (value.fontResources !== undefined) {
-      const fonts = assertFontResourcesSteps(value.fontResources, "$.fontResources");
-      for (let step = fonts.next(); !step.done; step = fonts.next()) yield true;
-      for (const resource of value.fontResources as NonNullable<InkClipboardV1["fontResources"]>) {
-        const verified = validateFontResourceSteps(resource);
-        for (let step = verified.next(); !step.done; step = verified.next()) yield true;
-      }
-    }
-    yield* usedFontResourcesSteps(
-      entries.map(({ element }) => element),
-      (value.fontResources ?? []) as NonNullable<InkClipboardV1["fontResources"]>,
-    );
-  } catch {
-    return failure("Clipboard resources are invalid or a required resource is unavailable.");
-  }
-  return { ok: true, value: undefined };
-}

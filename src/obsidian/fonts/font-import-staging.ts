@@ -49,6 +49,22 @@ interface FontPreparationOptions {
   readonly useMetadata: boolean;
 }
 
+/** Compare exact file content without retaining another source or starving window work. */
+export async function sameFontBytes(
+  left: Uint8Array,
+  right: Uint8Array,
+  checkpoint: () => Promise<void> | undefined,
+): Promise<boolean> {
+  if (left.length !== right.length) return false;
+  for (let start = 0; start < left.length; start += 4096) {
+    const end = Math.min(start + 4096, left.length);
+    for (let index = start; index < end; index++) if (left[index] !== right[index]) return false;
+    const pending = checkpoint();
+    if (pending !== undefined) await pending;
+  }
+  return true;
+}
+
 /** Owns bounded, validated bytes until explicit review acceptance or cancellation. */
 export class FontImportStaging {
   readonly #prepared = new Map<PreparedLibraryFontFace, PreparedFontData>();

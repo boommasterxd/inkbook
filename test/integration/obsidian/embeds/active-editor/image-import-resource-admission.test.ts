@@ -46,7 +46,7 @@ async function fixture() {
     const { submit } = await opened.promise;
     return (resources = [asset]) => submit({ resources, source: "pdf" }, dialog.signal);
   };
-  return { asset, host, model, history, beginImport, dialog, committed, failed };
+  return { asset, host, model, history, beginImport, opened, dialog, committed, failed };
 }
 
 function expectUnpublishedImage(f: Awaited<ReturnType<typeof fixture>>, revision: number): void {
@@ -130,6 +130,7 @@ it("rejects competing submissions and retains one successful import across undo 
   expect(await f.history.undoAsync()).toBe(true);
   expect(f.model.store.size).toBe(0);
   expect(f.model.imageResource!(f.asset.id)).toBe(f.asset);
+  expect((await f.opened.promise).retainedResources?.()).toEqual([f.asset]);
   expect(await f.history.redoAsync()).toBe(true);
   expect(f.model.store.size).toBe(1);
   expect(f.model.imageResource!(f.asset.id)).toBe(f.asset);

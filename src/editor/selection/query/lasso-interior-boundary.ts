@@ -1,4 +1,5 @@
 import type { PointV1 } from "../../../domain/schema/public";
+import { mayCoverPoint, mayProjectVertex, visitBoundaryCandidates } from "./lasso-boundary-ranges";
 
 const EPSILON = 1e-9;
 
@@ -69,14 +70,17 @@ function* overlapTimes(
   outer: readonly PointV1[],
 ): Generator<number | void, number[]> {
   const times = [0, 1];
-  for (let vertex = 0; vertex < outer.length; vertex += 1) {
-    const point = outer[vertex]!;
-    if (onLine(point, start, end)) {
-      const time = projectedTime(point, start, end);
-      if (time > 0 && time < 1) times.push(time);
-    }
-    if (vertex % 32 === 31) yield 32;
-  }
+  yield* visitBoundaryCandidates(
+    outer,
+    (range) => mayProjectVertex(range, start, end),
+    (vertex) => {
+      const point = outer[vertex]!;
+      if (onLine(point, start, end)) {
+        const time = projectedTime(point, start, end);
+        if (time > 0 && time < 1) times.push(time);
+      }
+    },
+  );
   return times.sort((left, right) => left - right);
 }
 
@@ -87,14 +91,17 @@ function* edgeMultiplicity(
   outer: readonly PointV1[],
 ): Generator<number | void, number> {
   let multiplicity = 0;
-  for (let edge = 0; edge < outer.length; edge += 1) {
-    const first = outer[edge]!;
-    const last = outer[(edge + 1) % outer.length]!;
-    const time = projectedTime(point, first, last);
-    if (onLine(first, start, end) && onLine(last, start, end) && time > 0 && time < 1)
-      multiplicity += 1;
-    if (edge % 32 === 31) yield 32;
-  }
+  yield* visitBoundaryCandidates(
+    outer,
+    (range) => mayCoverPoint(range, point),
+    (edge) => {
+      const first = outer[edge]!;
+      const last = outer[(edge + 1) % outer.length]!;
+      const time = projectedTime(point, first, last);
+      if (onLine(first, start, end) && onLine(last, start, end) && time > 0 && time < 1)
+        multiplicity += 1;
+    },
+  );
   return multiplicity;
 }
 

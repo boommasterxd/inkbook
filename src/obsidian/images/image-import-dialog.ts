@@ -1,7 +1,6 @@
 import type { ImageResourceV3 } from "../../domain/schema/public";
 import { imageImportResolution } from "../../domain/images/image-import-resolution";
-import { IMAGE_LIMITS } from "../../domain/images/image-limits";
-import { BoundedVersionLru } from "../../domain/cache/bounded-version-lru";
+import { ImageImportPreparations, type PreparedImportImage } from "./image-import-preparations";
 import { setIcon } from "obsidian";
 import { ImageImportStaging } from "./image-import-staging";
 import { ImageImportSpinner } from "./image-import-spinner";
@@ -10,20 +9,12 @@ import { ImageImportReviewLayout } from "./image-import-review-layout";
 import { imageImportErrorMessage } from "./image-import-error";
 import { ImageDialog, type ImageImportDialogOptions } from "./image-dialog";
 import { ImagePlacementPreview } from "./image-placement-preview";
-import { prepareRasterImage, readImageSource, type PreparedRasterImage } from "./image-import";
-import {
-  openPdfImageSource,
-  type PdfImageSource,
-  type PdfImageResolution,
-} from "./pdf-image-source";
+import { readImageSource } from "./image-import";
+import { openPdfImageSource, type PdfImageSource } from "./pdf-image-source";
 import {
   ImageImportResolutionControl,
   imageResolutionDescription,
 } from "./image-import-resolution-control";
-
-interface PreparedImportImage extends PreparedRasterImage {
-  readonly resolution?: PdfImageResolution | undefined;
-}
 
 export function openImageImportDialog(options: ImageImportDialogOptions): Promise<void> {
   if (options.signal?.aborted === true) return Promise.resolve();
@@ -31,10 +22,7 @@ export function openImageImportDialog(options: ImageImportDialogOptions): Promis
 }
 
 class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
-  readonly #prepared = new BoundedVersionLru<PreparedImportImage>(
-    IMAGE_LIMITS.pdfSelectedPages,
-    IMAGE_LIMITS.documentPixels * 4,
-  );
+  readonly #prepared = new ImageImportPreparations();
   #pdf: PdfImageSource | undefined;
   #preview: ImageResourceV3 | undefined;
   #previewPage = 1;
@@ -121,7 +109,6 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
       if (!this.#refreshing) this.#input.click();
     });
     this.#choose.classList.add("inkbook-image-import-source");
-    this.#choose.setAttribute("aria-label", t("images.choose"));
     this.#fileIcon = this.#choose.createSpan({
       cls: "inkbook-image-import-source-icon",
       attr: { "aria-hidden": "true" },
@@ -137,8 +124,6 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
       cls: "inkbook-image-import-source-hint",
       text: t("images.formats"),
     });
-    this.#fileHint.id = `inkbook-image-source-${crypto.randomUUID()}`;
-    this.#choose.setAttribute("aria-describedby", this.#fileHint.id);
     this.#sourceDescription = t("images.formats");
     this.#replace = this.#choose.createSpan({
       cls: "inkbook-image-import-replace",
@@ -194,10 +179,6 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
     this.#sourceDescription = this.options.localization.t("images.formats");
     this.#fileName.textContent = file.name;
     this.#fileName.title = file.name;
-    this.#choose.setAttribute(
-      "aria-label",
-      `${file.name} · ${this.options.localization.t("images.change")}`,
-    );
     const generation = ++this.#generation;
     try {
       await this.#pdf?.dispose();
@@ -231,22 +212,12 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
     };
   }
 
-  async #prepare(page: number): Promise<PreparedImportImage> {
+  #prepare(page: number, inserting = false): Promise<PreparedImportImage> {
     this.abort.signal.throwIfAborted();
-    const key = `${this.#quality.value}:${page}`;
-    const retained = this.#prepared.get(key, this.#generation);
-    if (retained !== undefined) return retained;
-    const pdf = this.#pdf;
     const options = this.#rasterOptions();
-    const prepared: PreparedImportImage =
-      pdf === undefined
-        ? await prepareRasterImage(this.#rasterBytes!, options)
-        : { resource: await pdf.render(page, options), resolution: pdf.resolution };
-    this.abort.signal.throwIfAborted();
-    const { resource } = prepared;
-    const bytes = resource.width * resource.height * 4 + resource.data.length * 2 + 256;
-    this.#prepared.set(key, this.#generation, prepared, bytes);
-    return prepared;
+    return this.#pdf === undefined
+      ? this.#prepared.raster(this.#rasterBytes!, options)
+      : this.#prepared.pdf(this.#pdf, page, options, inserting);
   }
 
   async #refreshPreview(): Promise<void> {
@@ -356,26 +327,11 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
     const restoreFocus = this.#insert.ownerDocument.activeElement === this.#insert;
     this.#setBusy(true);
     try {
-      const staging = new ImageImportStaging();
+      const staging = new ImageImportStaging(
+        this.#pdf === undefined ? undefined : this.options.retainedResources,
+      );
       if (this.#pdf === undefined) staging.add(this.#preview);
-      else {
-        const pages = this.#pdfPages.selection!;
-        for (const [index, page] of pages.entries()) {
-          this.abort.signal.throwIfAborted();
-          this.#status.textContent = this.options.localization.t("images.preparingPage", {
-            page,
-            index: index + 1,
-            total: pages.length,
-          });
-          this.#fileHint.textContent = this.#status.textContent;
-          const resource =
-            page === this.#previewPage && this.#quality.value === this.#previewQuality
-              ? this.#preview
-              : (await this.#prepare(page)).resource;
-          this.abort.signal.throwIfAborted();
-          staging.add(resource);
-        }
-      }
+      else await this.#stagePdfPages(staging, this.#preview);
       this.abort.signal.throwIfAborted();
       const status = await this.options.submit(
         {
@@ -400,6 +356,25 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
         this.#insert.ownerDocument.activeElement === this.#insert.ownerDocument.body
       )
         this.#insert.focus({ preventScroll: true });
+    }
+  }
+
+  async #stagePdfPages(staging: ImageImportStaging, preview: ImageResourceV3): Promise<void> {
+    const pages = this.#pdfPages.selection!;
+    for (const [index, page] of pages.entries()) {
+      this.abort.signal.throwIfAborted();
+      this.#status.textContent = this.options.localization.t("images.preparingPage", {
+        page,
+        index: index + 1,
+        total: pages.length,
+      });
+      this.#fileHint.textContent = this.#status.textContent;
+      const resource =
+        page === this.#previewPage && this.#quality.value === this.#previewQuality
+          ? preview
+          : (await this.#prepare(page, true)).resource;
+      this.abort.signal.throwIfAborted();
+      staging.add(resource);
     }
   }
 

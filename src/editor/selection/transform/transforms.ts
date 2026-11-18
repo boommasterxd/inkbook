@@ -1,4 +1,3 @@
-import { translatedStroke } from "../../../domain/geometry/stroke-position";
 import { scaledTextContent } from "../../../domain/geometry/text-scale";
 import {
   assertFinitePoint,
@@ -7,7 +6,7 @@ import {
   rotatePointClockwise,
   roundCanonical,
 } from "../../../domain/geometry/public";
-import { markCanonicalStrokeReplacement } from "../../../domain/elements/stroke-replacement-proof";
+import { translateStrokeForReplacement } from "../../../domain/elements/stroke-replacement-proof";
 import type {
   CoordinateSystemElementV1,
   InkElementV1,
@@ -15,7 +14,6 @@ import type {
   PointV1,
   StrokeElementV1,
 } from "../../../domain/schema/public";
-import { MAX_ABSOLUTE_COORDINATE } from "../../../domain/schema/public";
 import { rotateLinearElement } from "./linear-transforms";
 import { isLinearElement } from "./linear-elements";
 
@@ -137,17 +135,7 @@ export function rotateSelection(
 function translateElement(element: InkElementV1, delta: PointV1): InkElementV1 {
   const translate = (point: PointV1): PointV1 =>
     canonicalPoint({ x: point.x + delta.x, y: point.y + delta.y });
-  if (element.kind === "stroke") {
-    const replacement = translatedStroke(element, delta);
-    assertSupportedCoordinate(replacement.pivot.x);
-    assertSupportedCoordinate(replacement.pivot.y);
-    assertSupportedCoordinate(replacement.offset!.x);
-    assertSupportedCoordinate(replacement.offset!.y);
-    Object.freeze(replacement.offset);
-    Object.freeze(replacement.pivot);
-    Object.freeze(replacement);
-    return markCanonicalStrokeReplacement(element, replacement, delta);
-  }
+  if (element.kind === "stroke") return translateStrokeForReplacement(element, delta);
   if (element.kind === "straight-highlighter") {
     return {
       ...element,
@@ -201,12 +189,6 @@ function translateElement(element: InkElementV1, delta: PointV1): InkElementV1 {
     y,
     pivot: canonicalPoint({ x: x + element.width / 2, y: y + element.height / 2 }),
   };
-}
-
-function assertSupportedCoordinate(value: number): void {
-  if (Math.abs(value) > MAX_ABSOLUTE_COORDINATE) {
-    throw new RangeError("Transformed stroke coordinates exceed the supported range.");
-  }
 }
 
 export function scaleElement(

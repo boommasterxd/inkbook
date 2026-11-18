@@ -1,4 +1,5 @@
 import { setIcon } from "obsidian";
+import { loadNativeFontPreview } from "../../fonts/native-font-preview";
 import type { LibraryFontFace } from "../../fonts/vault-font-library";
 import { SettingsPanelMotion } from "../settings-panel-motion";
 import type { FontLibrarySettingsOptions } from "./font-library-options";
@@ -74,8 +75,14 @@ export class FontLibraryPreview {
       sample,
       {
         scheduler: this.options.scheduler,
-        resource: (face, signal, scheduler) =>
-          this.options.library.resource(face, signal, scheduler),
+        load: async (face, options) => {
+          const resource = await this.options.library.resource(
+            face,
+            options.signal,
+            options.scheduler,
+          );
+          return loadNativeFontPreview(resource, options);
+        },
       },
       (update) => {
         if (this.#active !== active || active.closing) return;

@@ -21,6 +21,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("binds a matched worker digest only to the complete ordered private byte ranges", async () => {
+  const input = new Uint8Array([1, 2, 3, 4]);
+  const expected = sha256Hex(input);
+  const hash = new ChunkedInputHash({});
+  const proof = SafeStaticProof.fromTrustedProducer(expected, input.length);
+  const bytes = await hash.bindWorkerPreview(input, proof, 2);
+  if (bytes === undefined) throw new Error("Expected the worker bytes to match.");
+  expect(hash.copy(input)).toBeUndefined();
+  expect(hash.copy(bytes.subarray(2))).toBeUndefined();
+  expect(hash.copy(bytes.subarray(0, 2))).toEqual(input.subarray(0, 2));
+  expect(hash.copy(bytes.subarray(0, 2))).toBeUndefined();
+  expect(hash.complete()).toBeUndefined();
+  expect(hash.copy(bytes.subarray(2))).toEqual(input.subarray(2));
+  expect(hash.complete()).toBe(expected);
+  hash.release();
+  expect(hash.retainedBytes).toBe(0);
+});
+
 describe("owned export input hashing", () => {
   it.each(["export", "runtime"])(
     "digests owned %s chunks despite source mutation",

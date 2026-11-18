@@ -40,11 +40,8 @@ import {
 } from "./serialization-input-preparation";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "../sha256";
 import { serializeRuntimeSnapshotToUtf8 } from "./streaming-runtime-export";
-import {
-  prepareSerializationRankUpdate,
-  serializationSelectionSteps,
-  type SerializationRanks,
-} from "./serialization-selection";
+import * as selection from "./serialization-selection";
+import type { SerializationRanks } from "./serialization-selection";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "../types";
 import { canonicalFontResource, snapshotTextResources } from "./text-fonts";
 import { snapshotImageResources } from "./image-markup";
@@ -117,7 +114,10 @@ export class IncrementalDocumentSerializer {
     return this.#revision;
   }
   public selectionSteps(ids: readonly string[]) {
-    return serializationSelectionSteps(this.#elements, this.#ranks, ids);
+    return selection.serializationSelectionSteps(this.#elements, this.#ranks, ids);
+  }
+  public currentElementFacts(element: InkElementV1) {
+    return this.#elements.get(element.id) === element ? this.#facts.get(element.id) : undefined;
   }
   public currentPage(): PageV1 | null {
     return this.#page === null ? null : canonicalPage(this.#page);
@@ -345,7 +345,7 @@ export class IncrementalDocumentSerializer {
       signal,
     );
     if (!resources.ok) return resources;
-    const ranks = yield* prepareSerializationRankUpdate(
+    const ranks = yield* selection.prepareSerializationRankUpdate(
       { currentOrders: this.#orders, nextOrders: prepared.value.orders, currentRanks: this.#ranks },
       nodesPerStep,
     );

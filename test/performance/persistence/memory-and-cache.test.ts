@@ -7,6 +7,12 @@ import { build } from "esbuild";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { executeIsolatedNode } from "../../fixtures/persistence/isolated-node-process";
+import { createTestStroke } from "../../fixtures/persistence/worker-snapshot";
+import {
+  emptySnapshot,
+  operation,
+  persistenceHarness,
+} from "../../integration/obsidian/embeds/document-session/vault-session-fixtures";
 
 import type {
   MemoryCheckpoint,
@@ -24,6 +30,33 @@ const MAXIMUM_RETAINED_GROWTH = 1 * MIB;
 const RUNNER = fileURLToPath(new URL("./memory-lifecycle-runner.ts", import.meta.url));
 
 describe("persistence memory bounds", () => {
+  it("releases the unlocked stroke after a confirmed removal while the session remains active", async () => {
+    const stroke = createTestStroke();
+    const { factory, session } = persistenceHarness({ ...emptySnapshot(), elements: [stroke] });
+    const identity = operation();
+    try {
+      expect((await session.unlock(identity)).status).toBe("active");
+      const model = factory.getDocumentModel(identity.sessionId)!;
+      const removed = new WeakRef(model.store.get(stroke.id)!.element);
+      model.removeElements([stroke.id]);
+      await session.flushForExport();
+      expect(session.getSnapshot()).toMatchObject({
+        dirty: false,
+        revision: identity.baseRevision + 1,
+      });
+
+      // WeakRef protects its target until the end of the current JavaScript job.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      if (!globalThis.gc) throw new Error("The ownership check requires --expose-gc.");
+      globalThis.gc();
+      expect(removed.deref()).toBeUndefined();
+      expect(factory.getDocumentModel(identity.sessionId)).toBe(model);
+      expect(model.store.size).toBe(0);
+    } finally {
+      session.dispose();
+    }
+  });
+
   it("bounds the production main-plus-worker save lifecycle and releases its state", async ({
     annotate,
     signal,

@@ -1,65 +1,11 @@
-import type { Component, TFile, Vault } from "obsidian";
 import { expect, it, vi } from "vitest";
-import {
-  VaultFontLibrary,
-  type LibraryFontFace,
-} from "../../../../src/obsidian/fonts/vault-font-library";
-import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
+import { vaultFontLibraryFixture as setup } from "../../../fixtures/obsidian/vault-font-library";
 import { selectFontResources } from "../../../../src/persistence/fonts/font-resources";
 import { fontLibraryChoices } from "../../../../src/obsidian/fonts/font-library-families";
 import { inspectFontImport } from "../../../../src/obsidian/fonts/font-import-plan";
 import { readWoff2Directory } from "../../../../src/persistence/fonts/woff2-directory";
 import { readBundledFont as fontBytes } from "../../../fixtures/persistence/font-assets";
 import * as binaryResources from "../../../../src/persistence/serialization/binary-resource";
-
-async function setup(name = "inter-400-normal.woff2") {
-  const bytes = await fontBytes(name);
-  let index: readonly LibraryFontFace[] = [];
-  const data = new Map<string, ArrayBuffer>();
-  const createBinary = vi.fn(async (path: string, content: ArrayBuffer) => {
-    data.set(path, content.slice(0));
-  });
-  const getFileByPath = (path: string) =>
-    data.has(path) ? ({ path, stat: { size: data.get(path)!.byteLength } } as TFile) : null;
-  const vault = {
-    getAbstractFileByPath: () => ({}),
-    getFileByPath,
-    createBinary,
-    readBinary: async (file: TFile) => data.get(file.path)!.slice(0),
-  } as unknown as Vault;
-  let dispose: () => void = () => undefined;
-  const owner = {
-    register: (callback: () => void) => {
-      dispose = callback;
-    },
-  } as unknown as Component;
-  const sanitize = vi.fn(async () => undefined);
-  const metadataWrite = vi.fn(async (faces: readonly LibraryFontFace[]) => {
-    index = faces;
-  });
-  const library = new VaultFontLibrary({
-    vault,
-    owner,
-    scheduler: new TestWorkScheduler(),
-    metadata: {
-      read: () => index,
-      write: metadataWrite,
-    },
-    sanitize,
-  });
-  return {
-    library,
-    bytes,
-    createBinary,
-    sanitize,
-    data,
-    metadataWrite,
-    setIndex: (faces: readonly LibraryFontFace[]) => {
-      index = faces;
-    },
-    dispose: () => dispose(),
-  };
-}
 
 const descriptor = { family: "upload", weight: 400, style: "normal" } as const;
 

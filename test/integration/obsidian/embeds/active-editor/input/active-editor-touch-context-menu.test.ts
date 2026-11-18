@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installObsidianDomHelpers } from "../../../../../adapters/obsidian/dom";
 import { createHarness } from "../../../../../fixtures/obsidian/active-controller";
 import { ElementSceneStore } from "../../../../../../src/obsidian/embeds/active-editor/scene-store";
+import { ActiveEditorNavigation } from "../../../../../../src/obsidian/embeds/active-editor/navigation/navigation";
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -96,19 +97,26 @@ describe("pen selection long press", () => {
 
   it.each(["cancel", "drag"])("cancels the menu timer on %s", (terminal) => {
     const h = createHarness();
+    const project = vi.spyOn(ActiveEditorNavigation.prototype, "pageSample");
     try {
       h.selectElement();
       h.controller.handlePointerDown(contact("pen"));
       if (terminal === "cancel") h.controller.handlePointerCancel(contact("pen"));
       else {
-        h.controller.handlePointerMove(contact("pen", { clientX: 108 }));
+        const excursion = contact("pen", { clientX: 140 });
+        const final = contact("pen", { clientX: 101 });
+        Object.defineProperty(final, "getCoalescedEvents", { value: () => [excursion, final] });
+        project.mockClear();
+        h.controller.handlePointerMove(final);
         vi.advanceTimersByTime(20);
-        expect(h.renderer.setPreviewTransform).toHaveBeenCalled();
+        expect(h.renderer.setPreviewTransform.mock.lastCall?.[1]).toBe("translate(1 0)");
+        expect(project.mock.calls.some(([point]) => point.x === 140)).toBe(false);
         h.controller.handlePointerCancel(contact("pen"));
       }
       vi.advanceTimersByTime(500);
       expect(h.menu.positions).toHaveLength(0);
     } finally {
+      project.mockRestore();
       h.dispose();
     }
   });

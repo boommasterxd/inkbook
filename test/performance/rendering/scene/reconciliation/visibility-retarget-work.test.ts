@@ -256,7 +256,11 @@ it("shrinks a 10,000-member zoom envelope through bounded indexed work and cance
   expect(work.indexedVisits).toBe(interruptedVisits);
   expect(cancel).toHaveBeenCalledOnce();
   expect(state.queryMemoryUsage()).toBe(baselineMemory);
+  const rank = vi.spyOn(fixture.store, "getRank");
   const complete = state.query(tight.envelope, tight.retained);
+  // Every surviving root already owns its rank; this shrink publishes exits only.
+  expect(rank).not.toHaveBeenCalled();
+  rank.mockRestore();
   expect(complete.pending).toBeUndefined();
   expect(complete.visibility.content.count).toBe(663);
   expect(complete.delta?.entered).toEqual([]);

@@ -4,6 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { expect, it, vi } from "vitest";
 
 import { createLivePreviewExtension } from "../../../../../src/obsidian/embeds/live-preview/live-preview";
+import { InkbookLivePreviewWidget } from "../../../../../src/obsidian/embeds/live-preview/live-preview-widget";
 import { documentRecognitionChanged } from "../../../../../src/obsidian/embeds/live-preview/live-preview-recognition-effects";
 import {
   findMarkdownInkbookEmbeds,
@@ -139,6 +140,27 @@ for (const operation of ["text edit", "recognition burst"] as const) {
     }
   });
 }
+
+it("visits only recognized widgets beyond a prose edit that shifts their positions", () => {
+  const count = 512;
+  const { initial } = livePreviewUpdatesFixture(createLivePreviewExtension, count, "text edit");
+  const original = decorationWidgets(initial);
+  const middle = initial.doc.line(2 * count + 1); // Prose after the 256th drawing.
+  const visits = vi.spyOn(InkbookLivePreviewWidget.prototype, "withRange");
+  try {
+    const changed = initial.update({ changes: { from: middle.to, insert: " Grüße." } }).state;
+    expect(visits).toHaveBeenCalledTimes(count / 2);
+    const updated = decorationWidgets(changed);
+    expect(updated.slice(0, count / 2).every((widget, i) => widget === original[i])).toBe(true);
+    expect(updated[count / 2]).not.toBe(original[count / 2]);
+    visits.mockClear();
+    const atEnd = changed.update({ changes: { from: changed.doc.length, insert: " Ende." } }).state;
+    expect(visits).not.toHaveBeenCalled();
+    expect(decorationWidgets(atEnd).every((widget, i) => widget === updated[i])).toBe(true);
+  } finally {
+    visits.mockRestore();
+  }
+});
 
 it("coalesces delayed host zoom measures and bounds anchor reconciliation work", () => {
   const h = createLivePreviewZoomScrollFixture();

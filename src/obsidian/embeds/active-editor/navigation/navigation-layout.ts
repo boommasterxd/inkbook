@@ -40,13 +40,13 @@ export function projectNavigationCursorLayout(
   applied: { readonly blockSize: number; readonly scrollTop: number },
 ): NavigationCursorLayout {
   const top = layout.containerBounds.top + layout.scrollTop - applied.scrollTop;
+  const measured = layout.containerBounds;
+  const containerBounds =
+    top === measured.top && applied.blockSize === measured.height
+      ? measured
+      : { ...measured, top, height: applied.blockSize, bottom: top + applied.blockSize };
   return {
-    containerBounds: {
-      ...layout.containerBounds,
-      top,
-      height: applied.blockSize,
-      bottom: top + applied.blockSize,
-    },
+    containerBounds,
     ownerViewport: layout.ownerViewport,
     ownerWindow: layout.ownerWindow,
     scrollOwner: layout.scrollOwner,

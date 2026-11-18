@@ -13,6 +13,42 @@ const capacity = MARKDOWN_EMBED_LIMITS.matches;
 const sourcePath = "note.md";
 const documentId = "handwriting.svg";
 
+it.each([32, 512])("keeps edits to Unicode prose local with %i pending SVG references", (count) => {
+  const resolveDocument = vi.fn((id: string) => ({ documentId: id, resourceUrl: `app://${id}` }));
+  const cached = vi.fn(() => undefined);
+  const ports = { resolveDocument, documents: { cached } } as unknown as EmbedIntegrationPorts;
+  const refs = Array.from({ length: count }, (_, i) => `![[drawing-${String(i)}.svg]]`);
+  configureTestEditorState({ file: { path: sourcePath }, livePreview: true });
+  const state = EditorState.create({
+    doc: [
+      "Ein schöner Tag.",
+      "- Aufgabenliste",
+      "Abschnitt mit Beispielen.\n".repeat(2500),
+      ...refs,
+    ].join("\n"),
+    extensions: [editorInfoField, editorLivePreviewField, createLivePreviewExtension(ports)],
+  });
+  expect(resolveDocument).toHaveBeenCalledTimes(count);
+  expect(cached).toHaveBeenCalledTimes(count);
+  resolveDocument.mockClear();
+  cached.mockClear();
+  const transaction = state.update({
+    changes: [
+      { from: state.doc.line(1).to, insert: " Grüße aus Köln!" },
+      { from: state.doc.line(2).to, insert: "." },
+    ],
+  });
+  const flatten = vi.spyOn(transaction.newDoc, "toString");
+  try {
+    expect(transaction.state.doc.line(2).text).toBe("- Aufgabenliste.");
+    expect(flatten).not.toHaveBeenCalled();
+    expect(resolveDocument).not.toHaveBeenCalled();
+    expect(cached).not.toHaveBeenCalled();
+  } finally {
+    flatten.mockRestore();
+  }
+});
+
 it("retains maximum-capacity pending native candidates on unchanged host transactions with bounded work", () => {
   let resolutions = 0;
   let cacheReads = 0;
