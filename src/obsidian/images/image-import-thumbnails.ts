@@ -55,6 +55,7 @@ export class ImageImportThumbnails {
   #lastPage = 0;
   #previewPage = 1;
   #slots = VISIBLE_PAGES;
+  #trailingInset = 0;
   #width = 0;
   #selection: readonly number[] | undefined;
   readonly #cards: ThumbnailCard[] = [];
@@ -78,7 +79,7 @@ export class ImageImportThumbnails {
       });
       this.#trigger.setAttribute("aria-expanded", "false");
       const icon = this.#trigger.createSpan({ attr: { "aria-hidden": "true" } });
-      setIcon(icon, "list-checks");
+      setIcon(icon, "chevron-right");
       this.#listen(this.#trigger, "click", () => this.#toggle());
       for (const event of ["pointerenter", "pointerdown", "focus"])
         this.#listen(this.#trigger, event, () => this.#prepareDisclosure());
@@ -132,7 +133,9 @@ export class ImageImportThumbnails {
     this.#clearCards();
     this.#firstPage = 1;
     this.#previewPage = 1;
-    this.#slots = Math.ceil((source?.pageCount ?? 1) / VISIBLE_PAGES) * VISIBLE_PAGES;
+    const pages = source?.pageCount ?? 1;
+    this.#slots = Math.ceil(pages / VISIBLE_PAGES) * VISIBLE_PAGES;
+    this.#trailingInset = Platform.isPhone ? (this.#slots - pages) / 2 : 0;
     this.#track.style.inlineSize = `${(this.#slots / VISIBLE_PAGES) * 100}%`;
     if (this.#trigger !== undefined && this.#expanded) this.#toggle();
     this.#section.hidden = source === undefined || source.pageCount < 2;
@@ -320,7 +323,8 @@ export class ImageImportThumbnails {
     const { t } = this.#options.localization;
     card.element.hidden = false;
     card.page = page;
-    card.element.style.marginInlineStart = `${((page - 1) / this.#slots) * 100}%`;
+    const inset = page > this.#slots - VISIBLE_PAGES ? this.#trailingInset : 0;
+    card.element.style.marginInlineStart = `${((page - 1 + inset) / this.#slots) * 100}%`;
     card.element.style.inlineSize = `${100 / this.#slots}%`;
     const label = t("images.thumbnailSelect", { page });
     card.selection.setAttribute("aria-label", label);

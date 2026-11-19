@@ -59,7 +59,7 @@ export const settingsControls = {
     "Snap table separators to their default and equally distributed positions.",
   "settings.controls.snappingEnabled": "Enable snapping",
   "settings.controls.snappingEnabledHelp": "Enable all configured snapping behavior.",
-  "settings.controls.bufferHelp": "Set the writable page buffer copied into newly created files.",
+  "settings.controls.bufferHelp": "Set how many writable buffer lines new files start with.",
   "settings.controls.pageDefaults": "Page defaults",
   "settings.controls.background": "Background",
   "settings.controls.backgroundHelp": "Configure the background copied into newly created files.",
@@ -72,15 +72,12 @@ export const settingsControls = {
     "Choose the pattern and spacing copied into newly created files.",
   "settings.controls.backgroundSaveFailed": "The background default could not be saved.",
   "settings.controls.pageBuffer": "Page buffer",
-  "settings.controls.bufferLines": "Active buffer lines",
   "settings.controls.performance": "Performance",
   "settings.controls.refreshRate": "Display refresh rate",
   "settings.controls.selectionHighlights": "Selection highlights",
   "settings.controls.autoDetecting": "Auto (detecting…)",
   "settings.controls.auto": "Auto",
   "settings.controls.scrollPreload": "Scroll preload margin",
-  "settings.controls.screenPixels": "Screen pixels",
-  "settings.controls.scrollPixelsHelp": "Choose a whole number from 100 to 800 pixels.",
   "settings.controls.resetGroup": "Reset group to defaults",
   "settings.controls.drawingTools": "Drawing tools",
   "settings.controls.shapesStructures": "Shapes and structures",
@@ -226,7 +223,7 @@ export const settingsControls = {
   "settings.controls.refreshFallbackHelp":
     "Use quick per-window detection or select a fixed frame-rate profile. {profileDescription}",
   "settings.controls.scrollPreloadHelp":
-    "Prepare existing strokes within this many screen pixels above and below the visible area. Higher values can reduce visible loading while scrolling, but use more memory and preparation work. Lower values preload less. Large jumps can still require loading. Saved only for this device and vault.",
+    "Prepare existing strokes 100 to 800 screen pixels above and below the visible area. Higher values can reduce visible loading while scrolling, but use more memory and preparation work. Large jumps can still require loading. Saved only for this device and vault.",
   "settings.shortcuts.heading": "Shortcuts",
   "settings.shortcuts.keyboard": "Keyboard shortcuts",
   "settings.shortcuts.keyboardHelp":

@@ -57,7 +57,7 @@ export function imageResolutionDescription(
     readonly resizedFrom?: ImageRasterSize | undefined;
     readonly resolution?: PdfImageSource["resolution"];
   },
-): { readonly details: string; readonly warning: string } {
+): { readonly details: string; readonly dpi: string; readonly warning: string } {
   const { resolution, resizedFrom } = options;
   let warning = "";
   if (resizedFrom !== undefined)
@@ -69,10 +69,11 @@ export function imageResolutionDescription(
     });
   else if (resolution?.limited === true)
     warning = t("images.pdfResolutionLimited", { dpi: Math.round(resolution.dpi) });
-  const details = t(resolution === undefined ? "images.details" : "images.pdfDetails", {
+  const details = t("images.details", {
     width: resource.width,
     height: resource.height,
-    dpi: Math.round(resolution?.dpi ?? 0),
   });
-  return { details, warning };
+  const dpi =
+    resolution === undefined ? "" : t("images.previewDpi", { dpi: Math.round(resolution.dpi) });
+  return { details, dpi, warning };
 }

@@ -12,8 +12,6 @@ export const images = {
   "images.pagesHint": "Bis zu 20 Seiten, abhängig von der Auflösung.",
   "images.previewHint": "Prüfe, ob die Vorschau dem Original entspricht.",
   "images.previewPage": "Vorschauseite",
-  "images.pageLabel": "Seite",
-  "images.pageTotal": "von {count}",
   "images.previousPage": "Vorherige Seite",
   "images.nextPage": "Nächste Seite",
   "images.choosePages": "Seiten auswählen",
@@ -32,7 +30,7 @@ export const images = {
   "images.imageResolutionOption": "{quality} · bis {megapixels} MP",
   "images.resolutionHint":
     "Höhere Auflösung benötigt mehr Speicher und lässt weniger Seiten pro Zeichnung zu.",
-  "images.pdfDetails": "{width} × {height} Pixel · ca. {dpi} dpi",
+  "images.previewDpi": "ca. {dpi} dpi",
   "images.pdfResolutionLimited":
     "Diese Seite wurde auf ca. {dpi} dpi begrenzt, um die gewählte Auflösungsgrenze einzuhalten.",
   "images.preview": "Bildvorschau",
@@ -72,7 +70,7 @@ export const images = {
   "images.moveCrop": "Ausschnitt verschieben. Ziehen oder Pfeiltasten verwenden.",
   "images.handle": "Zuschnittgriff: {edges}. Ziehen oder Pfeiltasten verwenden.",
   "images.cropNotice":
-    "Zuschneiden blendet Pixel aus. Das vollständige importierte Bild bleibt eingebettet und kann wiederhergestellt werden. Vertrauliche Inhalte werden dadurch nicht sicher entfernt.",
+    "Ausgeblendete Pixel bleiben in der Zeichnung und lassen sich wiederherstellen.",
   "images.left": "Linke Kante",
   "images.top": "Obere Kante",
   "images.right": "Rechte Kante",

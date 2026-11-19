@@ -5,23 +5,30 @@ on:
     - cron: "0 6 1 * *"
   workflow_dispatch:
 
-# Serialize scheduled and manual updates, including runs on different refs.
+# Serialize scheduled and manual updates.
 # Do not cancel an active update when another run is triggered.
 concurrency:
   group: update-gitleaks
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   update:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event.repository.default_branch == 'main'
     runs-on: ubuntu-slim
     timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - name: Check out repository
+      - name: Check out the trusted revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
       - name: Update pinned gitleaks version
         id: update
         shell: bash

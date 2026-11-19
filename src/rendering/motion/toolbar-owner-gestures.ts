@@ -1,4 +1,4 @@
-import { registerKeyboardPress } from "./keyboard-press";
+import { registerKeyboardPress, registerOwnedMotionPress } from "./keyboard-press";
 
 export function bindOwnerGestures(
   element: HTMLButtonElement,
@@ -31,7 +31,21 @@ export function bindOwnerGestures(
     },
     local,
   );
-  if (!local) return stopKeyboard;
+  if (!local) {
+    const stopPress = registerOwnedMotionPress([element], (_, event) => {
+      if (element.disabled) return;
+      pointerId = event.pointerId;
+      update();
+      return () => {
+        pointerId = undefined;
+        update();
+      };
+    });
+    return () => {
+      stopKeyboard();
+      stopPress();
+    };
+  }
   const enter = (event: PointerEvent): void => {
     if (element.disabled) return;
     if (event.pointerType !== "touch") {

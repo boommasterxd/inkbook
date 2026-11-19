@@ -1,10 +1,21 @@
+.inkbook-import-entry-help {
+  display: grid;
+  gap: var(--size-4-4);
+}
+
 .inkbook-import-examples {
   border-block-start: 1px solid var(--background-modifier-border);
   margin-block: var(--size-4-4);
   padding-block-start: var(--size-4-4);
 }
 
-.inkbook-import-examples h4 {
+.inkbook-import-entry-help > .inkbook-import-examples {
+  border-block-start: 0;
+  margin: 0;
+  padding-block-start: 0;
+}
+
+.inkbook-import-examples > h3 {
   font-size: var(--font-ui-small);
   margin: 0 0 var(--size-4-2);
 }
@@ -43,7 +54,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.inkbook-import-examples-pair.inkbook-import-example-single {
+.inkbook-import-dialog-compact .inkbook-import-examples-pair {
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -72,10 +83,6 @@
   outline-offset: -2px;
 }
 
-.inkbook-import-example-single figcaption {
-  display: none;
-}
-
 .inkbook-import-example {
   margin: 0;
   min-inline-size: 0;
@@ -85,6 +92,10 @@
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   margin-block-end: var(--size-4-2);
+}
+
+.inkbook-import-dialog-compact .inkbook-import-examples-pair figcaption {
+  display: none;
 }
 
 .inkbook-import-example-image {
@@ -108,8 +119,53 @@
   min-block-size: 2lh;
 }
 
-@media (width <= 480px) {
-  .inkbook-import-body .inkbook-import-examples-note {
-    min-block-size: 3lh;
-  }
+.inkbook-import-workflow,
+.inkbook-import-entry-help > .inkbook-import-safety {
+  border-block-start: 1px solid var(--background-modifier-border);
+  padding-block-start: var(--size-4-3);
+}
+
+.inkbook-import-workflow > h3 {
+  font-size: var(--font-ui-small);
+  margin: 0 0 var(--size-4-3);
+}
+
+.inkbook-import-journey {
+  display: grid;
+  gap: var(--size-4-3) var(--size-4-5);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+}
+
+.inkbook-import-journey > li {
+  margin-inline-start: var(--size-4-5);
+}
+
+.inkbook-import-journey li::marker {
+  color: var(--text-muted);
+}
+
+.inkbook-import-journey strong {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.inkbook-import-body .inkbook-import-journey p {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  margin-block: var(--size-4-1) 0;
+}
+
+.inkbook-import-entry-help > .inkbook-import-safety {
+  font-size: var(--font-ui-small);
+  margin: 0;
+}
+
+:where(.inkbook-import-dialog-compact) .inkbook-import-body .inkbook-import-examples-note {
+  min-block-size: 3lh;
+}
+
+:where(.inkbook-import-dialog-compact) .inkbook-import-journey {
+  grid-template-columns: minmax(0, 1fr);
 }

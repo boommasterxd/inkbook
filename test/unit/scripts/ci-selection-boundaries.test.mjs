@@ -11,7 +11,13 @@ import {
 } from "../../../scripts/ci-execution-plan.mjs";
 import { createSelection } from "../../../scripts/ci-selection.mjs";
 import { PERFORMANCE_TEST_MANIFEST } from "../../../scripts/performance-test-manifest.mjs";
-import { cleanupRepositories, commit, createRepository, write } from "./ci-selection-fixtures.mjs";
+import {
+  cleanupRepositories,
+  commit,
+  createRepository,
+  git,
+  write,
+} from "./ci-selection-fixtures.mjs";
 
 const execute = promisify(execFile);
 const selectedTest = "test/unit/domain/value.test.ts";
@@ -37,6 +43,7 @@ describe("syntax-aware affected dependencies", () => {
       'type Value = typeof import("../../../src/domain/value").value;',
       'const value = require("../../../src/domain/value");',
       'const value = await import("../../../src/domain/value");',
+      'vi.mock(import("../../../src/domain/value"), () => ({ value: 1 }));',
       'export { value } from "../../../src/domain/value";',
     ];
     const tests = sources.map((_source, index) => `test/unit/domain/syntax-${index}.test.ts`);
@@ -60,6 +67,65 @@ describe("syntax-aware affected dependencies", () => {
       "src/domain/untested.ts",
       "src/domain/value.ts",
     ]);
+  });
+});
+
+describe("bundled font dependencies", () => {
+  const builtinFonts = "src/persistence/fonts/builtin-fonts.ts";
+  const fontAsset = "src/persistence/fonts/assets/inter-400-normal.woff2";
+  const textRoundtrip = "test/unit/persistence/serialization/text-roundtrip.test.ts";
+
+  it("selects the font consumer from both snapshots without treating the asset as a coverage input", async () => {
+    const source = 'export { default as font } from "./assets/inter-400-normal.woff2?inline";';
+    const context = await fixture({
+      [builtinFonts]: source,
+      [fontAsset]: "fixture font bytes",
+      [textRoundtrip]:
+        'import { font } from "../../../../src/persistence/fonts/builtin-fonts"; void font;' +
+        "const face = (family, weight, style) => new URL(`../../../../src/persistence/fonts/assets/${family}-${weight}-${style}.woff2`, import.meta.url);",
+    });
+    await commit(context.root, { [builtinFonts]: source + " // Updated bundled font" });
+
+    expect(await createSelection(context)).toMatchObject({
+      mode: "affected",
+      tests: [textRoundtrip],
+      coverage: [builtinFonts],
+    });
+
+    await git(context.root, "rm", fontAsset);
+    await commit(context.root);
+    expect(await createSelection(context)).toMatchObject({
+      mode: "full",
+      reason: expect.stringContaining("Unresolved dependency ./assets/inter-400-normal.woff2"),
+    });
+  });
+
+  it("falls back for a query the bundled font loader does not declare", async () => {
+    const context = await fixture({ [fontAsset]: "fixture font bytes" });
+    await commit(context.root, {
+      [builtinFonts]: 'export { default as font } from "./assets/inter-400-normal.woff2?raw";',
+    });
+
+    expect(await createSelection(context)).toMatchObject({
+      mode: "full",
+      reason: expect.stringContaining("Unresolved dependency ./assets/inter-400-normal.woff2?raw"),
+    });
+  });
+});
+
+it("finds the cache test through its existing fixed CommonJS fixture dependency", async () => {
+  const cacheTest = "test/unit/scripts/cache-lifecycle.test.mjs";
+  const context = await fixture({
+    "scripts/cache-lifecycle/core.cjs": 'module.exports = require("../../src/domain/value");',
+    "test/unit/scripts/cache-lifecycle/register.cjs":
+      'function register(directory) { return require(path.join(directory, "core.cjs")); }',
+    [cacheTest]: 'import "./cache-lifecycle/register.cjs";',
+  });
+  await commit(context.root, { "src/domain/value.ts": "export const value = 2;" });
+
+  expect(await createSelection(context)).toMatchObject({
+    mode: "affected",
+    tests: [selectedTest, cacheTest],
   });
 });
 
@@ -210,6 +276,10 @@ describe("embedded module build mappings", () => {
     ["src/rendering/ui/editor-chrome-source.ts", "src/rendering/ui/editor-chrome-entry.ts"],
     ["src/obsidian/plugin-runtime-source.ts", "src/obsidian/plugin-runtime-entry.ts"],
     ["src/obsidian/text/portable-math-source.ts", "src/obsidian/text/portable-math-entry.ts"],
+    [
+      "src/obsidian/settings/import/import-example-source.ts",
+      "src/obsidian/settings/import/import-example-images.ts",
+    ],
   ])("connects encoded source %s to its actual build entry", async (source, entry) => {
     const context = await fixture({
       [source]: "export const encoded = 'placeholder';",
@@ -228,6 +298,10 @@ describe("embedded module build mappings", () => {
   it.each([
     ["src/obsidian/plugin-loader.ts", "src/obsidian/plugin-runtime-entry.ts"],
     ["src/obsidian/text/portable-math-loader.ts", "src/obsidian/text/portable-math-entry.ts"],
+    [
+      "src/obsidian/settings/import/import-example-loader.ts",
+      "src/obsidian/settings/import/import-example-images.ts",
+    ],
     [
       "src/obsidian/embeds/active-scene/editor-chrome-loader.ts",
       "src/rendering/ui/editor-chrome-entry.ts",

@@ -10,8 +10,26 @@
   border: 1px solid var(--inkbook-chrome-accent);
   box-shadow: 0 0 0 1px rgb(0 0 0 / 65%);
   box-sizing: border-box;
+  cursor: move;
+  inset: 0 auto auto 0;
+  pointer-events: auto;
+  position: absolute;
+  touch-action: none;
+  transform-origin: top left;
+}
+
+.inkbook-root .inkbook-image-crop-grips {
+  inset: 0 auto auto 0;
   position: absolute;
   transform-origin: top left;
+}
+
+.inkbook-root .inkbook-image-crop-grips[data-compact="true"]::before {
+  border: 1px dashed var(--inkbook-chrome-accent);
+  content: "";
+  filter: drop-shadow(0 0 1px black);
+  inset: 0;
+  position: absolute;
 }
 
 .inkbook-root .inkbook-image-crop .inkbook-image-crop-handle {
@@ -22,14 +40,19 @@
   border-radius: 0;
   box-shadow: none;
   cursor: move;
+  display: grid;
   inline-size: 44px;
+  left: 50%;
   margin: 0;
   min-block-size: 44px;
   min-inline-size: 44px;
   padding: 0;
+  place-items: center;
   pointer-events: auto;
   position: absolute;
+  top: 50%;
   touch-action: none;
+  transform: translate(-50%, -50%);
 }
 
 .inkbook-root .inkbook-image-crop-handle::after {
@@ -43,60 +66,58 @@
 }
 
 .inkbook-root .inkbook-image-crop-handle[data-edges~="left"] {
-  left: -22px;
+  left: 0;
 }
 
 .inkbook-root .inkbook-image-crop-handle[data-edges~="right"] {
-  right: -22px;
+  left: 100%;
 }
 
 .inkbook-root .inkbook-image-crop-handle[data-edges~="top"] {
-  top: -22px;
+  top: 0;
 }
 
 .inkbook-root .inkbook-image-crop-handle[data-edges~="bottom"] {
-  bottom: -22px;
+  top: 100%;
 }
 
 .inkbook-root .inkbook-image-crop-handle[data-edges~="left"]::after {
   border-left-width: 3px;
-  left: 21px;
+  left: calc(50% - 1px);
 }
 
 .inkbook-root .inkbook-image-crop-handle[data-edges~="right"]::after {
   border-right-width: 3px;
-  right: 21px;
+  right: calc(50% - 1px);
 }
 
 .inkbook-root .inkbook-image-crop-handle[data-edges~="top"]::after {
   border-top-width: 3px;
-  top: 21px;
+  top: calc(50% - 1px);
 }
 
 .inkbook-root .inkbook-image-crop-handle[data-edges~="bottom"]::after {
   border-bottom-width: 3px;
-  bottom: 21px;
+  bottom: calc(50% - 1px);
 }
 
 .inkbook-root .inkbook-image-crop-handle:is([data-edges="left"], [data-edges="right"]) {
   cursor: ew-resize;
-  top: calc(50% - 22px);
 }
 
 .inkbook-root .inkbook-image-crop-handle:is([data-edges="top"], [data-edges="bottom"]) {
   cursor: ns-resize;
-  left: calc(50% - 22px);
 }
 
 .inkbook-root .inkbook-image-crop-handle:is([data-edges="left"], [data-edges="right"])::after {
   height: 18px;
-  top: 13px;
+  top: calc(50% - 9px);
   width: 0;
 }
 
 .inkbook-root .inkbook-image-crop-handle:is([data-edges="top"], [data-edges="bottom"])::after {
   height: 0;
-  left: 13px;
+  left: calc(50% - 9px);
   width: 18px;
 }
 
@@ -108,16 +129,17 @@
   cursor: nesw-resize;
 }
 
-.inkbook-root .inkbook-image-crop .inkbook-image-crop-move {
-  height: 100%;
-  inset: 0;
-  min-height: 0;
-  min-width: 0;
-  width: 100%;
-}
-
 .inkbook-root .inkbook-image-crop-move::after {
   content: none;
+}
+
+.inkbook-root .inkbook-image-crop-move svg {
+  color: var(--inkbook-chrome-accent);
+  filter: drop-shadow(0 0 1px black) drop-shadow(0 1px 1px black);
+}
+
+.inkbook-root .inkbook-image-crop-grips:not([data-compact="true"]) .inkbook-image-crop-move svg {
+  display: none;
 }
 
 .inkbook-root .inkbook-image-crop-actions {
@@ -130,8 +152,29 @@
   gap: var(--size-4-1);
   padding: 2px;
   pointer-events: auto;
+}
+
+.inkbook-root .inkbook-image-crop-panel {
+  display: grid;
+  gap: var(--size-4-1);
+  inline-size: max-content;
+  inset: 0 auto auto 0;
+  max-inline-size: min(16rem, calc(100% - 16px));
+  place-items: center;
   position: absolute;
   z-index: 1;
+}
+
+.inkbook-root .inkbook-image-crop-notice {
+  background: var(--menu-background);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  box-sizing: border-box;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.3;
+  margin: 0;
+  padding: var(--size-4-1) var(--size-4-2);
 }
 
 .inkbook-root .inkbook-image-crop-action {
@@ -144,4 +187,10 @@
 .inkbook-root[data-inkbook-keyboard-navigation="true"] .inkbook-image-crop button:focus-visible {
   outline: 2px solid var(--inkbook-chrome-accent);
   outline-offset: 2px;
+}
+
+.inkbook-root[data-inkbook-keyboard-navigation="true"]
+  .inkbook-image-crop
+  .inkbook-image-crop-handle:focus-visible {
+  outline-offset: -3px;
 }

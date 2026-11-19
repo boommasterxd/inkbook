@@ -10,33 +10,6 @@
   visibility: hidden;
 }
 
-.inkbook-root .inkbook-onboarding-insets {
-  block-size: 0;
-  box-sizing: content-box;
-  inline-size: 0;
-  inset-block-start: 0;
-  inset-inline-start: 0;
-  padding-block: env(safe-area-inset-top, 0) env(safe-area-inset-bottom, 0);
-  pointer-events: none;
-  position: absolute;
-  visibility: hidden;
-}
-
-.inkbook-root .inkbook-onboarding-insets[data-phone="true"] {
-  padding-block: calc(
-      var(--view-header-height, 0px) +
-        max(var(--safe-area-inset-top, 0px), env(safe-area-inset-top, 0px))
-    )
-    calc(
-      max(var(--mobile-toolbar-height, 0px), var(--navbar-height, 0px)) +
-        max(
-          var(--navbar-bottom-offset, 0px),
-          var(--safe-area-inset-bottom, 0px),
-          env(safe-area-inset-bottom, 0px)
-        )
-    );
-}
-
 .inkbook-root .inkbook-onboarding-invitation,
 .inkbook-onboarding-note,
 .inkbook-onboarding-navigation {

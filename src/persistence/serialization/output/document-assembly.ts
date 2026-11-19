@@ -1,5 +1,9 @@
 import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
-import { elementSnapshotVersion } from "../../../domain/schema/snapshot-version";
+import { RENDER_BANDS } from "../../../domain/commands/render-bands";
+import {
+  elementMinimumSnapshotVersion,
+  elementSnapshotVersion,
+} from "../../../domain/schema/snapshot-version";
 import { serializeSvgNumber } from "../../documents/svg-number";
 import { CANONICAL_THEME_STYLESHEET } from "../../documents/svg-theme";
 import { escapeXmlText } from "../../documents/xml-text";
@@ -7,7 +11,10 @@ import { metadataPrefix as canonicalMetadataPrefix } from "../metadata/canonical
 import { encodedByteLength } from "./encoded-byte-budget";
 import { COMPACT_METADATA_ENCODING } from "../metadata/stroke-sample-codec";
 import { imageDefinitionsFragments } from "./image-markup";
-import { fontStylesheetMarkupFragments } from "./text-fonts";
+import { canonicalFontResource, fontStylesheetMarkupFragments } from "./text-fonts";
+import { canonicalImageResource } from "../../images/image-resources";
+import { usedImageResourcesSteps } from "../../images/used-image-resources";
+import { usedFontResourcesSteps } from "../../fonts/used-font-resources";
 
 interface FragmentAssembly<T> {
   readonly snapshot?: InkSnapshotV1;
@@ -137,26 +144,51 @@ export function snapshotValue(
   };
 }
 
-export function orderedSnapshotValue(
-  revision: number | null,
-  page: PageV1 | null,
-  elements: ReadonlyMap<string, InkElementV1>,
-  orders: Readonly<{
+interface OrderedSnapshotSource {
+  readonly revision: number;
+  readonly page: PageV1;
+  readonly elements: ReadonlyMap<string, InkElementV1>;
+  readonly orders: Readonly<{
     image: readonly string[];
     highlight: readonly string[];
     content: readonly string[];
-  }>,
-  fontResources?: InkSnapshotV1["fontResources"],
-  imageResources?: InkSnapshotV1["imageResources"],
-): InkSnapshotV1 | null {
-  if (page === null || revision === null) return null;
-  return snapshotValue(
-    revision,
-    page,
-    [...orders.image, ...orders.highlight, ...orders.content].map((id) => elements.get(id)!),
-    fontResources,
-    imageResources,
-  );
+  }>;
+  readonly fontResources: NonNullable<InkSnapshotV1["fontResources"]>;
+  readonly imageResources: NonNullable<InkSnapshotV1["imageResources"]>;
+}
+
+/** Materialize canonical band order while collecting only the elements that bind resources. */
+export function* orderedSnapshotValueSteps(
+  source: OrderedSnapshotSource,
+): Generator<void, InkSnapshotV1> {
+  const elements: InkElementV1[] = [];
+  const text: InkElementV1[] = [];
+  const images: InkElementV1[] = [];
+  let version: InkSnapshotV1["version"] = 1;
+  for (const band of RENDER_BANDS) {
+    for (const id of source.orders[band]) {
+      const element = source.elements.get(id)!;
+      elements.push(element);
+      if (element.kind === "text") text.push(element);
+      if (element.kind === "image") images.push(element);
+      if (version < 5) {
+        const required = elementMinimumSnapshotVersion(element);
+        if (required > version) version = required;
+      }
+      if (elements.length % 256 === 0) yield;
+    }
+  }
+  const fonts = yield* usedFontResourcesSteps(text, source.fontResources);
+  const rasters = yield* usedImageResourcesSteps(images, source.imageResources);
+  return {
+    elements,
+    format: "inkbook",
+    page: source.page,
+    revision: source.revision,
+    version,
+    ...(fonts.length === 0 ? {} : { fontResources: fonts.map(canonicalFontResource) }),
+    ...(rasters.length === 0 ? {} : { imageResources: rasters.map(canonicalImageResource) }),
+  };
 }
 
 export function envelope(

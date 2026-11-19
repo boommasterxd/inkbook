@@ -22,6 +22,26 @@ afterEach(() => {
 
 const app = (): App => ({ keymap: new Keymap(), workspace: { containerEl: document.body } }) as App;
 
+function assertStandaloneControlCopy(surface: HTMLElement): void {
+  const controls = surface.querySelectorAll<HTMLElement>(
+    '.inkbook-settings-inline-controls [role="group"]',
+  );
+  expect(controls.length).toBeGreaterThan(0);
+  for (const control of controls) {
+    const row = control.closest<HTMLElement>(".setting-item")!;
+    expect(labelledByElements(control)).toEqual([row.querySelector(".setting-item-name")]);
+    const descriptions = row.querySelectorAll<HTMLElement>(
+      ".setting-item-description, .inkbook-menu-control-description",
+    );
+    expect(descriptions).toHaveLength(1);
+    const inputs = control.querySelectorAll("input");
+    expect(inputs).toHaveLength(2);
+    for (const input of inputs) {
+      expect(input.getAttribute("aria-describedby")?.split(" ")).toContain(descriptions[0]!.id);
+    }
+  }
+}
+
 describe("settings and confirmation semantic accessibility gate", () => {
   it.each([
     { view: "settings", group: undefined },
@@ -46,6 +66,7 @@ describe("settings and confirmation semantic accessibility gate", () => {
               (candidate) => candidate.querySelector("h3")?.textContent === group,
             );
       expect(surface).toBeDefined();
+      if (view === "settings" && group === undefined) assertStandaloneControlCopy(surface!);
       if (group !== undefined || view === "shortcuts") {
         for (const trigger of surface!.querySelectorAll<HTMLButtonElement>(
           '.inkbook-settings-tool-trigger[aria-expanded="false"]',

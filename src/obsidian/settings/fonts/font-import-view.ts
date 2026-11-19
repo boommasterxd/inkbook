@@ -52,12 +52,13 @@ export function renderFontImportView(
   root.classList.toggle("inkbook-font-import-review", model.step > 1);
   root.setAttribute("aria-busy", String(model.busy));
   const titles = [t("fonts.chooseStep"), t("fonts.checkStep"), t("fonts.addStep")];
-  const progress = root.createEl("p", {
-    cls: "inkbook-font-import-hint",
+  const header = root.createDiv({ cls: "inkbook-font-import-heading" });
+  const progress = header.createEl("p", {
+    cls: "inkbook-font-import-hint inkbook-font-import-progress",
     text: t("fonts.importProgress", { step: model.step, total: titles.length }),
   });
   progress.id = `inkbook-font-import-progress-${++nextImportLabel}`;
-  const heading = root.createEl("h3", { text: titles[model.step - 1]! });
+  const heading = header.createEl("h3", { text: titles[model.step - 1]! });
   heading.tabIndex = -1;
   heading.setAttribute("aria-describedby", progress.id);
   const nameInput = renderStep(root, model, callbacks, t);
@@ -178,9 +179,10 @@ function renderChoose(
   });
   button.classList.remove("inkbook-font-library-icon-button");
   button.classList.add("inkbook-font-import-dropzone");
-  button.createSpan({ text: t("fonts.chooseFiles") });
-  button.append(" ");
-  button.createSpan({ text: t("fonts.dropFiles"), cls: "inkbook-font-import-hint" });
+  const copy = button.createSpan({ cls: "inkbook-font-import-source-copy" });
+  copy.createSpan({ text: t("fonts.chooseFiles") });
+  copy.append(" ");
+  copy.createSpan({ text: t("fonts.dropFiles"), cls: "inkbook-font-import-hint" });
   button.setAttribute("aria-label", `${t("fonts.chooseFiles")} ${t("fonts.dropFiles")}`);
   upload.createEl("p", { text: t("fonts.fileLimit"), cls: "inkbook-font-import-hint" });
   bindFileDrop(button, callbacks.filesSelected);

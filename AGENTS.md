@@ -176,7 +176,7 @@ Use `npm`, TypeScript, esbuild, Vitest, ESLint with the official type-aware `esl
 | `npm run build`            | Produce the production plugin artifacts                                        |
 | `npm run package:verify`   | Verify the distributable package contract                                      |
 
-Keep CodeMirror and Lezer external to the production bundle. Add direct CodeMirror development dependencies only when source imports require them, pin them to the exact peer versions declared by the selected `obsidian` package, and update that compatibility set together. Generic Dependabot updates for direct CodeMirror peers remain ignored.
+Keep CodeMirror and Lezer external to the production bundle. Apply the [CodeMirror compatibility contract](docs/specification.md#platform-baseline) when adding or updating direct development dependencies. Dependabot excludes declared Obsidian CodeMirror peers and skips ordinary version updates for the other direct host-provided CodeMirror modules.
 
 ## Documentation Contract
 

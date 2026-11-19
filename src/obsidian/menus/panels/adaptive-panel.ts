@@ -61,8 +61,6 @@ export class AdaptivePanelSession extends Component {
   readonly #localeUpdates: (() => void)[] = [];
   #closed = false;
   readonly #content: HTMLElement;
-  readonly #durationMs: number;
-  readonly #entryDurationMs: number;
   #contentObserver: ResizeObserver | undefined;
   #layoutFrame: number | undefined;
   #revealEditable = false;
@@ -92,13 +90,13 @@ export class AdaptivePanelSession extends Component {
     this.#phoneHost = Platform.isPhone
       ? (options.phoneHost ?? options.createPhoneSheetHost?.())
       : undefined;
-    this.#durationMs =
+    const durationMs =
       options.durationMs ??
       effectiveTransitionDuration(this.#motionAnchor, options.ownerWindow, "adaptiveMenu");
-    this.#entryDurationMs =
+    const entryDurationMs =
       options.entryDurationMs ??
       (Platform.isPhone
-        ? this.#durationMs
+        ? durationMs
         : effectiveTransitionDuration(
             this.#motionAnchor,
             options.ownerWindow,
@@ -121,13 +119,10 @@ export class AdaptivePanelSession extends Component {
     this.register(bindPanelLocale(this.#surface, options, this.#localeUpdates));
     this.#surface.setAttribute("role", "dialog");
     this.#surface.tabIndex = -1;
-    this.#layer.style.setProperty(
-      "--inkbook-adaptive-panel-duration",
-      `${String(this.#durationMs)}ms`,
-    );
+    this.#layer.style.setProperty("--inkbook-adaptive-panel-duration", `${String(durationMs)}ms`);
     this.#surface.style.setProperty(
       "--inkbook-adaptive-panel-entry-duration",
-      `${String(this.#entryDurationMs)}ms`,
+      `${String(entryDurationMs)}ms`,
     );
     this.#placement = new AdaptivePanelPlacement({
       anchor: options.anchor,
@@ -264,10 +259,9 @@ export class AdaptivePanelSession extends Component {
     this.#options.onClosing?.();
     this.#phoneSwipe?.prepareClose();
     const closeDuration = Platform.isPhone ? this.#panelDuration() : this.#entryDuration();
-    if (Platform.isPhone || mode !== "animated" || closeDuration === 0) {
-      this.#entryStop?.();
-      this.#entryStop = undefined;
-    }
+    const stopEntry = this.#entryStop;
+    this.#entryStop = undefined;
+    if (Platform.isPhone || mode !== "animated" || closeDuration === 0) stopEntry?.();
     delete this.#surface.dataset.presence;
     this.#restoreFocus = mode !== "handoff";
     if (mode !== "animated" || closeDuration === 0) {
@@ -289,8 +283,12 @@ export class AdaptivePanelSession extends Component {
           closeDuration,
           () => this.#finishClose(),
         )
-      : animateWideMenuExit(this.#surface, this.#options.ownerWindow, closeDuration, () =>
-          this.#finishClose(),
+      : animateWideMenuExit(
+          this.#surface,
+          this.#options.ownerWindow,
+          closeDuration,
+          () => this.#finishClose(),
+          stopEntry,
         );
   }
 

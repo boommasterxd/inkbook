@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createBuiltInSettings } from "../../../../src/domain/settings";
 import { createToolStyleControls } from "../../../../src/obsidian/menus/tool-style-controls";
+import { registerFocusNavigation } from "../../../../src/obsidian/runtime/focus-navigation";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { installNativeMenuMeasurementStyles } from "../../../adapters/obsidian/editor-toolbar-menu";
 import { assertAccessibleSemantics } from "../../../fixtures/accessibility";
@@ -87,6 +88,38 @@ describe.each([false, true])("owned menu semantic accessibility, phone=%s", (pho
       await assertAccessibleSemantics(panel!, ["aria-dialog-name", "button-name", "label"]);
     } finally {
       session.close("immediate");
+    }
+  });
+
+  it("keeps keyboard focus visible on entry and lets Tab reveal the next choice", () => {
+    vi.useFakeTimers();
+    const releaseNavigation = registerFocusNavigation(document.body);
+    let session: ReturnType<typeof mountMenu> | undefined;
+    try {
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+      document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      session = mountMenu("style");
+      vi.advanceTimersToNextFrame();
+
+      const layer = document.querySelector<HTMLElement>(".inkbook-adaptive-panel-layer");
+      const [first, next] =
+        layer?.querySelectorAll<HTMLButtonElement>(".inkbook-menu-choice") ?? [];
+      if (layer === null || first === undefined || next === undefined) {
+        throw new Error("Missing Style choices.");
+      }
+      expect(layer.dataset.inkbookKeyboardNavigation).toBe("true");
+      expect(document.activeElement).toBe(first);
+
+      const focusNext = vi.spyOn(next, "focus");
+      first.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
+      );
+      expect(document.activeElement).toBe(next);
+      expect(focusNext).toHaveBeenCalledWith();
+    } finally {
+      session?.close("immediate");
+      releaseNavigation();
+      vi.useRealTimers();
     }
   });
 });

@@ -1,6 +1,11 @@
 import { IMAGE_LIMITS } from "../images/image-limits";
 import type { ImageCropV3, ImageElementV3, ImageResourceV3, InkElementV1 } from "./types";
-import { assertResourceDataSteps, resourceEntries } from "./resource-validation";
+import {
+  assertResourceDataSteps,
+  matchesResourceDataSteps,
+  resourceEntries,
+  validatedResourceDataBytes,
+} from "./resource-validation";
 import {
   assertBoxGeometry,
   assertExactKeys,
@@ -58,11 +63,16 @@ function assertImageCrop(value: unknown, path: string): asserts value is ImageCr
   }
 }
 
-/** Binary decoders independently verify the digest, MIME type and actual pixel dimensions. */
-export function* assertImageResourcesSteps(value: unknown, path: string): Generator<void, void> {
+/** Previous entries may only come from the caller's own fully validated registry. */
+export function* assertImageResourcesSteps(
+  value: unknown,
+  path: string,
+  previous?: ReadonlyMap<string, ImageResourceV3>,
+): Generator<void, Map<string, ImageResourceV3>> {
   if (!Array.isArray(value) || value.length > IMAGE_LIMITS.resources)
     fail("invalid-range", path, "Image resources must be a bounded array.");
   const ids = new Set<string>();
+  const retained = new Map<string, ImageResourceV3>();
   let bytes = 0;
   let pixels = 0;
   for (const { resource, location } of resourceEntries(value, path)) {
@@ -82,16 +92,36 @@ export function* assertImageResourcesSteps(value: unknown, path: string): Genera
     pixels += resource.width * resource.height;
     if (pixels > IMAGE_LIMITS.documentPixels)
       fail("invalid-range", path, "Document image pixel capacity exceeded.");
-    bytes += yield* assertResourceDataSteps(resource.data, `${location}.data`, {
-      maximumBytes: IMAGE_LIMITS.resourceBytes,
-      canonicalPadding: true,
-      malformedMessage: "Image resources require canonical Base64 data.",
-      capacityMessage: "Image resource byte capacity exceeded.",
-    });
+    const existing = previous?.get(resource.id);
+    if (existing !== undefined && (yield* matchesPreviousImageSteps(resource, existing))) {
+      retained.set(existing.id, existing);
+      bytes += validatedResourceDataBytes(existing.data);
+    } else {
+      bytes += yield* assertResourceDataSteps(resource.data, `${location}.data`, {
+        maximumBytes: IMAGE_LIMITS.resourceBytes,
+        canonicalPadding: true,
+        malformedMessage: "Image resources require canonical Base64 data.",
+        capacityMessage: "Image resource byte capacity exceeded.",
+      });
+    }
     if (bytes > IMAGE_LIMITS.documentBytes)
       fail("invalid-range", path, "Document image byte capacity exceeded.");
     yield;
   }
+  return retained;
+}
+
+function* matchesPreviousImageSteps(
+  resource: UnknownRecord,
+  previous: ImageResourceV3,
+): Generator<void, boolean> {
+  return (
+    resource === (previous as unknown) ||
+    (resource.mimeType === previous.mimeType &&
+      resource.width === previous.width &&
+      resource.height === previous.height &&
+      (yield* matchesResourceDataSteps(resource.data, previous.data)))
+  );
 }
 
 export function* assertImageBindingsSteps(

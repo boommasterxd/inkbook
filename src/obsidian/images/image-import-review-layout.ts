@@ -6,6 +6,7 @@ export class ImageImportReviewLayout {
   public readonly previews: HTMLElement;
   public readonly figure: HTMLElement;
   public readonly controls: HTMLElement;
+  public readonly pageRange: HTMLElement;
 
   public constructor(
     body: HTMLElement,
@@ -16,32 +17,41 @@ export class ImageImportReviewLayout {
     this.figure = this.previews.createEl("figure", { cls: "inkbook-image-import-figure" });
     this.figure.hidden = true;
     this.controls = review.createDiv({ cls: "inkbook-image-import-controls" });
+    this.pageRange = Platform.isPhone ? this.previews : this.controls;
   }
 
   public addPlacement(localization: Localization) {
-    const field = this.controls.createDiv({ cls: "inkbook-image-import-placement-field" });
+    const field = this.controls.createEl("label", { cls: "inkbook-image-import-placement" });
     field.hidden = true;
-    const label = field.createEl("label", {
-      cls: "inkbook-menu-toggle-row inkbook-image-import-placement",
+    const id = `inkbook-image-placement-${crypto.randomUUID()}`;
+    const title = field.createSpan({
+      text: localization.t("images.pageWidthLocked"),
+      attr: { id },
     });
-    label.createSpan({ text: localization.t("images.pageWidthLocked") });
-    const control = label.createSpan({ cls: "inkbook-menu-switch" });
+    const control = field.createSpan({ cls: "inkbook-menu-switch" });
     const input = control.createEl("input", { type: "checkbox" });
     control.createSpan({ cls: "inkbook-menu-switch-track" }).createSpan({
       cls: "inkbook-menu-switch-thumb",
     });
-    const hint = field.createEl("p", { text: localization.t("images.pageWidthLockedHint") });
-    hint.id = `inkbook-image-placement-${crypto.randomUUID()}`;
+    const hint = field.createSpan({
+      cls: "inkbook-image-import-placement-hint",
+      text: localization.t("images.pageWidthLockedHint"),
+      attr: { id: `${id}-hint` },
+    });
+    input.setAttribute("aria-labelledby", title.id);
     input.setAttribute("aria-describedby", hint.id);
     return { field, input };
   }
 
   public addCaption(localization: Localization) {
     const caption = this.figure.createEl("figcaption");
-    const details = caption.createSpan();
+    const metadata = caption.createSpan({ cls: "inkbook-image-import-preview-metadata" });
+    const details = metadata.createSpan();
+    const dpi = metadata.createSpan();
+    dpi.hidden = true;
     const hint = caption.createSpan({ text: localization.t("images.previewHint") });
     hint.hidden = true;
-    return { details, hint };
+    return { caption, details, dpi, hint };
   }
 
   public addResizeWarning() {
@@ -65,12 +75,7 @@ export class ImageImportReviewLayout {
     if (!Platform.isPhone) return;
     const ready = mode !== undefined;
     this.surface.classList.toggle("inkbook-phone-image-review", ready);
-    if (ready) {
-      this.previews.before(this.controls);
-      this.previews.append(this.figure);
-    } else {
-      this.previews.after(this.controls);
-      this.previews.prepend(this.figure);
-    }
+    if (mode === "pdf-pages" || !ready) this.controls.before(this.previews);
+    else this.previews.before(this.controls);
   }
 }

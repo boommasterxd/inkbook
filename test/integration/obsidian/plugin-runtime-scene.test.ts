@@ -143,6 +143,7 @@ function createPluginHarness() {
   const document = serializedDocument();
   const file = new TestTFile("drawings/ink.svg", document.bytes.byteLength);
   const settings = customSettings();
+  const stored = new Map<string, unknown>([["inkbook:device-settings:v2", settings.device]]);
   let cssChange: (() => void) | undefined;
   let quit: ((tasks: Tasks) => void) | undefined;
   let dark = false;
@@ -153,14 +154,13 @@ function createPluginHarness() {
   const app = {
     fileManager: {},
     isDarkMode: () => dark,
-    loadLocalStorage: (key: string) =>
-      key === "inkbook:device-settings:v2" ? settings.device : undefined,
+    loadLocalStorage: (key: string) => structuredClone(stored.get(key)),
     metadataCache: {
       getFirstLinkpathDest: (linkpath: string) => (linkpath === "drawings/ink.svg" ? file : null),
       on: () => ({ detach: vi.fn() }),
       resolvedLinks: {},
     },
-    saveLocalStorage: vi.fn(),
+    saveLocalStorage: (key: string, data: unknown) => void stored.set(key, structuredClone(data)),
     vault: {
       cachedRead: async () => document.svg,
       getAbstractFileByPath: (path: string) => (path === file.path ? file : null),

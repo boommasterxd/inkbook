@@ -1,3 +1,4 @@
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { recordImportIssue } from "./diagnostics";
 import { createVerified, ImportJournalStore, runFolder, safeImportPath } from "./journal";
 import { applyImportPatches, createImportPatch, withImportedContexts } from "./patches";
@@ -7,8 +8,12 @@ import type {
   InkImportNoteRecord,
   InkImportPorts,
   InkImportPreview,
+  InkImportReference,
   InkImportSource,
+  InkImportSourceRecord,
 } from "./types";
+
+type NoteReferences = ReadonlyMap<InkImportSourceRecord, readonly InkImportReference[]>;
 
 function issue(store: ImportJournalStore, path: string): void {
   recordImportIssue(store.journal, `Import conflict or write failure: ${path}`, {
@@ -80,35 +85,60 @@ async function importSource(options: {
   await store.save();
 }
 
+async function indexNoteReferences(
+  sources: readonly InkImportSource[],
+  importedSources: ReadonlyMap<string, InkImportSourceRecord>,
+  scheduler: WorkScheduler,
+  signal?: AbortSignal,
+): Promise<ReadonlyMap<string, NoteReferences>> {
+  const notes = new Map<string, Map<InkImportSourceRecord, InkImportReference[]>>();
+  for (const source of sources) {
+    const imported = importedSources.get(source.path);
+    if (imported?.status !== "created") continue;
+    for (const reference of source.references) {
+      const pause = scheduler.checkpoint(signal, "background");
+      if (pause !== undefined) await pause;
+      signal?.throwIfAborted();
+      const path = reference.notePath;
+      let groups = notes.get(path);
+      if (groups === undefined) {
+        groups = new Map();
+        notes.set(path, groups);
+      }
+      const group = groups.get(imported);
+      if (group === undefined) groups.set(imported, [reference]);
+      else group.push(reference);
+    }
+  }
+  return notes;
+}
+
 async function importNote(options: {
   readonly ports: InkImportPorts;
   readonly store: ImportJournalStore;
-  readonly preview: InkImportPreview;
   readonly path: string;
+  readonly previewHash: string | undefined;
+  readonly references: NoteReferences | undefined;
+  readonly importedSources: ReadonlyMap<string, InkImportSourceRecord>;
 }): Promise<void> {
-  const { ports, store, preview, path } = options;
+  const { ports, store, path, previewHash, references, importedSources } = options;
   const note = await ports.read(path);
-  if (note.length > MAX_IMPORT_FILE_CHARS || (await ports.hash(note)) !== preview.notes[path]) {
+  if (note.length > MAX_IMPORT_FILE_CHARS || (await ports.hash(note)) !== previewHash) {
     issue(store, path);
     return;
   }
+  if (references === undefined) return;
   const patches = [];
-  for (const source of preview.sources) {
-    const references = source.references.filter((ref) => ref.notePath === path);
-    if (references.length === 0) continue;
-    const imported = store.journal.sources.find(
-      (record) => record.path === source.path && record.status === "created",
-    );
-    if (imported === undefined) continue;
+  for (const [source, sourceReferences] of references) {
     if (
       (await ports.hash(await ports.read(source.path))) !== source.hash ||
-      (await ports.hash(await ports.read(source.targetPath))) !== imported.outputHash
+      (await ports.hash(await ports.read(source.targetPath))) !== source.outputHash
     ) {
       issue(store, source.path);
       continue;
     }
     patches.push(
-      ...references.map((ref) =>
+      ...sourceReferences.map((ref) =>
         createImportPatch(ref, ports.generateEmbed(source.targetPath, path, ref.description), note),
       ),
     );
@@ -128,7 +158,7 @@ async function importNote(options: {
   store.journal.notes.push(record);
   await store.save();
   for (const sourcePath of new Set(record.patches.map((patch) => patch.sourcePath))) {
-    const source = store.journal.sources.find((entry) => entry.path === sourcePath);
+    const source = importedSources.get(sourcePath);
     if (
       source === undefined ||
       (await ports.hash(await ports.read(source.path))) !== source.hash ||
@@ -156,6 +186,45 @@ async function importNote(options: {
   await store.save();
 }
 
+async function importNotes(
+  ports: InkImportPorts,
+  store: ImportJournalStore,
+  preview: InkImportPreview,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (signal?.aborted === true) return;
+  const importedSources = new Map(store.journal.sources.map((source) => [source.path, source]));
+  let notes: ReadonlyMap<string, NoteReferences>;
+  try {
+    notes = await indexNoteReferences(
+      preview.sources,
+      importedSources,
+      ports.workScheduler,
+      signal,
+    );
+  } catch (error) {
+    if (!signal?.aborted) throw error;
+    return;
+  }
+  for (const [path, previewHash] of Object.entries(preview.notes)) {
+    if (signal?.aborted) break;
+    await ports.workScheduler.checkpoint(undefined, "background");
+    try {
+      await importNote({
+        ports,
+        store,
+        path,
+        previewHash,
+        references: notes.get(path),
+        importedSources,
+      });
+    } catch {
+      issue(store, path);
+      await store.save();
+    }
+  }
+}
+
 export async function applyInkImport(
   ports: InkImportPorts,
   preview: InkImportPreview,
@@ -181,16 +250,7 @@ export async function applyInkImport(
       await store.save();
     }
   }
-  for (const path of Object.keys(preview.notes)) {
-    if (signal?.aborted === true) break;
-    await ports.workScheduler.checkpoint(undefined, "background");
-    try {
-      await importNote({ ports, store, preview, path });
-    } catch {
-      issue(store, path);
-      await store.save();
-    }
-  }
+  await importNotes(ports, store, preview, signal);
   store.journal.status = signal?.aborted === true ? "cancelled" : "complete";
   await store.save();
   return store;

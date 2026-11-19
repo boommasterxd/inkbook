@@ -166,9 +166,7 @@ function InvitationAction({
       {...(foreignWindow
         ? {}
         : { animate: { opacity: hovering ? 0.85 : 1, scale: gesture === "press" ? 0.96 : 1 } })}
-      {...(present && foreignWindow !== true
-        ? { whileHover: { opacity: 0.85 }, whileTap: { scale: 0.96 } }
-        : {})}
+      {...(present && foreignWindow !== true ? { whileHover: { opacity: 0.85 } } : {})}
       {...(foreignWindow ? {} : { transition: toolbarLayoutTransition(reduced) })}
     >
       {children}

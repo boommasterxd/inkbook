@@ -16,33 +16,6 @@
   margin-block: 0 var(--size-4-2);
 }
 
-.inkbook-import-body .inkbook-import-journey {
-  margin-block: 0 var(--size-4-4);
-  padding-inline-start: var(--size-4-5);
-}
-
-.inkbook-import-journey li {
-  padding-inline-start: var(--size-4-2);
-}
-
-.inkbook-import-journey li + li {
-  margin-block-start: var(--size-4-3);
-}
-
-.inkbook-import-journey li::marker {
-  color: var(--text-muted);
-}
-
-.inkbook-import-journey strong {
-  font-size: var(--font-ui-small);
-  font-weight: var(--font-semibold);
-}
-
-.inkbook-import-body .inkbook-import-journey p {
-  color: var(--text-muted);
-  margin-block: var(--size-4-1) 0;
-}
-
 .inkbook-import-body .inkbook-import-storage-note {
   align-items: flex-start;
   color: var(--text-muted);

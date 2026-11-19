@@ -1,4 +1,4 @@
-import { isBuiltin } from "node:module";
+import { createRequire, isBuiltin } from "node:module";
 import path from "node:path";
 
 import { codeFile } from "./ci-selection-git.mjs";
@@ -8,34 +8,84 @@ const embeddedEntries = new Map([
   ["src/rendering/ui/editor-chrome-source.ts", "./editor-chrome-entry"],
   ["src/obsidian/plugin-runtime-source.ts", "./plugin-runtime-entry"],
   ["src/obsidian/text/portable-math-source.ts", "./portable-math-entry"],
+  ["src/obsidian/settings/import/import-example-source.ts", "./import-example-images"],
 ]);
 const dynamicEntries = new Map([
   ["src/obsidian/plugin-loader.ts", "./plugin-runtime-entry"],
   ["src/obsidian/text/portable-math-loader.ts", "./portable-math-entry"],
+  ["src/obsidian/settings/import/import-example-loader.ts", "./import-example-images"],
   [
     "src/obsidian/embeds/active-scene/editor-chrome-loader.ts",
     "../../../rendering/ui/editor-chrome-entry",
   ],
 ]);
+const cacheFixtures = new Map([
+  ["test/unit/scripts/cache-lifecycle/io.cjs", ["github.cjs"]],
+  ["test/unit/scripts/cache-lifecycle/recovery.cjs", ["recovery.cjs"]],
+  [
+    "test/unit/scripts/cache-lifecycle/register.cjs",
+    ["core.cjs", "github.cjs", "planner.cjs", "run.cjs"],
+  ],
+]);
+const wasmModule = "brotli-dec-wasm/web/bg.wasm";
+
+function isNamedIdentifier(ts, node, name) {
+  return node && ts.isIdentifier(node) && node.text === name;
+}
 
 function moduleLiteral(ts, node) {
-  if (ts.isStringLiteralLike(node)) return node.text;
+  if (node && ts.isStringLiteralLike(node)) return node.text;
   throw new Error("Nonliteral module dependency");
+}
+
+function cacheFixtureDependency(ts, filename, argument) {
+  const names = cacheFixtures.get(filename);
+  if (!names || !argument || !ts.isCallExpression(argument)) return null;
+  const [directory, file] = argument.arguments;
+  const method = argument.expression;
+  if (
+    !ts.isPropertyAccessExpression(method) ||
+    !isNamedIdentifier(ts, method.expression, "path") ||
+    method.name.text !== "join" ||
+    argument.arguments.length !== 2 ||
+    !isNamedIdentifier(ts, directory, "directory") ||
+    !ts.isStringLiteralLike(file) ||
+    !names.includes(file.text)
+  )
+    return null;
+  // The test entry always passes scripts/cache-lifecycle as the fixture directory.
+  return path.posix.relative(path.posix.dirname(filename), `scripts/cache-lifecycle/${file.text}`);
+}
+
+function mockDependency(ts, method, argument) {
+  if (
+    ["mock", "doMock"].includes(method) &&
+    argument &&
+    ts.isCallExpression(argument) &&
+    argument.expression.kind === ts.SyntaxKind.ImportKeyword &&
+    argument.arguments.length === 1
+  )
+    return moduleLiteral(ts, argument.arguments[0]);
+  return moduleLiteral(ts, argument);
 }
 
 function callDependency(ts, node, filename) {
   const expression = node.expression;
+  const argument = node.arguments[0];
   const dynamicImport = expression.kind === ts.SyntaxKind.ImportKeyword;
-  const requireCall = ts.isIdentifier(expression) && expression.text === "require";
   const mockCall =
     ts.isPropertyAccessExpression(expression) &&
     ["mock", "doMock", "importActual", "importMock"].includes(expression.name.text) &&
     ts.isIdentifier(expression.expression) &&
     ["vi", "vitest"].includes(expression.expression.text);
-  if (dynamicImport && dynamicEntries.has(filename) && isOwnedModuleImport(ts, node.arguments[0])) {
+  if (dynamicImport && dynamicEntries.has(filename) && isOwnedModuleImport(ts, argument)) {
     return dynamicEntries.get(filename);
   }
-  if (dynamicImport || requireCall || mockCall) return moduleLiteral(ts, node.arguments[0]);
+  if (dynamicImport) return moduleLiteral(ts, argument);
+  if (isNamedIdentifier(ts, expression, "require")) {
+    return cacheFixtureDependency(ts, filename, argument) ?? moduleLiteral(ts, argument);
+  }
+  if (mockCall) return mockDependency(ts, expression.name.text, argument);
   return null;
 }
 
@@ -62,9 +112,25 @@ function isImportMetaUrl(ts, node) {
 }
 
 function mappedFilesystemUrl(ts, filename, node) {
-  if (!ts.isTemplateExpression(node)) return false;
+  if (!node || !ts.isTemplateExpression(node)) return false;
   if (filename === "test/unit/scripts/github-workflows.test.mjs") {
     return node.head.text === "../../../.github/workflows/";
+  }
+  if (filename === "test/unit/persistence/serialization/text-roundtrip.test.ts") {
+    // Font asset changes already select every test through the non-code source rule.
+    const parts = [
+      ["family", "-"],
+      ["weight", "-"],
+      ["style", ".woff2"],
+    ];
+    return (
+      node.head.text === "../../../../src/persistence/fonts/assets/" &&
+      node.templateSpans.length === parts.length &&
+      node.templateSpans.every(({ expression, literal }, index) => {
+        const [name, suffix] = parts[index];
+        return isNamedIdentifier(ts, expression, name) && literal.text === suffix;
+      })
+    );
   }
   return (
     filename === "test/unit/scripts/ci-plan-cli.test.mjs" &&
@@ -142,7 +208,31 @@ function localDependency(files, filename, specifier) {
   return resolved;
 }
 
+function bundledFontAsset(filename, specifier) {
+  if (filename !== "src/persistence/fonts/builtin-fonts.ts") return null;
+  if (
+    !/^\.\/assets\/(?:[a-zA-Z0-9-]+\.(?:woff2|ttf)\?inline|[a-zA-Z0-9-]+-OFL\.txt\?raw)$/.test(
+      specifier,
+    )
+  )
+    return null;
+  return path.posix.join(path.posix.dirname(filename), specifier.split("?")[0]);
+}
+
 function resolveDependency(ts, root, files, filename, specifier) {
+  const asset = bundledFontAsset(filename, specifier);
+  if (asset) {
+    if (files.has(asset)) return asset;
+    throw new Error(`Unresolved dependency ${specifier} in ${filename}`);
+  }
+  if (specifier === `${wasmModule}?url&inline`) {
+    try {
+      createRequire(path.join(root, filename)).resolve(wasmModule);
+    } catch {
+      throw new Error(`Unresolved dependency ${specifier} in ${filename}`);
+    }
+    return null;
+  }
   if (specifier.startsWith(".")) return localDependency(files, filename, specifier);
   if (isBuiltin(specifier)) return null;
   if (specifier === "obsidian" && files.has("test/adapters/obsidian/plugin.ts")) {
@@ -166,6 +256,7 @@ function resolveDependency(ts, root, files, filename, specifier) {
 export function createGraph(ts, root, files) {
   const edges = new Map();
   for (const [filename, content] of files) {
+    if (content === null) continue;
     const targets = new Set();
     const parsed = dependencies(ts, filename, content);
     if (parsed.errors.length) throw new Error(`${parsed.errors.join("; ")} (${filename})`);

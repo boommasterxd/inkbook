@@ -48,7 +48,9 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
   #error!: HTMLElement;
   #resizeWarning!: HTMLElement;
   #resizeWarningText!: HTMLElement;
+  #caption!: HTMLElement;
   #details!: HTMLElement;
+  #dpi!: HTMLElement;
   #pdfPages!: ImageImportPages;
   #quality!: HTMLSelectElement;
   #resolution!: ImageImportResolutionControl;
@@ -68,8 +70,10 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
     this.#error.setAttribute("role", "alert");
     this.#review = new ImageImportReviewLayout(this.#body, this.modalEl);
     this.#placementPreview = new ImagePlacementPreview(this.#review.figure, this.options);
-    const { details, hint } = this.#review.addCaption(this.options.localization);
+    const { caption, details, dpi, hint } = this.#review.addCaption(this.options.localization);
+    this.#caption = caption;
     this.#details = details;
+    this.#dpi = dpi;
     this.#previewHint = hint;
     this.#buildPdfFields();
     this.#buildResolution();
@@ -133,7 +137,7 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
   }
 
   #buildPdfFields(): void {
-    this.#pdfPages = new ImageImportPages(this.#review.controls, this.#review.previews, {
+    this.#pdfPages = new ImageImportPages(this.#review.pageRange, this.#review.previews, {
       localization: this.options.localization,
       scheduler: this.options.scheduler,
       readMotion: this.options.readMotion,
@@ -149,7 +153,7 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
         if (page !== undefined) void this.#refreshPreview();
       },
     });
-    this.#review.figure.insertBefore(this.#pdfPages.navigation, this.#details.parentElement);
+    this.#review.figure.insertBefore(this.#pdfPages.navigation, this.#caption);
   }
 
   #buildResolution(): void {
@@ -288,13 +292,16 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
           : "pdf-pages",
     );
     this.#resolution.show(this.#pdf !== undefined);
-    const { details, warning } = imageResolutionDescription(this.options.localization.t, resource, {
-      resizedFrom,
-      resolution,
-    });
+    const { details, dpi, warning } = imageResolutionDescription(
+      this.options.localization.t,
+      resource,
+      { resizedFrom, resolution },
+    );
     this.#resizeWarning.hidden = warning === "";
     this.#resizeWarningText.textContent = warning;
     this.#details.textContent = details;
+    this.#dpi.textContent = dpi;
+    this.#dpi.hidden = dpi === "";
     this.#choose.dataset.selected = "true";
     this.#replace.hidden = false;
     this.#placementPreview.show(
@@ -302,7 +309,7 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
       this.#pdf === undefined ? "image" : "pdf",
       this.#pageWidth.checked,
     );
-    this.#details.parentElement!.hidden = false;
+    this.#caption.hidden = false;
     this.#review.figure.hidden = false;
     this.#placement.hidden = false;
     this.#previewHint.hidden = this.#pdf?.pageCount !== 1;
@@ -385,7 +392,7 @@ class ImageImportDialog extends ImageDialog<void, ImageImportDialogOptions> {
         this.#resizeWarning.hidden = true;
         this.#resizeWarningText.textContent = "";
         this.#review.figure.hidden = this.#pdf === undefined;
-        this.#details.parentElement!.hidden = true;
+        this.#caption.hidden = true;
         if (this.#pdf !== undefined || this.#rasterBytes !== undefined)
           this.#resolution.show(this.#pdf !== undefined);
         this.#placement.hidden = true;

@@ -1,5 +1,6 @@
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 import { build, context } from "esbuild";
@@ -14,8 +15,12 @@ const editorChromeEntry = resolve("src/rendering/ui/editor-chrome-entry.ts");
 const editorChromeSourceModule = resolve("src/rendering/ui/editor-chrome-source.ts");
 const portableMathEntry = resolve("src/obsidian/text/portable-math-entry.ts");
 const portableMathSourceModule = resolve("src/obsidian/text/portable-math-source.ts");
+const importExampleEntry = resolve("src/obsidian/settings/import/import-example-images.ts");
+const importExampleSourceModule = resolve("src/obsidian/settings/import/import-example-source.ts");
 const pluginRuntimeEntry = resolve("src/obsidian/plugin-runtime-entry.ts");
 const pluginRuntimeSourceModule = resolve("src/obsidian/plugin-runtime-source.ts");
+const builtinFontDirectory = resolve("src/persistence/fonts/assets");
+const brotliWasmAsset = fileURLToPath(import.meta.resolve("brotli-dec-wasm/web/bg.wasm"));
 const base91Alphabet =
   "!#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_abcdefghijklmnopqrstuvwxyz{|}~";
 const terserOptions = {
@@ -64,6 +69,7 @@ function embeddedJavaScript({
   plugins = [],
   sourceModule,
   token,
+  watchFiles = [],
   wrap = (source) => source,
 }) {
   // Compression keeps distribution compact; the complete executable entries remain public source.
@@ -92,7 +98,7 @@ function embeddedJavaScript({
           forbiddenInputs &&
           Object.keys(embeddedBuild.metafile.inputs).some((path) => forbiddenInputs.test(path))
         ) {
-          throw new Error(`${name} eagerly includes an optional embedded engine.`);
+          throw new Error(`${name} eagerly includes optional embedded modules or assets.`);
         }
         const output = embeddedBuild.outputFiles[0];
         if (output === undefined) throw new Error(`${name} build produced no JavaScript.`);
@@ -108,12 +114,32 @@ function embeddedJavaScript({
         return {
           contents: source.replace(token, () => compressedSource),
           loader: "ts",
-          watchFiles: Object.keys(embeddedBuild.metafile.inputs).map((path) => resolve(path)),
+          watchFiles: [
+            ...watchFiles,
+            ...Object.keys(embeddedBuild.metafile.inputs).map((path) =>
+              resolve(path.replace(/\?(?:raw|url&inline|inline)$/, "")),
+            ),
+          ],
         };
       });
     },
   };
 }
+
+const embeddedFontBinaries = {
+  name: "embedded-font-binaries",
+  setup(pluginBuild) {
+    pluginBuild.onLoad({ filter: /\.(?:woff2|ttf|wasm)$/ }, async ({ path, suffix }) => {
+      const builtin = suffix === "?inline" && dirname(path) === builtinFontDirectory;
+      const brotli = suffix === "?url&inline" && path === brotliWasmAsset;
+      if (!builtin && !brotli) return undefined;
+      const bytes = await readFile(path);
+      const compressed = gzipSync(bytes, { level: 9, memLevel: 9 }).toString("base64");
+      const payload = `data:application/gzip;length=${bytes.length};base64,${compressed}`;
+      return { contents: `export default ${JSON.stringify(payload)};`, loader: "js" };
+    });
+  },
+};
 
 const embeddedDocumentWorker = embeddedJavaScript({
   entry: workerEntry,
@@ -121,6 +147,7 @@ const embeddedDocumentWorker = embeddedJavaScript({
   format: "iife",
   marker: "inkbook-worker-bootstrap",
   name: "embedded-document-worker",
+  plugins: [embeddedFontBinaries],
   sourceModule: workerSourceModule,
   token: "__INKBOOK_DOCUMENT_WORKER_SOURCE__",
 });
@@ -145,18 +172,35 @@ const embeddedPortableMath = embeddedJavaScript({
   token: "__INKBOOK_PORTABLE_MATH_SOURCE__",
 });
 
+const embeddedImportExamples = embeddedJavaScript({
+  entry: importExampleEntry,
+  filter: /import-example-source\.ts$/,
+  format: "esm",
+  marker: "IMPORT_EXAMPLE_IMAGES",
+  name: "embedded-import-examples",
+  sourceModule: importExampleSourceModule,
+  token: "__INKBOOK_IMPORT_EXAMPLES_SOURCE__",
+});
+
 const embeddedPluginRuntime = embeddedJavaScript({
   entry: pluginRuntimeEntry,
   external: ["obsidian", "@codemirror/*", "@lezer/*"],
   forbiddenInputs:
-    /(?:node_modules\/@mathjax\/|obsidian\/text\/(?:portable-math-renderer|math-font-data)\.ts$)/,
+    /(?:node_modules\/@mathjax\/|obsidian\/text\/(?:portable-math-renderer|math-font-data)\.ts$|obsidian\/settings\/import\/import-example-images\.ts$)/,
   filter: /plugin-runtime-source\.ts$/,
   format: "cjs",
   marker: "inkbook-plugin-bootstrap",
   name: "embedded-plugin-runtime",
-  plugins: [embeddedDocumentWorker, embeddedEditorChrome, embeddedPortableMath],
+  plugins: [
+    embeddedDocumentWorker,
+    embeddedEditorChrome,
+    embeddedPortableMath,
+    embeddedImportExamples,
+    embeddedFontBinaries,
+  ],
   sourceModule: pluginRuntimeSourceModule,
   token: "__INKBOOK_PLUGIN_RUNTIME_SOURCE__",
+  watchFiles: [importExampleEntry],
   wrap: wrapPluginRuntime,
 });
 

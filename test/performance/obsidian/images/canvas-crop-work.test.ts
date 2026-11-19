@@ -8,7 +8,7 @@ import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { ManualHost } from "../../../fixtures/scheduling/manual-frame-host";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
-it("coalesces crop pointer feedback and releases queued work on abort", async () => {
+it("coalesces compact crop pointer feedback and releases queued work on abort", async () => {
   installObsidianDomHelpers();
   const container = document.createElement("div");
   const inputSurface = document.createElement("div");
@@ -43,11 +43,14 @@ it("coalesces crop pointer feedback and releases queued work on abort", async ()
       setElementPreviews: vi.fn(),
       flushPointerFeedbackFrame: flush,
       beginImageCrop: (_image, _resource, camera) => {
-        camera({ x: 0, zoom: 1 });
+        camera({ x: 0, zoom: 0.75 });
         return { update, dispose };
       },
     },
   });
+  expect(container.querySelector<HTMLElement>(".inkbook-image-crop-grips")?.dataset.compact).toBe(
+    "true",
+  );
   const handle = container.querySelector<HTMLButtonElement>('[data-edges="left"]')!;
   handle.setPointerCapture = vi.fn();
   handle.hasPointerCapture = () => false;
@@ -63,7 +66,7 @@ it("coalesces crop pointer feedback and releases queued work on abort", async ()
   expect(host.pendingFrames).toBe(1);
   host.frame();
   expect(update).toHaveBeenCalledOnce();
-  expect(update).toHaveBeenLastCalledWith({ x: 60, y: 0, width: 340, height: 200 });
+  expect(update).toHaveBeenLastCalledWith({ x: 80, y: 0, width: 320, height: 200 });
   expect(flush).toHaveBeenCalledOnce();
   expect(bounds).not.toHaveBeenCalled();
   handle.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientX: 31 }));

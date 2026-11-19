@@ -14,6 +14,8 @@ export interface SettingsRowOptions {
   readonly name: string;
 }
 
+let nextVisualHeading = 0;
+
 export function settingsGroupIdentity(
   definition: Pick<SettingDefinitionGroup, "cls" | "heading">,
 ): string {
@@ -48,23 +50,26 @@ export function createSettingsHeading(
   container: HTMLElement,
   name: string,
   description: string,
-): HTMLElement {
+): { readonly headingId: string; readonly descriptionId: string } {
   const info = container.createDiv({ cls: "inkbook-settings-visual-info" });
-  info.createDiv({ cls: "setting-item-name", text: name });
-  const descriptionElement = info.createDiv({ cls: "setting-item-description", text: description });
-  descriptionElement.id = `inkbook-setting-${name.toLowerCase().replaceAll(" ", "-")}-description`;
-  return descriptionElement;
+  const prefix = `inkbook-settings-heading-${++nextVisualHeading}`;
+  const heading = info.createDiv({ cls: "setting-item-name", text: name });
+  heading.id = prefix;
+  const detail = info.createDiv({ cls: "setting-item-description", text: description });
+  detail.id = `${prefix}-description`;
+  return { headingId: heading.id, descriptionId: detail.id };
 }
 
 export function createSettingsVisualControlRow(
   setting: Setting,
   name: string,
   description: string,
-): HTMLElement {
+) {
   setting.settingEl.replaceChildren();
   setting.settingEl.classList.add("inkbook-settings-visual-row");
-  createSettingsHeading(setting.settingEl, name, description);
-  return setting.settingEl.createDiv({ cls: "inkbook-settings-inline-controls" });
+  const copy = createSettingsHeading(setting.settingEl, name, description);
+  const content = setting.settingEl.createDiv({ cls: "inkbook-settings-inline-controls" });
+  return { content, copy };
 }
 
 export function bindSettingsAction(

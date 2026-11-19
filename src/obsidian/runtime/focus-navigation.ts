@@ -9,7 +9,10 @@ export function registerFocusNavigation(root: HTMLElement, initial = false): () 
       root.dataset.inkbookKeyboardNavigation = value;
     }
   };
-  const pointer = (): void => setNavigation(false);
+  const pointer = (event: Event): void => {
+    // Motion's keyboard press has no pointer type.
+    if ("pointerType" in event && event.pointerType) setNavigation(false);
+  };
   const keyboard = (event: KeyboardEvent): void => {
     if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) {
       return;
@@ -49,5 +52,5 @@ export function cycleModalFocus(event: KeyboardEvent, focusable: readonly HTMLEl
     ? focusable[(index <= 0 ? focusable.length : index) - 1]
     : focusable[(index + 1) % focusable.length];
   event.preventDefault();
-  next?.focus({ preventScroll: true });
+  next?.focus();
 }

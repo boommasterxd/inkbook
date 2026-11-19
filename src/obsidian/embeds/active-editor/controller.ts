@@ -96,9 +96,8 @@ export class ActiveEditorController {
     this.#onStateChanged = () =>
       Chrome.refreshActiveEditorChrome([this.#cursor, this.#menus], options.onStateChanged);
     this.#chromeState = new ActiveEditorChromeState(this.#onStateChanged);
-    const ownerWindow = Helpers.activeEditorWindow(options.container);
-    this.#ownerWindow = ownerWindow;
-    this.#longPress = new ActiveEditorLongPressScheduler(ownerWindow);
+    this.#ownerWindow = Helpers.activeEditorWindow(options.container);
+    this.#longPress = new ActiveEditorLongPressScheduler(this.#ownerWindow);
     [this.#renderIcon, this.#workScheduler] = [options.renderIcon, options.workScheduler];
     [this.#renderer, this.#sceneStore] = [options.renderer, options.sceneStore];
     this.#captures = new ActivePointerCaptureOwner(options.renderer.inputSurface);
@@ -134,7 +133,7 @@ export class ActiveEditorController {
     this.#selectionEdgeDrag = createActiveEditorSelectionEdgeDrag({
       layout: options.selectionMoveLayout,
       navigation: this.#navigation,
-      ownerWindow,
+      ownerWindow: this.#ownerWindow,
       workScheduler: this.#workScheduler,
       scrollOwner: () => this.#scrollOwner,
     });
@@ -422,6 +421,7 @@ export class ActiveEditorController {
       onPasteCommitted: () => this.#configureTool("select"),
       onPendingChanged: (pending) => this.#availability.setPending(pending),
       ownerWindow: this.#ownerWindow,
+      scrollOwner: () => this.#scrollOwner,
       selection: () => this.#selection,
       selectionFrames: this.#selectionFrames,
       setSelection: (selection) => this.#setSelection(selection),

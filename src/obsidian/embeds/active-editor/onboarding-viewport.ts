@@ -1,40 +1,24 @@
-import { Platform } from "obsidian";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
-import { readScrollOwnerViewport } from "../active-scene/active-scene-viewport";
-import { readMenuViewport } from "../../menus/panels/menu-viewport";
+import { EditorChromeViewport } from "./layout/editor-chrome-viewport";
 import { ONBOARDING_COMPACT_HEIGHT, type OnboardingBounds } from "./onboarding-layout";
 
-/** Uses host theme insets and the existing scroll owner, without host DOM selectors. */
 export class OnboardingViewport {
   readonly #root: HTMLElement;
-  readonly #insets: HTMLElement;
+  readonly #viewport: EditorChromeViewport;
   readonly #scrollOwner: (() => BrowserScrollElement) | undefined;
 
   public constructor(root: HTMLElement, scrollOwner?: () => BrowserScrollElement) {
     this.#root = root;
     this.#scrollOwner = scrollOwner;
-    this.#insets = root.createDiv({ cls: "inkbook-onboarding-insets" });
-    this.#insets.setAttribute("aria-hidden", "true");
-    this.#insets.dataset.phone = String(Platform.isPhone);
+    this.#viewport = new EditorChromeViewport(root, "onboarding", scrollOwner);
   }
 
   public observe(observer: ResizeObserver): void {
-    observer.observe(this.#insets);
+    this.#viewport.observe(observer);
   }
 
   public read(): OnboardingBounds {
-    const ownerWindow = this.#root.ownerDocument.defaultView!;
-    const viewport = readMenuViewport(ownerWindow);
-    const owner = this.#scrollOwner?.();
-    const clip = owner === undefined ? undefined : readScrollOwnerViewport(owner);
-    const style = ownerWindow.getComputedStyle(this.#insets);
-    const top = Math.max(viewport.top + (Number.parseFloat(style.paddingTop) || 0), clip?.top ?? 0);
-    const bottom = Math.min(
-      viewport.top + viewport.height - (Number.parseFloat(style.paddingBottom) || 0),
-      clip?.bottom ?? Infinity,
-    );
-    const left = Math.max(viewport.left, clip?.left ?? 0);
-    const right = Math.min(viewport.left + viewport.width, clip?.right ?? Infinity);
+    const { bottom, left, right, top } = this.#viewport.read();
     return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
   }
 
@@ -69,6 +53,6 @@ export class OnboardingViewport {
   }
 
   public dispose(): void {
-    this.#insets.remove();
+    this.#viewport.dispose();
   }
 }

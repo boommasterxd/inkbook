@@ -98,7 +98,7 @@ export async function executeCommands(commands, cwd, options = {}) {
   }
 }
 
-async function waitForShutdown(child, deadline) {
+export async function waitForShutdown(child, deadline) {
   if (process.platform === "win32" || child.pid === undefined) return true;
   try {
     while (await groupIsRunning(child.pid)) {
@@ -140,7 +140,7 @@ async function groupIsRunning(groupId) {
   }
 }
 
-function forwardSignal(child, signal) {
+export function forwardSignal(child, signal) {
   if (process.platform === "win32") {
     child.kill(signal);
     return;

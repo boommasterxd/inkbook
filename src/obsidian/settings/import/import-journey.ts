@@ -21,7 +21,9 @@ export function renderImportStep(
 }
 
 export function renderImportIntroduction(container: HTMLElement, localization: Localization): void {
-  const steps = container.createEl("ol", { cls: "inkbook-import-journey" });
+  const workflow = container.createEl("section", { cls: "inkbook-import-workflow" });
+  workflow.createEl("h3", { text: localization.t("import.journey") });
+  const steps = workflow.createEl("ol", { cls: "inkbook-import-journey" });
   for (const [title, description] of [
     [localization.t("import.journeyFind"), localization.t("import.journeyFindDescription")],
     [localization.t("import.stepReview"), localization.t("import.journeyReviewDescription")],

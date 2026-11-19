@@ -97,6 +97,13 @@ it("reuses intent-prepared text controls and activates font resources and docume
   const releasePreview = vi.fn();
   const previews = { acquire: vi.fn(() => releasePreview), dispose: vi.fn() };
   const createFontPreviews = vi.fn(() => previews);
+  const fontOptions = [
+    { label: "Inter", value: "inter" },
+    ...Array.from({ length: 128 }, (_, index) => ({
+      label: `Custom font ${index}`,
+      value: `custom-${index}`,
+    })),
+  ];
   const observeMotion = vi.fn(() => vi.fn());
   const keymap = new Keymap();
   const hostScope = new Scope();
@@ -119,6 +126,7 @@ it("reuses intent-prepared text controls and activates font resources and docume
       createFontPreviews,
       keymap,
       getDefaults: () => store.getVaultSettings().toolDefaults,
+      getTextFontOptions: () => fontOptions,
       getMotion: () => "reduced",
       observeMotion,
       set: () => Promise.resolve(),
@@ -149,7 +157,8 @@ it("reuses intent-prepared text controls and activates font resources and docume
     expect(createFontPreviews).toHaveBeenCalledOnce();
     expect(previews.acquire).toHaveBeenCalledOnce();
     const dropdown = controls.querySelector<HTMLButtonElement>('[role="combobox"]')!;
-    dropdown.click();
+    verifyFontOptionWork(controls, dropdown, fontOptions.length);
+    expect(previews.acquire).toHaveBeenCalledOnce();
     dropdown.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
     );
@@ -178,6 +187,35 @@ it("reuses intent-prepared text controls and activates font resources and docume
     vi.restoreAllMocks();
   }
 });
+
+function verifyFontOptionWork(
+  container: Element,
+  dropdown: HTMLButtonElement,
+  count: number,
+): void {
+  const list = container.querySelector<HTMLElement>(".inkbook-font-dropdown-list")!;
+  expect(list.childElementCount).toBe(0);
+  dropdown.dispatchEvent(new Event("pointerenter"));
+  const options = [...list.children];
+  expect(options).toHaveLength(count);
+  expect(dropdown.getAttribute("aria-expanded")).toBe("false");
+  dropdown.dispatchEvent(new Event("focus"));
+  dropdown.dispatchEvent(new Event("pointerdown"));
+  expect([...list.children]).toEqual(options);
+  dropdown.click();
+  const observer = new MutationObserver(() => undefined);
+  observer.observe(list, { subtree: true, attributeFilter: ["data-active"] });
+  try {
+    dropdown.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }),
+    );
+    const last = options[options.length - 1]!;
+    expect(observer.takeRecords().map(({ target }) => target)).toEqual([options[0], last]);
+    expect(dropdown.getAttribute("aria-activedescendant")).toBe(last.id);
+  } finally {
+    observer.disconnect();
+  }
+}
 
 it("keeps unopened settings bounded and unrelated device changes without rebuilding controls", () => {
   installObsidianDomHelpers();

@@ -70,9 +70,7 @@ export function ToolbarIconButton(props: ToolbarIconButtonProps) {
       )}
       layout="position"
       transition={{ layout: toolbarLayoutTransition(lifecycle.reduced) }}
-      {...(!disabled && lifecycle.foreignWindow !== true
-        ? { whileHover: "hover", whileTap: "press" }
-        : {})}
+      {...(!disabled && lifecycle.foreignWindow !== true ? { whileHover: "hover" } : {})}
       {...(!disabled ? { whileFocus: "focus" } : {})}
       aria-expanded={props.expanded}
       aria-haspopup={props.popupRole}
@@ -170,7 +168,6 @@ function ToolbarButtonSurface({
       }}
       variants={{
         hover: feedback.hover,
-        press: feedback.press,
         focus: feedback.focus,
       }}
       transition={{ type: "tween", ...toolbarButtonFeedbackTransition(reduced) }}

@@ -66,6 +66,15 @@ export async function loadTrustedVaultDocument(
   trustedHeads: TrustedDocumentHeadPort | undefined,
   policy: TrustedVaultDocumentLoadPolicy = {},
 ): Promise<LoadedVaultDocument | undefined> {
+  const pending = trustedHeads?.ready();
+  if (pending !== undefined) {
+    const rejected = await pending;
+    if (options.cancelled()) return undefined;
+    if (rejected !== undefined) {
+      policy.onRejected?.(rejected);
+      return undefined;
+    }
+  }
   const loaded = await loadVaultDocument(options);
   if (loaded === undefined) return undefined;
   if (trustedHeads === undefined) return prepareTrustedText(loaded, options);

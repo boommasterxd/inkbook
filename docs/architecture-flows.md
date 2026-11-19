@@ -8,7 +8,7 @@ This document is an informative visual map of Inkbook's runtime architecture. Th
 flowchart LR
   subgraph host["Obsidian host"]
     reading["Reading view"]
-    readingSource["Rendered custom Inkbook link"]
+    readingSource["Host-rendered native SVG image"]
     live["Live Preview"]
     source["Source mode"]
     noteScroller["Native note scroller and right-hand scrollbar"]

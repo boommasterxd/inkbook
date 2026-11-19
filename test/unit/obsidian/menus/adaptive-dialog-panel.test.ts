@@ -49,19 +49,24 @@ function setup(anchor: HTMLElement = document.body) {
 }
 
 describe("adaptive dialog reuse", () => {
-  it("starts phone focus without a ring even when its trigger inherited keyboard navigation", () => {
-    const anchor = document.body.createEl("button");
-    anchor.dataset.inkbookKeyboardNavigation = "true";
-    const fixture = setup(anchor);
-    vi.advanceTimersToNextFrame();
-    expect(document.activeElement).toBe(fixture.initialFocus);
-    expect(fixture.layer.dataset.inkbookKeyboardNavigation).toBe("false");
-    fixture.initialFocus.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
-    expect(fixture.layer.dataset.inkbookKeyboardNavigation).toBe("true");
-    window.dispatchEvent(new Event("pointerdown"));
-    expect(fixture.layer.dataset.inkbookKeyboardNavigation).toBe("false");
-    fixture.session.close("immediate");
-  });
+  it.each([false, true])(
+    "inherits phone focus navigation %s and switches between touch and keyboard",
+    (keyboard) => {
+      const anchor = document.body.createEl("button");
+      anchor.dataset.inkbookKeyboardNavigation = String(keyboard);
+      const fixture = setup(anchor);
+      vi.advanceTimersToNextFrame();
+      expect(document.activeElement).toBe(fixture.initialFocus);
+      expect(fixture.layer.dataset.inkbookKeyboardNavigation).toBe(String(keyboard));
+      window.dispatchEvent(new PointerEvent("pointerdown", { pointerType: "touch" }));
+      expect(fixture.layer.dataset.inkbookKeyboardNavigation).toBe("false");
+      fixture.initialFocus.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
+      );
+      expect(fixture.layer.dataset.inkbookKeyboardNavigation).toBe("true");
+      fixture.session.close("immediate");
+    },
+  );
 
   it("lets animated disclosures resize the sheet without a second fixed-height transition", () => {
     const fixture = setup();

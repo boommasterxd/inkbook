@@ -21,7 +21,7 @@ The exhaustive [manifest](../scripts/performance-test-manifest.mjs) is the sourc
 
 Separate profile-independent work contracts from cadence-sensitive cases when a file contains both. Direct cursor updates with no profile-dependent clock or deadline run once; frame-admission and deadline cases retain all five profiles. Construct only the fixture elements a scenario actually uses, while preserving the full representative inputs in capacity contracts.
 
-Bound test-harness completion loops and isolated child processes as well as production work. A stalled geometry step or prewarm must fail with a diagnostic; subprocess cancellation and operational timeouts must terminate the owned process and await its exit before releasing temporary files. These limits protect verification resources and do not establish execution-speed budgets.
+Bound test-harness completion loops and isolated child processes as well as production work. A stalled geometry step or prewarm must fail with a diagnostic. A performance batch terminates on interruption, a twenty-minute timeout, or more than 32 MiB of combined output. On POSIX, it terminates the owned process group and verifies shutdown within two seconds. On Windows, it signals the direct child. Unconfirmed shutdown fails verification. These limits protect verification resources and do not establish execution-speed budgets.
 
 ## Local and GitHub Parity
 

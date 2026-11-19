@@ -32,7 +32,7 @@
 }
 
 .inkbook-image-dialog [role="alert"] {
-  color: var(--text-error);
+  color: var(--inkbook-tone-danger);
 }
 
 .inkbook-image-dialog fieldset {

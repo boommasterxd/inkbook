@@ -20,6 +20,25 @@ import { appliedImportFixture } from "../import/import-fixture";
 
 setupImportDialogTests();
 
+it("preserves active pointer feedback while the first comparison is mounted", async () => {
+  const { dialog } = fixture();
+  dialogButton("Scan vault").click();
+  await settle("Scan complete");
+  const example = dialogButton("Rounded corners");
+  example.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+  expect(example.dataset.inkbookMenuGesture).toBe("hover");
+
+  example.click();
+
+  expect(dialogButton("Rounded corners")).toBe(example);
+  expect(example.getAttribute("aria-pressed")).toBe("true");
+  expect(example.dataset.inkbookMenuGesture).toBe("hover");
+  expect(dialog.contentEl.querySelector("img")?.getAttribute("src")).toMatch(
+    /^data:image\/svg\+xml/u,
+  );
+  expect(example.dataset.inkbookMenuGesture).toBe("hover");
+});
+
 it("requires a reviewed preview before writes and announces an accessible result", async () => {
   const { dialog, service, anchor } = fixture();
   const reviewed = {

@@ -1,6 +1,7 @@
 import type { FontResourceV2 } from "../../domain/schema/types";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
-import { createFontResource, decodeFontResource } from "./font-resources";
+import { createFontResource } from "./font-resources";
+import { decodePackagedFontBinary } from "./packaged-font-binary";
 import inter400normal from "./assets/inter-400-normal.woff2?inline";
 import inter400italic from "./assets/inter-400-italic.woff2?inline";
 import inter700normal from "./assets/inter-700-normal.woff2?inline";
@@ -145,13 +146,7 @@ export async function loadBuiltinFont(
       candidate.style === (family === "caveat" ? "normal" : style),
   );
   if (face === undefined) throw new RangeError("Unknown built-in font face.");
-  const bytes = await decodeFontResource(
-    {
-      data: face.data.startsWith("data:") ? face.data.slice(face.data.indexOf(",") + 1) : face.data,
-    },
-    scheduler,
-    signal,
-  );
+  const bytes = await decodePackagedFontBinary(face.data, scheduler, signal);
   return createFontResource(
     bytes,
     {

@@ -12,6 +12,13 @@ import {
 import { dialogButton } from "../../../fixtures/obsidian/dialog";
 import { assertAccessibleSemantics } from "../../../fixtures/accessibility";
 
+vi.mock("../../../../src/obsidian/settings/import/import-example-loader", () => ({
+  acquireImportExamples: () => ({
+    module: import("../../../../src/obsidian/settings/import/import-example-images"),
+    release: () => undefined,
+  }),
+}));
+
 setupImportDialogTests();
 
 it("creates optional examples on first expansion and reuses them across disclosure toggles", async () => {
@@ -25,8 +32,13 @@ it("creates optional examples on first expansion and reuses them across disclosu
   await vi.waitFor(() => expect(dialog.contentEl.querySelectorAll("img")).toHaveLength(2));
   const images = [...dialog.contentEl.querySelectorAll("img")];
   expect(images).toHaveLength(2);
-  expect(dialog.contentEl.querySelectorAll(".inkbook-import-journey li")).toHaveLength(3);
   const panel = document.getElementById(help.getAttribute("aria-controls")!)!;
+  expect([...panel.querySelectorAll("ol > li > strong")].map((step) => step.textContent)).toEqual([
+    "Scan the vault",
+    "Review the results",
+    "Switch the embeds",
+  ]);
+  expect(panel.textContent).toContain("Restore original embeds from the import history.");
   expect(panel.inert).toBe(false);
   help.click();
   expect(panel.inert).toBe(true);

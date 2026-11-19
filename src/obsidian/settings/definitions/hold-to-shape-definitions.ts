@@ -70,7 +70,7 @@ function holdNumberDefinition(
     name: definition.name,
     desc: definition.description,
     render: (setting) => {
-      const content = createSettingsVisualControlRow(
+      const { content, copy } = createSettingsVisualControlRow(
         setting,
         definition.name,
         definition.description,
@@ -88,7 +88,8 @@ function holdNumberDefinition(
             value: Number(values.get(definition.key)),
           },
         ],
-        descriptions: { [definition.id]: definition.description },
+        descriptions: {},
+        externalCopy: copy,
         idPrefix: `inkbook-setting-${definition.id}`,
         onChange: (_controlId, value) => values.set(definition.key, value),
         ownerDocument: setting.settingEl.ownerDocument,

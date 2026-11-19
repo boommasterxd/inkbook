@@ -23,6 +23,7 @@ function fixture(
   extraOptions = 0,
   mount = document.body,
   fontManagementAction?: FontChoiceDropdownOptions["fontManagementAction"],
+  focusBeforeActivation = true,
 ) {
   const control = createTextStyleControls(createBuiltInSettings().toolDefaults.text).find(
     ({ id }) => id === "text-font-family",
@@ -61,7 +62,7 @@ function fixture(
   });
   mount.append(fragment);
   const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
-  const list = document.querySelector<HTMLElement>('[role="listbox"]')!;
+  const list = document.querySelector<HTMLElement>(".inkbook-font-dropdown-list")!;
   const popup = list.parentElement!;
   const key = (value: string) =>
     trigger.dispatchEvent(
@@ -71,7 +72,7 @@ function fixture(
         cancelable: true,
       }),
     );
-  trigger.focus();
+  if (focusBeforeActivation) trigger.focus();
   const expectManagementHandoff = (): void => {
     expect(fontManagementAction?.onActivate).toHaveBeenCalledExactlyOnceWith(trigger);
     expect(onChange).not.toHaveBeenCalled();
@@ -284,9 +285,12 @@ it("leases only intersecting previews, releases offscreen faces and ignores late
       disconnect = disconnect;
     },
   );
-  const f = fixture(false, 64);
+  const f = fixture(false, 64, document.body, undefined, false);
   expect(f.acquire).toHaveBeenCalledOnce();
+  expect(f.list.childElementCount).toBe(0);
+  expect(f.list.hasAttribute("role")).toBe(false);
   f.trigger.click();
+  expect(f.list.getAttribute("role")).toBe("listbox");
   expect(observe).toHaveBeenCalledTimes(68);
   const notify = (indices: readonly number[], visible: boolean) =>
     visibility!(

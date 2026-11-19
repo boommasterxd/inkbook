@@ -24,7 +24,10 @@ export interface StyleMenuContentOptions
     Omit<FontChoiceDropdownOptions, "workScheduler">,
     StyleToggleButtonsOptions {
   readonly workScheduler?: FontChoiceDropdownOptions["workScheduler"] | undefined;
-  readonly controlDescriptions?: Readonly<Record<string, string>>;
+  readonly settingsCopy?: {
+    readonly descriptions: Readonly<Record<string, string>>;
+    readonly headingId?: string | undefined;
+  };
   readonly controls: readonly StyleControl[];
   readonly numberInputMode?: "clamp" | "reject";
   readonly ownerDocument: Document;
@@ -125,6 +128,17 @@ function createControl(options: StyleMenuContentOptions, control: StyleControl):
   return createChoices(options, control);
 }
 
+function addHeadingIcon(
+  header: HTMLElement,
+  options: StyleMenuContentOptions,
+  controlId: string,
+): void {
+  if (options.settingsCopy !== undefined) return;
+  const icon = header.createSpan({ cls: "inkbook-menu-control-icon" });
+  icon.setAttribute("aria-hidden", "true");
+  options.renderIcon(icon, CONTROL_ICONS[controlId] ?? "settings-2");
+}
+
 function createField(
   options: StyleMenuContentOptions,
   control: StyleControl,
@@ -133,12 +147,27 @@ function createField(
     cls: "inkbook-menu-control",
   });
   field.dataset.control = control.id;
+  field.setAttribute("role", "group");
+  const externalHeading = options.settingsCopy?.headingId;
+  if (externalHeading === undefined) createFieldHeader(field, options, control);
+  else field.setAttribute("aria-labelledby", externalHeading);
+  const description = options.settingsCopy?.descriptions[control.id];
+  if (description !== undefined) {
+    field.createEl("p", { cls: "inkbook-menu-control-description", text: description });
+  }
+  const body = field.createDiv({ cls: "inkbook-menu-control-body" });
+  return { field, body };
+}
+
+function createFieldHeader(
+  field: HTMLElement,
+  options: StyleMenuContentOptions,
+  control: StyleControl,
+): void {
   const header = field.createDiv({ cls: "inkbook-menu-control-header" });
-  const icon = header.createSpan({ cls: "inkbook-menu-control-icon" });
-  options.renderIcon(icon, CONTROL_ICONS[control.id] ?? "settings-2");
+  addHeadingIcon(header, options, control.id);
   const label = header.createSpan({ cls: "inkbook-menu-control-label" });
   label.id = `inkbook-style-label-${++nextControlLabel}`;
-  field.setAttribute("role", "group");
   field.setAttribute("aria-labelledby", label.id);
   updateMenuText(options, () => {
     label.textContent =
@@ -164,12 +193,6 @@ function createField(
       field.setAttribute("aria-labelledby", `${label.id} ${valueLabel.id}`);
     }
   });
-  const description = options.controlDescriptions?.[control.id];
-  if (description !== undefined) {
-    field.createEl("p", { cls: "inkbook-menu-control-description", text: description });
-  }
-  const body = field.createDiv({ cls: "inkbook-menu-control-body" });
-  return { field, body };
 }
 
 function createChoices(
@@ -432,17 +455,15 @@ function createToggle(
   label.dataset.control = control.id;
   const copy = label.createSpan({ cls: "inkbook-menu-toggle-copy" });
   const heading = copy.createSpan({ cls: "inkbook-menu-toggle-heading" });
-  const icon = heading.createSpan({ cls: "inkbook-menu-control-icon" });
-  options.renderIcon(icon, CONTROL_ICONS[control.id] ?? "settings-2");
+  addHeadingIcon(heading, options, control.id);
   const title = heading.createSpan({ cls: "inkbook-menu-toggle-label" });
   updateMenuText(options, () => {
     title.textContent = controlLabel(options, control);
   });
-  const description = options.controlDescriptions?.[control.id];
-  const descriptionElement =
-    description === undefined
-      ? undefined
-      : copy.createSpan({ cls: "inkbook-menu-control-description", text: description });
+  const description = options.settingsCopy?.descriptions[control.id];
+  if (description !== undefined) {
+    copy.createSpan({ cls: "inkbook-menu-control-description", text: description });
+  }
   const switchControl = label.createSpan({ cls: "inkbook-menu-switch" });
   const input = switchControl.createEl("input");
   input.type = "checkbox";
@@ -450,10 +471,6 @@ function createToggle(
   input.indeterminate = control.mixed === true;
   input.setAttribute("aria-checked", control.mixed === true ? "mixed" : String(control.checked));
   updateMenuText(options, () => input.setAttribute("aria-label", controlLabel(options, control)));
-  if (descriptionElement !== undefined) {
-    descriptionElement.id = `inkbook-style-description-${++nextControlLabel}`;
-    input.setAttribute("aria-describedby", descriptionElement.id);
-  }
   input.addEventListener("change", () => {
     input.indeterminate = false;
     input.setAttribute("aria-checked", String(input.checked));

@@ -2,25 +2,42 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { Localization } from "../../../../src/domain/localization";
+import { IMPORT_EXAMPLE_IMAGES } from "../../../../src/obsidian/settings/import/import-example-images";
+import { acquireImportExamples } from "../../../../src/obsidian/settings/import/import-example-loader";
+import type { ImportExampleId } from "../../../../src/obsidian/settings/import/import-example-images";
 import { renderImportExamples } from "../../../../src/obsidian/settings/import/import-examples";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { assertAccessibleSemantics } from "../../../fixtures/accessibility";
 
 const disposers: Array<() => void> = [];
+const loader = vi.mocked(acquireImportExamples);
+const captures = { IMPORT_EXAMPLE_IMAGES };
 
-beforeEach(installObsidianDomHelpers);
+vi.mock("../../../../src/obsidian/settings/import/import-example-loader", () => ({
+  acquireImportExamples: vi.fn(),
+}));
+
+beforeEach(() => {
+  installObsidianDomHelpers();
+  loader.mockReset();
+  loader.mockImplementation(() => ({
+    module: Promise.resolve(captures),
+    release: () => undefined,
+  }));
+});
 afterEach(() => {
   for (const dispose of disposers.splice(0)) dispose();
   document.body.replaceChildren();
 });
 
-async function gallery(motion: "full" | "reduced" = "reduced") {
+function createGallery(motion: "full" | "reduced", initial?: ImportExampleId) {
   const container = document.body.createDiv();
   container.dataset.inkbookMotion = motion;
   const subscriptions = new Set<() => void>();
   renderImportExamples(
     container,
     {
+      compactLayout: window.matchMedia("not all"),
       localization: new Localization(),
       mutate: (update) => update(),
       readMotion: () => (container.dataset.inkbookMotion === "full" ? "full" : "reduced"),
@@ -30,10 +47,7 @@ async function gallery(motion: "full" | "reduced" = "reduced") {
       },
       own: (dispose) => disposers.push(dispose),
     },
-    "diagram",
-  );
-  await vi.waitFor(() =>
-    expect(container.querySelector("img")?.alt).toContain("handwritten boxes"),
+    initial,
   );
   return {
     container,
@@ -42,9 +56,44 @@ async function gallery(motion: "full" | "reduced" = "reduced") {
       ...container.querySelectorAll<HTMLButtonElement>(".inkbook-import-example-choices button"),
     ],
     status: container.querySelector<HTMLElement>('[role="status"]')!,
-    images: [...container.querySelectorAll("img")],
   };
 }
+
+async function gallery(motion: "full" | "reduced" = "reduced") {
+  const setup = createGallery(motion, "diagram");
+  await vi.waitFor(() =>
+    expect(setup.container.querySelector("img")?.alt).toContain("handwritten boxes"),
+  );
+  return { ...setup, images: [...setup.container.querySelectorAll("img")] };
+}
+
+it("prepares captures on intent and retries a failed first opening without losing focus", async () => {
+  let fail = (_error: Error): void => undefined;
+  const module = new Promise<typeof captures>((_, reject) => {
+    fail = reject;
+  });
+  const release = vi.fn();
+  loader.mockReturnValueOnce({ module, release });
+  const { container, choices, status } = createGallery("reduced");
+  const choice = choices[0]!;
+  expect(loader).not.toHaveBeenCalled();
+  choice.focus();
+  choice.dispatchEvent(new PointerEvent("pointerenter"));
+  expect(loader).toHaveBeenCalledExactlyOnceWith(window);
+  expect(container.querySelector("img")).toBeNull();
+  choice.click();
+  expect(status.textContent).toContain("Loading example");
+  expect(loader).toHaveBeenCalledTimes(1);
+  fail(new Error("Module load failed"));
+  await vi.waitFor(() => expect(status.textContent).toContain("could not be loaded"));
+  expect(release).toHaveBeenCalledOnce();
+  choice.click();
+  await vi.waitFor(() =>
+    expect(container.querySelector("img")?.alt).toContain("handwritten boxes"),
+  );
+  expect(loader).toHaveBeenCalledTimes(2);
+  expect(document.activeElement).toBe(choice);
+});
 
 it("shows an accessible offline comparison clearly distinguished from the user's files", async () => {
   const { container, choices, images, status } = await gallery();
@@ -110,4 +159,20 @@ it("releases preference subscriptions and prevents detached controls from changi
   choices[3]!.click();
   expect(choices[3]!.getAttribute("aria-pressed")).toBe("false");
   expect(images.map((image) => image.src)).toEqual(initialSources);
+});
+
+it("releases pending captures on detach and ignores their late completion", async () => {
+  let resolve = (_value: typeof captures): void => undefined;
+  const module = new Promise<typeof captures>((accept) => {
+    resolve = accept;
+  });
+  const release = vi.fn();
+  loader.mockReturnValueOnce({ module, release });
+  const { container } = createGallery("reduced", "diagram");
+  for (const dispose of disposers.splice(0)) dispose();
+  container.remove();
+  expect(release).toHaveBeenCalledOnce();
+  resolve(captures);
+  await module;
+  expect(container.querySelector("img")?.hasAttribute("src")).toBe(false);
 });

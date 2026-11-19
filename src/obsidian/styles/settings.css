@@ -104,7 +104,7 @@
 }
 
 .inkbook-settings-tool-controls .inkbook-menu-controls {
-  --inkbook-settings-width-choice-min: 44px;
+  --inkbook-menu-choice-size: var(--inkbook-menu-field-height, 36px);
 
   gap: var(--size-4-4);
 }
@@ -140,26 +140,52 @@
 }
 
 .inkbook-settings-tool-controls .inkbook-menu-choice {
-  min-block-size: 40px;
-  min-inline-size: 40px;
+  min-block-size: var(--inkbook-menu-field-height, 40px);
+  min-inline-size: var(--inkbook-menu-field-height, 40px);
 }
 
 .inkbook-settings-tool-controls .inkbook-menu-color-grid {
-  grid-template-columns: repeat(5, minmax(40px, 1fr));
+  --inkbook-settings-grid-minimum: var(--inkbook-menu-field-height, 40px);
 }
 
 .inkbook-settings-tool-controls .inkbook-menu-width-grid {
-  grid-template-columns: repeat(5, minmax(var(--inkbook-settings-width-choice-min), 1fr));
+  --inkbook-settings-grid-minimum: 44px;
+}
+
+.inkbook-settings-tool-controls :is(.inkbook-menu-color-grid, .inkbook-menu-width-grid) {
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(max(var(--inkbook-settings-grid-minimum), calc((100% - 4 * var(--size-4-1)) / 5)), 1fr)
+  );
 }
 
 .inkbook-settings-tool-controls .inkbook-menu-slider-row,
 .inkbook-settings-inline-controls .inkbook-menu-slider-row {
-  grid-template-columns: minmax(160px, 1fr) 72px;
+  grid-template-columns:
+    minmax(var(--inkbook-settings-slider-width, 160px), 1fr)
+    var(--inkbook-settings-value-field-width, 72px);
 }
 
 .inkbook-settings-tool-controls .inkbook-menu-value-field,
 .inkbook-settings-inline-controls .inkbook-menu-value-field {
-  inline-size: 72px;
+  inline-size: var(--inkbook-settings-value-field-width, 72px);
+}
+
+:is(
+  .inkbook-settings-tool-controls,
+  .inkbook-settings-inline-controls,
+  .inkbook-settings-background-content
+) {
+  --inkbook-menu-field-height: var(--inkbook-settings-touch-size);
+  --inkbook-menu-range-padding: calc((var(--inkbook-settings-touch-size) - 6px) / 2);
+}
+
+:is(
+  .inkbook-settings-tool-controls,
+  .inkbook-settings-inline-controls,
+  .inkbook-settings-background-content
+):where(.is-mobile *) {
+  --inkbook-settings-touch-size: 44px;
 }
 
 .inkbook-settings-validation-surface {
@@ -302,32 +328,13 @@
 }
 
 @media (width <= 600px) {
-  .inkbook-settings-tool-controls .inkbook-menu-value-field,
-  .inkbook-settings-inline-controls .inkbook-menu-value-field,
-  .inkbook-settings-tool-controls .inkbook-menu-slider,
-  .inkbook-settings-inline-controls .inkbook-menu-slider {
-    min-block-size: 44px;
-  }
-
-  .inkbook-settings-tool-controls .inkbook-menu-slider,
-  .inkbook-settings-inline-controls .inkbook-menu-slider {
-    background-clip: content-box;
-    box-sizing: border-box;
-    padding-block: 20px;
-  }
-
-  .inkbook-settings-tool-controls .inkbook-menu-choice,
-  .inkbook-settings-tool-controls .inkbook-menu-stepper-button {
-    min-block-size: 44px;
-    min-inline-size: 44px;
-  }
-
-  .inkbook-settings-tool-controls .inkbook-menu-color-grid {
-    grid-template-columns: repeat(5, minmax(44px, 1fr));
-  }
-
-  .inkbook-settings-tool-controls .inkbook-menu-slider-row,
-  .inkbook-settings-inline-controls .inkbook-menu-slider-row {
-    grid-template-columns: minmax(100px, 1fr) 68px;
+  :is(
+    .inkbook-settings-tool-controls,
+    .inkbook-settings-inline-controls,
+    .inkbook-settings-background-content
+  ) {
+    --inkbook-settings-touch-size: 44px;
+    --inkbook-settings-slider-width: 100px;
+    --inkbook-settings-value-field-width: 68px;
   }
 }

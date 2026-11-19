@@ -259,26 +259,24 @@
   scrollbar-width: none;
 }
 
-@media (width <= 480px) {
-  .inkbook-import-dialog.inkbook-settings-modal {
-    --inkbook-import-inline-inset: var(--size-4-4);
-  }
+.inkbook-import-dialog.inkbook-settings-modal:where(.inkbook-import-dialog-compact) {
+  --inkbook-import-inline-inset: var(--size-4-4);
+}
 
-  .inkbook-import-body .setting-item {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: var(--size-4-2);
-  }
+:where(.inkbook-import-dialog-compact) .inkbook-import-body .setting-item {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
 
-  .inkbook-import-body .setting-item-control {
-    align-self: flex-end;
-  }
+:where(.inkbook-import-dialog-compact) .inkbook-import-body .setting-item-control {
+  align-self: flex-end;
+}
 
-  .inkbook-import-actions > .mod-cta {
-    flex: 1;
-  }
+:where(.inkbook-import-dialog-compact) .inkbook-import-actions > .mod-cta {
+  flex: 1;
+}
 
-  .inkbook-import-action-summary {
-    flex-basis: 100%;
-  }
+:where(.inkbook-import-dialog-compact) .inkbook-import-action-summary {
+  flex-basis: 100%;
 }

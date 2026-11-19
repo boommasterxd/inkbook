@@ -384,7 +384,12 @@ it("bounds real cold-window intersections between yields and stops on cancellati
   const intersect = vi.spyOn(pressureIntersections, "intersectPressureBoundaries");
   try {
     const cancelled = pressurePaintAdditionSteps(centers, 8);
-    while (intersect.mock.calls.length === 0) cancelled.next();
+    for (let steps = 0; intersect.mock.calls.length === 0; steps += 1) {
+      expect(steps, "Pressure preparation never reached an intersection").toBeLessThan(
+        centers.length ** 2,
+      );
+      expect(cancelled.next().done, "Pressure preparation finished before suspension").toBe(false);
+    }
     cancelled.return(undefined);
     const before = intersect.mock.calls.length;
     expect(cancelled.next().done).toBe(true);

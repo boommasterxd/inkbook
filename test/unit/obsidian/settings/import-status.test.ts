@@ -24,6 +24,7 @@ function fixture(initial: MotionPreference) {
   let hidden = false;
   vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
   const operation = renderImportStatus(container, "Scanning vault…", "scan", {
+    compactLayout: window.matchMedia("not all"),
     localization: new Localization(),
     mutate: (update) => update(),
     readMotion: () => preference,

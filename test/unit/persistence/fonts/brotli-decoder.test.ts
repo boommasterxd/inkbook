@@ -3,12 +3,26 @@ import initialize, { DecompressStream, BrotliStreamResult } from "brotli-dec-was
 import wasmSource from "brotli-dec-wasm/web/bg.wasm?url&inline";
 import { afterEach, expect, it, vi } from "vitest";
 import { decodeBrotliFont } from "../../../../src/persistence/fonts/brotli-decoder";
-import { decodeFontResource } from "../../../../src/persistence/fonts/font-resources";
+import { decodePackagedFontBinary } from "../../../../src/persistence/fonts/packaged-font-binary";
 import { FONT_LIMITS } from "../../../../src/persistence/fonts/font-container";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 
 afterEach(() => vi.restoreAllMocks());
 const scheduler = new TestWorkScheduler();
+
+vi.mock(import("brotli-dec-wasm/web/bg.wasm?url&inline"), async (importAsset) => {
+  const { Platform } = await import("obsidian");
+  if (Platform.isDesktop) {
+    const { default: source } = await importAsset();
+    const { gzipSync } = await import("node:zlib");
+    const { Buffer } = await import("node:buffer");
+    const bytes = Buffer.from(source.slice(source.indexOf(",") + 1), "base64");
+    return {
+      default: `data:application/gzip;length=${bytes.length};base64,${gzipSync(bytes).toString("base64")}`,
+    };
+  }
+  throw new Error("Compression fixtures require the desktop test runtime.");
+});
 
 async function compressedFixture(bytes: number): Promise<Uint8Array<ArrayBuffer>> {
   if (Platform.isDesktop) {
@@ -21,6 +35,40 @@ async function compressedFixture(bytes: number): Promise<Uint8Array<ArrayBuffer>
   }
   throw new Error("Compression fixtures require the desktop test runtime.");
 }
+
+it("shares a pending Brotli initialization and retries after a scheduler rejection", async () => {
+  const expectedBytes = 4096;
+  const compressed = await compressedFixture(expectedBytes);
+  const failure = new Error("First scheduler stopped");
+  let stop = (_reason: Error): void => undefined;
+  const held = new Promise<void>((_, reject) => {
+    stop = reject;
+  });
+  const checkpoint = vi.fn(() => held);
+  const blocked = new TestWorkScheduler({ checkpoint });
+  const receive = vi.fn();
+  const fetch = vi.spyOn(globalThis, "fetch");
+  const first = decodeBrotliFont(compressed, expectedBytes, { scheduler: blocked, receive });
+  const joined = decodeBrotliFont(compressed, expectedBytes, { scheduler, receive });
+  const failures = Promise.allSettled([first, joined]);
+  expect(checkpoint).toHaveBeenCalledOnce();
+  stop(failure);
+  expect(await failures).toEqual([
+    { status: "rejected", reason: failure },
+    { status: "rejected", reason: failure },
+  ]);
+  expect(receive).not.toHaveBeenCalled();
+
+  let recoveredBytes = 0;
+  await decodeBrotliFont(compressed, expectedBytes, {
+    scheduler,
+    receive: (bytes) => {
+      recoveredBytes += bytes.length;
+    },
+  });
+  expect(recoveredBytes).toBe(expectedBytes);
+  expect(fetch).not.toHaveBeenCalled();
+});
 
 it("bounds capacity output, native calls and retained decoder memory and frees native resources", async () => {
   const compressed = await compressedFixture(FONT_LIMITS.decodedBytes);
@@ -48,11 +96,8 @@ it("bounds capacity output, native calls and retained decoder memory and frees n
   );
   expect(resultFree).toHaveBeenCalledTimes(calls.mock.calls.length);
   expect(free).toHaveBeenCalledOnce();
-  const data = wasmSource.startsWith("data:")
-    ? wasmSource.slice(wasmSource.indexOf(",") + 1)
-    : wasmSource;
   const runtime = await initialize({
-    module_or_path: await decodeFontResource({ data }, scheduler),
+    module_or_path: await decodePackagedFontBinary(wasmSource, scheduler),
   });
   expect(runtime.memory.buffer.byteLength).toBeLessThanOrEqual(64 * 1024 * 1024);
   const retainedBytes = runtime.memory.buffer.byteLength;

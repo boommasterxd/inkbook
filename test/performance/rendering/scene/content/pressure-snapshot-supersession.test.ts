@@ -30,7 +30,12 @@ describe("pressure snapshot supersession work", () => {
       },
     });
     preview.set(request(1));
-    while (windows.mock.calls.length === 0) writeNext(preview);
+    for (let frames = 0; windows.mock.calls.length === 0; frames += 1) {
+      expect(frames, "Preview never prepared its first pressure window").toBeLessThan(
+        element.points.length,
+      );
+      expect(writeNext(preview), "Preview finished before preparing a pressure window").toBe(true);
+    }
     expect(preview.memoryUsage()).toBeGreaterThanOrEqual(
       pressureWindows.PRESSURE_WINDOW_SCRATCH_BYTES,
     );

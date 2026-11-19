@@ -79,10 +79,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     embedActions: ObsidianEmbedActions,
     host: WorkspaceRuntimeHost,
   ) {
-    const trustedHeads =
-      host.deviceStorage === undefined
-        ? undefined
-        : new trustedHeadStorage.TrustedDocumentHeadLedger(host.deviceStorage);
     this.#host = host;
     this.documentStatus = new WorkspaceDocumentStatus(host.resolveDocumentStatusPane);
     this.#embedActions = embedActions;
@@ -98,6 +94,13 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       this.refreshRateProfiles.isWindowAvailable(ownerWindow),
     );
     this.refreshRateProfiles.observeDefault(this.#fallbackOwnerWindow());
+    const trustedHeads =
+      host.deviceStorage === undefined
+        ? undefined
+        : new trustedHeadStorage.TrustedDocumentHeadLedger(host.deviceStorage, () =>
+            this.refreshRateProfiles.workScheduler(null).checkpoint(undefined, "background"),
+          );
+    void trustedHeads?.ready();
     this.#lifecycle = new WorkspaceRuntimeLifecycle({
       activate: (attachment, attempt) => this.#activate(attachment, attempt),
       autoActivationCancelled: (key) => resumeInitialWorkspacePreview(this.#mounted.get(key)),

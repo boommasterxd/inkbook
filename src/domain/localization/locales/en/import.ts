@@ -34,13 +34,12 @@ export const inkImport = {
   "import.finishedStatus": "Operation finished. Review the result and any conflicts.",
   "import.stop": "Stop",
   "import.stoppingStatus": "Stopping after the current safe step…",
-  "import.entryHeading": "Import your handwriting",
-  "import.entrySummary": "Find supported handwriting without changing your files.",
+  "import.entrySummary":
+    "Find handwriting embedded in your notes. Scanning your vault leaves your files unchanged.",
   "import.entryHelp": "Examples and steps",
-  "import.entryHelpDescription": "Compare the appearance and learn how the import works.",
-  "import.controlTitle": "You stay in control",
+  "import.entryHelpDescription": "See how handwriting may change during conversion.",
   "import.controlDescription":
-    "Original files are kept, drawing canvases stay untouched, and you can undo the import later.",
+    "Original files and drawing canvases stay unchanged. Restore original embeds from the import history.",
   "import.previewGuidance":
     "Choose what to include in the file list below. Review any differences or warnings before importing.",
   "import.scanLimit": "Scan limit reached",
@@ -76,6 +75,7 @@ export const inkImport = {
   "import.historyLoading": "Loading import history…",
   "import.historyFailure":
     "Import history could not be loaded. Close any running import and try again.",
+  "import.historyOpenFailure": "This import could not be opened. Try again.",
   "import.retry": "Try again",
   "import.differences": "Appearance differences",
   "import.warnings": "Warnings",
@@ -85,9 +85,10 @@ export const inkImport = {
   "import.stepFind": "Find handwriting",
   "import.stepReview": "Review the results",
   "import.stepSwitch": "Switch the embeds",
-  "import.journeyFind": "Find your handwriting",
+  "import.journey": "How the import works",
+  "import.journeyFind": "Scan the vault",
   "import.journeyFindDescription":
-    "We look for supported Obsidian Ink handwriting linked from your notes. Scanning changes no files.",
+    "Find supported Obsidian Ink handwriting linked from your notes.",
   "import.journeyReviewDescription":
     "Check the files we found and anything that may look different.",
   "import.journeySwitchDescription":

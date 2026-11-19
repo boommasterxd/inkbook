@@ -25,6 +25,7 @@ import {
 import { renderImportStatus, type PendingImportOperation } from "./import-status";
 import { renderImportFailure } from "./import-failure";
 import type { ImportViewState } from "./import-findings";
+import { mountImportDialogLayout } from "./import-dialog-layout";
 import { finishImportNoteHandoff, openImportNote } from "./open-import-note";
 
 export interface InkImportDialogOptions {
@@ -51,7 +52,9 @@ export class InkImportDialog extends InkbookModal {
   #body!: HTMLElement;
   #status!: HTMLElement;
   #actions!: HTMLElement;
+  #compactLayout!: MediaQueryList;
   #feedback: ReturnType<typeof registerNativeControlFeedback> | undefined;
+  #updatingPage = false;
   #viewMotion: (() => void) | undefined;
   #releaseMotion: (() => void) | undefined;
   #returnFocus: HTMLElement | undefined;
@@ -90,10 +93,7 @@ export class InkImportDialog extends InkbookModal {
   public override onOpen(): void {
     super.onOpen();
     this.setTitle(this.#options.localization.t("import.title"));
-    this.containerEl.classList.add("inkbook-import-container");
-    this.modalEl.classList.remove("inkbook-action-dialog");
-    this.modalEl.classList.add("inkbook-settings-modal", "inkbook-import-dialog");
-    this.contentEl.classList.add("inkbook-import-content");
+    this.#compactLayout = mountImportDialogLayout(this, this.#lifetime.signal);
     const active = this.contentEl.ownerDocument.activeElement;
     if (active !== null && "focus" in active) this.#returnFocus = active as HTMLElement;
     this.#status = this.contentEl.createDiv({
@@ -118,6 +118,7 @@ export class InkImportDialog extends InkbookModal {
     );
     if (this.#options.initialJournal === undefined) this.#entry();
     else this.#journal(this.#options.initialJournal);
+    this.#feedback = registerNativeControlFeedback(this.contentEl, this.#options);
     const releaseLanguage = bindElementLanguage(this.modalEl, this.#options.localization);
     const unsubscribe = this.#options.localization.subscribe(this.#refreshLanguage);
     this.#releaseLocalization = () => {
@@ -142,6 +143,7 @@ export class InkImportDialog extends InkbookModal {
     this.#lifetime.abort();
     this.#disposeView();
     this.#feedback?.();
+    this.#feedback = undefined;
     this.#finishViewMotion();
     this.#releaseMotion?.();
     this.#releaseLocalization?.();
@@ -169,6 +171,7 @@ export class InkImportDialog extends InkbookModal {
 
   #context(): ImportViewContext {
     return {
+      compactLayout: this.#compactLayout,
       localization: this.#options.localization,
       state: this.#viewState,
       mutate: this.#mutatePage,
@@ -188,14 +191,15 @@ export class InkImportDialog extends InkbookModal {
     return button;
   }
 
-  #refreshFeedback(): void {
-    this.#feedback?.();
-    this.#feedback = registerNativeControlFeedback(this.contentEl, this.#options);
-  }
-
   #mutatePage = (update: () => void): void => {
-    update();
-    this.#refreshFeedback();
+    if (this.#updatingPage) return update();
+    this.#updatingPage = true;
+    try {
+      update();
+      this.#feedback?.refresh();
+    } finally {
+      this.#updatingPage = false;
+    }
   };
 
   #entry(): void {
@@ -475,10 +479,7 @@ export class InkImportDialog extends InkbookModal {
       this.#operation = undefined;
       this.#notifyClosed();
       this.#body.removeAttribute("aria-busy");
-      if (!this.closed && !this.closing) {
-        this.#refreshFeedback();
-        this.#focusHeading();
-      }
+      if (!this.closed && !this.closing) this.#focusHeading();
     }
   }
 

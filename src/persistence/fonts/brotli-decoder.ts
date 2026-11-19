@@ -1,21 +1,25 @@
 import initialize, { DecompressStream, type InitOutput } from "brotli-dec-wasm/web";
 import source from "brotli-dec-wasm/web/bg.wasm?url&inline";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
-import { decodeFontResource } from "./font-resources";
 import { FONT_LIMITS, invalidFont } from "./font-container";
 import { boundBrotliWasmMemory } from "./bounded-wasm-memory";
+import { decodePackagedFontBinary } from "./packaged-font-binary";
 
 const CHUNK_BYTES = 4096;
 const MAX_DECODER_MEMORY = 64 * 1024 * 1024;
 let initialization: Promise<InitOutput> | undefined;
 
-async function decoder(scheduler: WorkScheduler): Promise<InitOutput> {
-  initialization ??= (async () => {
-    const data = source.startsWith("data:") ? source.slice(source.indexOf(",") + 1) : source;
-    const bytes = await decodeFontResource({ data }, scheduler);
+function decoder(scheduler: WorkScheduler): Promise<InitOutput> {
+  if (initialization !== undefined) return initialization;
+  const pending = (async () => {
+    const bytes = await decodePackagedFontBinary(source, scheduler);
     return initialize({ module_or_path: boundBrotliWasmMemory(bytes) });
   })();
-  return initialization;
+  initialization = pending;
+  void pending.catch(() => {
+    if (initialization === pending) initialization = undefined;
+  });
+  return pending;
 }
 
 /** RFC 7932 reserves this prefix; its extension can request a 1-GiB history window. */

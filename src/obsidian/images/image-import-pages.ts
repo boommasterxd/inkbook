@@ -66,12 +66,12 @@ export class ImageImportPages {
     this.navigation = preview.createDiv({ cls: "inkbook-image-import-preview-navigation" });
     const row = this.navigation.createDiv({ cls: "inkbook-image-import-page-controls" });
     this.#previous = this.#button(row, "chevron-left", t("images.previousPage"), -1);
-    const pageLabel = row.createEl("label");
-    pageLabel.createSpan({ text: t("images.pageLabel") });
-    this.#page = pageLabel.createEl("input", { type: "number" });
+    const value = row.createSpan({ cls: "inkbook-image-import-page-value" });
+    this.#page = value.createEl("input", { type: "number", attr: { inputmode: "numeric" } });
     this.#page.min = "1";
     this.#page.setAttribute("aria-label", t("images.previewPage"));
-    this.#total = pageLabel.createSpan();
+    value.createSpan({ text: "/", attr: { "aria-hidden": "true" } });
+    this.#total = value.createSpan();
     this.#next = this.#button(row, "chevron-right", t("images.nextPage"), 1);
     this.#pageError = this.#error(this.navigation, this.#page);
     this.#listen(this.#range, "input", () => this.#readSelection(false));
@@ -106,9 +106,8 @@ export class ImageImportPages {
     this.#validPage = true;
     this.element.hidden = pageCount === undefined || pageCount === 1;
     this.navigation.hidden = this.element.hidden;
-    this.#total.textContent = this.options.localization.t("images.pageTotal", {
-      count: pageCount ?? 1,
-    });
+    this.#total.textContent = this.options.localization.number(pageCount ?? 1);
+    this.#page.style.setProperty("--inkbook-page-digits", `${this.#page.max.length}ch`);
     this.#showError(this.#range, this.#rangeError, "");
     this.#showError(this.#page, this.#pageError, "");
     this.#updateNavigation();

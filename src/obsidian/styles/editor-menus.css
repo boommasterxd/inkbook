@@ -1,4 +1,6 @@
 .inkbook-menu-controls {
+  --inkbook-menu-choice-size: 36px;
+
   box-sizing: border-box;
   color: var(--text-normal);
   display: grid;
@@ -71,7 +73,7 @@
 .inkbook-menu-choice-grid {
   display: grid;
   gap: var(--size-4-1);
-  grid-template-columns: repeat(auto-fit, minmax(36px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(var(--inkbook-menu-choice-size), 1fr));
 }
 
 .inkbook-menu-toggle-button-grid {
@@ -87,12 +89,12 @@
 }
 
 .inkbook-menu-color-grid {
-  grid-template-columns: repeat(5, 36px);
+  grid-template-columns: repeat(5, var(--inkbook-menu-choice-size));
   justify-content: space-between;
 }
 
 .inkbook-menu-width-grid {
-  grid-template-columns: repeat(5, minmax(36px, 1fr));
+  grid-template-columns: repeat(5, minmax(var(--inkbook-menu-choice-size), 1fr));
 }
 
 .inkbook-menu-selection-area-grid,
@@ -121,8 +123,8 @@
   );
   --inkbook-menu-choice-selected-border: color-mix(
     in srgb,
-    var(--interactive-accent) 74%,
-    transparent
+    var(--interactive-accent) 75%,
+    var(--text-normal)
   );
 }
 
@@ -140,14 +142,13 @@
   gap: var(--size-4-1);
   justify-content: center;
   margin: 0;
-  min-block-size: 36px;
-  min-inline-size: 36px;
+  min-block-size: var(--inkbook-menu-choice-size);
+  min-inline-size: var(--inkbook-menu-choice-size);
   padding: var(--size-4-1) var(--size-4-2);
 }
 
 .inkbook-menu-color-grid .inkbook-menu-empty-color-choice {
   grid-column: 1 / -1;
-  justify-content: flex-start;
 }
 
 .inkbook-menu-choice-palette [role="option"][aria-selected="true"],
@@ -220,13 +221,17 @@
 
 .inkbook-menu-slider {
   accent-color: var(--interactive-accent);
+  background-clip: content-box;
   block-size: 28px;
+  box-sizing: border-box;
   margin: 0;
+  min-block-size: var(--inkbook-menu-field-height, 0);
   min-inline-size: 0;
 }
 
 .inkbook-menu-slider-row > .inkbook-menu-slider {
   inline-size: 100%;
+  padding-block: var(--inkbook-menu-range-padding, 0);
 }
 
 .inkbook-menu-value-field {
@@ -239,6 +244,7 @@
   display: flex;
   inline-size: 64px;
   justify-content: center;
+  min-block-size: var(--inkbook-menu-field-height, 0);
   padding-inline: 7px;
 }
 
@@ -294,7 +300,7 @@
   align-items: center;
   display: grid;
   gap: var(--size-4-2);
-  grid-template-columns: 36px 1fr 36px;
+  grid-template-columns: var(--inkbook-menu-choice-size) 1fr var(--inkbook-menu-choice-size);
 }
 
 .inkbook-menu-stepper-button svg {
@@ -307,6 +313,7 @@
   cursor: pointer;
   display: inline-flex;
   min-block-size: 32px;
+  position: relative;
 }
 
 .inkbook-menu-toggle-row {
@@ -314,7 +321,7 @@
   cursor: pointer;
   display: flex;
   justify-content: space-between;
-  min-block-size: 36px;
+  min-block-size: var(--inkbook-menu-choice-size);
 }
 
 .inkbook-menu-toggle-heading {
@@ -423,7 +430,7 @@
 
 @media (width <= 420px) {
   .inkbook-menu-color-grid {
-    grid-template-columns: repeat(5, minmax(40px, 1fr));
+    grid-template-columns: repeat(5, minmax(var(--inkbook-menu-choice-size), 1fr));
   }
 }
 
@@ -441,16 +448,15 @@
   padding: var(--size-4-3) var(--size-4-4);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-controls .inkbook-menu-choice,
-.inkbook-adaptive-panel-layer[data-platform="phone"]
-  .inkbook-menu-controls
-  .inkbook-menu-stepper-button {
-  min-block-size: 44px;
-  min-inline-size: 44px;
+.inkbook-adaptive-panel-layer[data-mobile="true"][data-kind="style"] .inkbook-menu-controls {
+  --inkbook-menu-choice-size: 44px;
+  --inkbook-menu-field-height: 44px;
+  --inkbook-menu-range-padding: 19px;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-toggle-row {
-  min-block-size: 44px;
+.inkbook-adaptive-panel-layer[data-platform="phone"][data-kind="style"] [data-control="opacity"] {
+  --inkbook-menu-field-height: initial;
+  --inkbook-menu-range-padding: initial;
 }
 
 .inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-control {
@@ -468,20 +474,14 @@
 }
 
 .inkbook-adaptive-panel-layer[data-platform="wide"]
-  .inkbook-adaptive-panel[data-kind="style"]
-  .inkbook-menu-choice,
-.inkbook-adaptive-panel-layer[data-platform="wide"]
-  .inkbook-adaptive-panel[data-kind="style"]
-  .inkbook-menu-stepper-button {
-  block-size: 36px;
+  [data-kind="style"]
+  :is(.inkbook-menu-choice, .inkbook-menu-stepper-button) {
+  block-size: var(--inkbook-menu-choice-size);
   inline-size: 100%;
-  min-block-size: 36px;
-  min-inline-size: 36px;
-  padding: var(--size-4-1) var(--size-4-2);
 }
 
 .inkbook-adaptive-panel-layer[data-platform="wide"] [data-kind="style"] .inkbook-menu-width-grid {
-  grid-template-columns: repeat(5, 36px);
+  grid-template-columns: repeat(5, var(--inkbook-menu-choice-size));
   justify-content: space-between;
 }
 

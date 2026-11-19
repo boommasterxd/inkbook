@@ -13,7 +13,7 @@ interface Entry {
 
 /** Session-owned compact samples, reused only for immutable current-model identities. */
 export class StrokeSampleEncodingCache {
-  readonly #entries = new Map<string, Entry>();
+  #entries = new Map<string, Entry>();
   #bytes = 0;
   #builds = 0;
   #hits = 0;
@@ -100,11 +100,32 @@ export class StrokeSampleEncodingCache {
   }
 
   public reconcileElements(active: ReadonlyMap<string, InkElementV1>): void {
+    this.reconcileElementsSteps(active, Infinity).next();
+  }
+
+  /** Only a private candidate may be pruned across checkpoints before model publication. */
+  public *reconcileElementsSteps(
+    active: ReadonlyMap<string, InkElementV1>,
+    nodesPerStep = 256,
+  ): Generator<void> {
+    let visited = 0;
     for (const [id, entry] of this.#entries) {
       const element = active.get(id);
       if (entry.retired || element?.kind !== "stroke" || element.points !== entry.points)
         this.remove(id);
+      if (++visited % nodesPerStep === 0) yield;
     }
+  }
+
+  /** Move the reconciled parser map into the current model without duplicating its entries. */
+  public adoptStaged(source: StrokeSampleEncodingCache): void {
+    const previous = this.#entries;
+    this.#entries = source.#entries;
+    this.#bytes = source.#bytes;
+    this.#builds = source.#builds;
+    this.#hits = source.#hits;
+    source.#entries = previous;
+    source.clear();
   }
 
   public reconcileElement(element: InkElementV1): void {

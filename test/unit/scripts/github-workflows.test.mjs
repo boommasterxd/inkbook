@@ -32,6 +32,20 @@ it.each(["ci", "gitleaks"])("limits %s PR triggers to main while retaining manua
   expect(triggers).toBe("  pull_request:\n    branches: [main]\n  workflow_dispatch:\n");
 });
 
+it("allows gitleaks updates only from the trusted main revision", () => {
+  const update = jobSection(readWorkflow("update-gitleaks"), "update");
+  const condition = foldedCondition(update);
+  const github = { ref: "refs/heads/main", event: { repository: { default_branch: "main" } } };
+
+  expect(workflowCondition(condition, { github })).toBe(true);
+  expect(workflowCondition(condition, { github: { ...github, ref: "refs/heads/feature" } })).toBe(
+    false,
+  );
+  github.event.repository.default_branch = "release";
+  expect(workflowCondition(condition, { github })).toBe(false);
+  expect(update).toMatch(/^ {10}ref: \$\{\{ github\.sha \}\}$/m);
+});
+
 it("bounds the complete release pipeline to at most twenty minutes", () => {
   const release = jobSection(readWorkflow("release"), "release");
   const timeout = release.match(/^ {4}timeout-minutes: (\d+)$/m);
