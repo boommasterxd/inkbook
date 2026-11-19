@@ -62,8 +62,8 @@
 }
 
 .inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-figure {
-  align-items: stretch;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-preview-navigation {
