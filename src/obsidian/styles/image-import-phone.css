@@ -62,22 +62,45 @@
 }
 
 .inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-figure {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-}
-
-.inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-stage {
-  grid-column: 1 / -1;
+  align-items: stretch;
+  flex-direction: column;
 }
 
 .inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-preview-navigation {
-  margin: 0 var(--size-4-1);
+  align-items: center;
+  margin: var(--size-4-1) var(--size-4-2);
 }
 
 .inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-figure figcaption {
-  justify-content: end;
-  margin: var(--size-4-2) var(--size-4-3) var(--size-4-2) 0;
-  min-inline-size: 0;
+  justify-content: center;
+  margin: 0 var(--size-4-2) var(--size-4-2);
+  text-align: center;
+}
+
+.inkbook-phone-image-review
+  .inkbook-image-import-preview-navigation
+  + figcaption
+  > .inkbook-image-import-preview-metadata {
+  flex-flow: row wrap;
+  justify-content: center;
+}
+
+.inkbook-phone-image-review .inkbook-image-import-preview-metadata > span:last-child {
+  white-space: nowrap;
+}
+
+.inkbook-phone-image-review .inkbook-image-import-page-value {
+  align-items: center;
+  background-color: var(--background-modifier-form-field);
+  border-radius: var(--input-radius);
+  display: inline-flex;
+  gap: var(--size-4-1);
+  min-block-size: 44px;
+  padding-inline-end: var(--size-4-3);
+}
+
+.inkbook-phone-image-review .inkbook-image-import-page-value > input {
+  background: transparent;
 }
 
 .inkbook-phone-image-review .inkbook-image-import-thumbnails-disclosure {
@@ -106,30 +129,6 @@
 
 .inkbook-phone-image-review .inkbook-image-import-thumbnails-panel {
   padding-block-end: var(--size-4-2);
-}
-
-@container (max-width: 330px) {
-  .inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-figure {
-    grid-template-columns: minmax(0, 1fr);
-    justify-items: center;
-  }
-
-  .inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-stage {
-    justify-self: stretch;
-  }
-
-  .inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-figure figcaption {
-    margin: 0 var(--size-4-2) var(--size-4-2);
-    text-align: center;
-  }
-
-  .inkbook-phone-image-review
-    .inkbook-image-import-preview-navigation
-    + figcaption
-    > .inkbook-image-import-preview-metadata {
-    flex-flow: row wrap;
-    justify-content: center;
-  }
 }
 
 .inkbook-phone-image-review .inkbook-image-import-footer .inkbook-dialog-actions {

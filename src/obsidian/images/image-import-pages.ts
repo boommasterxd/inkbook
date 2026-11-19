@@ -66,11 +66,12 @@ export class ImageImportPages {
     this.navigation = preview.createDiv({ cls: "inkbook-image-import-preview-navigation" });
     const row = this.navigation.createDiv({ cls: "inkbook-image-import-page-controls" });
     this.#previous = this.#button(row, "chevron-left", t("images.previousPage"), -1);
-    this.#page = row.createEl("input", { type: "number", attr: { inputmode: "numeric" } });
+    const value = row.createSpan({ cls: "inkbook-image-import-page-value" });
+    this.#page = value.createEl("input", { type: "number", attr: { inputmode: "numeric" } });
     this.#page.min = "1";
     this.#page.setAttribute("aria-label", t("images.previewPage"));
-    row.createSpan({ text: "/", attr: { "aria-hidden": "true" } });
-    this.#total = row.createSpan();
+    value.createSpan({ text: "/", attr: { "aria-hidden": "true" } });
+    this.#total = value.createSpan();
     this.#next = this.#button(row, "chevron-right", t("images.nextPage"), 1);
     this.#pageError = this.#error(this.navigation, this.#page);
     this.#listen(this.#range, "input", () => this.#readSelection(false));

@@ -269,6 +269,10 @@
   gap: var(--size-4-1);
 }
 
+.inkbook-image-import-page-value {
+  display: contents;
+}
+
 .inkbook-image-import-page-controls input {
   appearance: textfield;
   font-variant-numeric: tabular-nums;
