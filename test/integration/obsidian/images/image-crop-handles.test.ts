@@ -7,8 +7,7 @@ import { ImageCropHandles } from "../../../../src/obsidian/images/image-crop-han
 function setup() {
   const root = document.createElement("div");
   const outline = document.createElement("div");
-  const grips = document.createElement("div");
-  root.append(outline, grips);
+  root.append(outline);
   document.body.append(root);
   const draft = new ImageCropDraft(
     { width: 200, height: 100 },
@@ -17,14 +16,13 @@ function setup() {
   const update = vi.fn();
   const handles = new ImageCropHandles({
     outline,
-    grips,
     draft,
     update,
     t: (key) => key,
     sourcePoint: (event) => ({ x: event.clientY * 2, y: -event.clientX * 2 }),
   });
   const button = (edges: string): HTMLButtonElement => {
-    const target = grips.querySelector<HTMLButtonElement>(`[data-edges="${edges}"]`)!;
+    const target = outline.querySelector<HTMLButtonElement>(`[data-edges="${edges}"]`)!;
     target.setPointerCapture = vi.fn();
     target.hasPointerCapture = () => true;
     target.releasePointerCapture = vi.fn();
@@ -119,5 +117,30 @@ it("uses the release position when it differs from the last crop movement", () =
   pointer(handle, "pointerup", 1, 0, 15);
   expect(draft.crop).toEqual({ x: 50, y: 10, width: 130, height: 80 });
   handles.dispose();
+  root.remove();
+});
+
+it("keeps crop touches from starting host swipes and releases that boundary on disposal", () => {
+  const { root, handles, button } = setup();
+  const left = button("left");
+  const hostTouch = vi.fn();
+  const dispatch = (target: HTMLElement, type: string) => {
+    const event = new TouchEvent(type, { bubbles: true, cancelable: true });
+    target.dispatchEvent(event);
+    return event;
+  };
+  for (const type of ["touchstart", "touchmove", "touchend"])
+    root.addEventListener(type, hostTouch);
+  expect(dispatch(left, "touchstart").defaultPrevented).toBe(true);
+  expect(dispatch(left, "touchmove").defaultPrevented).toBe(true);
+  expect(hostTouch).not.toHaveBeenCalled();
+  expect(dispatch(left, "touchend").defaultPrevented).toBe(false);
+  expect(dispatch(root, "touchmove").defaultPrevented).toBe(false);
+  expect(hostTouch).toHaveBeenCalledTimes(2);
+
+  const frame = left.parentElement!;
+  handles.dispose();
+  expect(dispatch(frame, "touchmove").defaultPrevented).toBe(false);
+  expect(hostTouch).toHaveBeenCalledTimes(3);
   root.remove();
 });
