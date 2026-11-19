@@ -9,12 +9,21 @@
   margin: 0;
 }
 
-.inkbook-font-import > h3 {
+.inkbook-font-import-heading {
+  display: grid;
+  gap: var(--size-4-1);
+}
+
+.inkbook-font-import-heading > h3 {
   font-size: var(--font-ui-large);
 }
 
+.inkbook-font-import-progress {
+  font-variant-numeric: tabular-nums;
+}
+
 .inkbook-font-import-name {
-  font-size: var(--font-ui-medium);
+  font-size: var(--font-ui-large);
 }
 
 .inkbook-font-import-field,
@@ -54,12 +63,15 @@
 
 .inkbook-font-import-files > li {
   align-items: center;
-  border-block-end: 1px solid var(--background-modifier-border);
   display: flex;
   gap: var(--size-4-2);
   justify-content: space-between;
   min-block-size: 44px;
   padding-block: var(--size-4-2);
+}
+
+.inkbook-font-import-files > li + li {
+  border-block-start: 1px solid var(--background-modifier-border);
 }
 
 .inkbook-font-import-file-copy > span {
@@ -106,7 +118,13 @@
 
 .inkbook-font-import-dropzone > svg {
   block-size: var(--icon-l);
+  flex-shrink: 0;
   inline-size: var(--icon-l);
+}
+
+.inkbook-font-import-source-copy {
+  display: grid;
+  gap: var(--size-4-1);
 }
 
 .inkbook-font-import-dropzone[data-inkbook-drop-active="true"],
@@ -176,7 +194,7 @@
   grid-template-areas: "specimen";
   min-inline-size: 0;
   overflow-wrap: anywhere;
-  padding: var(--size-4-4);
+  padding: var(--size-4-4) var(--size-4-5);
 }
 
 .inkbook-font-import-specimen > * {
@@ -204,8 +222,8 @@
 }
 
 .inkbook-font-import-glyphs {
-  font-size: clamp(2em, 6vw, 2.75em);
-  line-height: 1.2;
+  font-size: clamp(2em, 6vw, 3em);
+  line-height: 1.15;
   margin-block-end: var(--size-4-2);
 }
 
@@ -225,6 +243,10 @@
 @media (width <= 600px) {
   .inkbook-font-import-footer {
     --inkbook-font-import-footer-inset: var(--size-4-3);
+  }
+
+  .inkbook-font-import-specimen {
+    padding-inline: var(--size-4-3);
   }
 }
 

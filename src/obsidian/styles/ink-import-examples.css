@@ -1,7 +1,18 @@
+.inkbook-import-entry-help {
+  display: grid;
+  gap: var(--size-4-4);
+}
+
 .inkbook-import-examples {
   border-block-start: 1px solid var(--background-modifier-border);
   margin-block: var(--size-4-4);
   padding-block-start: var(--size-4-4);
+}
+
+.inkbook-import-entry-help > .inkbook-import-examples {
+  border-block-start: 0;
+  margin: 0;
+  padding-block-start: 0;
 }
 
 .inkbook-import-examples h4 {
@@ -108,8 +119,55 @@
   min-block-size: 2lh;
 }
 
+.inkbook-import-workflow,
+.inkbook-import-entry-help > .inkbook-import-safety {
+  border-block-start: 1px solid var(--background-modifier-border);
+  padding-block-start: var(--size-4-3);
+}
+
+.inkbook-import-workflow > h4 {
+  font-size: var(--font-ui-small);
+  margin: 0 0 var(--size-4-3);
+}
+
+.inkbook-import-journey {
+  display: grid;
+  gap: var(--size-4-3) var(--size-4-5);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+}
+
+.inkbook-import-journey > li {
+  margin-inline-start: var(--size-4-5);
+}
+
+.inkbook-import-journey li::marker {
+  color: var(--text-muted);
+}
+
+.inkbook-import-journey strong {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.inkbook-import-body .inkbook-import-journey p {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  margin-block: var(--size-4-1) 0;
+}
+
+.inkbook-import-entry-help > .inkbook-import-safety {
+  font-size: var(--font-ui-small);
+  margin: 0;
+}
+
 @media (width <= 480px) {
   .inkbook-import-body .inkbook-import-examples-note {
     min-block-size: 3lh;
+  }
+
+  .inkbook-import-journey {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

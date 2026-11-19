@@ -36,9 +36,9 @@ export function renderImportImpact(container: HTMLElement, localization: Localiz
 }
 
 export function renderImportEntry(container: HTMLElement, context: ImportViewContext): void {
-  renderSummary(container, {
-    heading: context.localization.t("import.entryHeading"),
-    summary: context.localization.t("import.entrySummary"),
+  container.createEl("p", {
+    cls: "inkbook-import-summary inkbook-import-guidance",
+    text: context.localization.t("import.entrySummary"),
   });
   renderImportDisclosure(
     container,
@@ -49,12 +49,12 @@ export function renderImportEntry(container: HTMLElement, context: ImportViewCon
       icon: "info",
       prepare: prepareImportExamples,
       populate: (content, scope) => {
-        renderImportExamples(content, scope.context, "diagram");
-        renderImportIntroduction(content, context.localization);
-        renderNotice(content, {
-          title: context.localization.t("import.controlTitle"),
+        const help = content.createDiv({ cls: "inkbook-import-entry-help" });
+        renderImportExamples(help, scope.context, "diagram");
+        renderImportIntroduction(help, context.localization);
+        help.createEl("p", {
+          cls: "inkbook-import-safety",
           text: context.localization.t("import.controlDescription"),
-          tone: "neutral",
         });
       },
     },

@@ -55,7 +55,8 @@ describe("image import review", () => {
     expect(hint.closest("[hidden]")).toBeNull();
     const preview = document.querySelector<HTMLImageElement>(".inkbook-image-import-preview")!;
     const freePlacement = preview.style.transform;
-    placement.click();
+    hint.click();
+    expect(placement.checked).toBe(true);
     expect(preview.style.transform).toBe("translateX(0%) scale(1)");
     expect(freePlacement).not.toBe(preview.style.transform);
     expect(document.querySelector<HTMLElement>(".inkbook-placement-lock")!.hidden).toBe(false);
@@ -319,7 +320,8 @@ describe("import preview and recovery", () => {
     expect(choose).toHaveBeenCalledOnce();
     selectFile();
     await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
-    const page = document.querySelector<HTMLInputElement>('input[type="number"]')!;
+    const page = document.querySelector<HTMLInputElement>('[aria-label="Preview page"]')!;
+    expect(page.max).toBe("5");
     page.value = "3";
     page.dispatchEvent(new Event("change", { bubbles: true }));
     await vi.waitFor(() =>

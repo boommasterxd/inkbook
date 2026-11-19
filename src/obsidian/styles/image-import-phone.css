@@ -36,15 +36,48 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+.inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-review,
+.inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-preview-column {
+  gap: var(--size-4-4);
+}
+
+.inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-controls {
+  border-block-start: 1px solid var(--background-modifier-border);
+  padding-block-start: var(--size-4-4);
+}
+
 .inkbook-phone-image-review .inkbook-image-import-pdf .inkbook-image-field {
   align-items: center;
-  column-gap: var(--size-4-2);
+  column-gap: var(--size-4-3);
   display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(0, 5fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inkbook-phone-image-review .inkbook-image-import-pdf .inkbook-image-import-pages-hint {
+  margin-block: 0;
 }
 
 .inkbook-phone-image-review .inkbook-image-import-stage {
   block-size: clamp(144px, 20dvh, 200px);
+}
+
+.inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-figure {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+
+.inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-stage {
+  grid-column: 1 / -1;
+}
+
+.inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-preview-navigation {
+  margin: 0 var(--size-4-1);
+}
+
+.inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-figure figcaption {
+  justify-content: end;
+  margin: var(--size-4-2) var(--size-4-3) var(--size-4-2) 0;
+  min-inline-size: 0;
 }
 
 .inkbook-phone-image-review .inkbook-image-import-thumbnails-disclosure {
@@ -53,16 +86,50 @@
   box-shadow: none;
   color: var(--text-normal);
   font: inherit;
-  padding-inline: 0;
+  padding-inline: var(--size-4-3);
   text-align: start;
+}
+
+.inkbook-phone-image-review
+  .inkbook-image-import-thumbnails-disclosure[aria-expanded="true"]
+  > span {
+  transform: rotate(90deg);
 }
 
 .inkbook-phone-image-review .inkbook-image-import-thumbnails-disclosure:focus-visible {
   outline-offset: -2px;
 }
 
-.inkbook-phone-image-review .inkbook-image-import-thumbnails-navigation {
-  margin-inline: auto;
+.inkbook-phone-image-review .inkbook-image-import-thumbnails {
+  border-block: 1px solid var(--background-modifier-border);
+}
+
+.inkbook-phone-image-review .inkbook-image-import-thumbnails-panel {
+  padding-block-end: var(--size-4-2);
+}
+
+@container (max-width: 330px) {
+  .inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-figure {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+  }
+
+  .inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-stage {
+    justify-self: stretch;
+  }
+
+  .inkbook-phone-image-review[data-review="pdf-pages"] .inkbook-image-import-figure figcaption {
+    margin: 0 var(--size-4-2) var(--size-4-2);
+    text-align: center;
+  }
+
+  .inkbook-phone-image-review
+    .inkbook-image-import-preview-navigation
+    + figcaption
+    > .inkbook-image-import-preview-metadata {
+    flex-flow: row wrap;
+    justify-content: center;
+  }
 }
 
 .inkbook-phone-image-review .inkbook-image-import-footer .inkbook-dialog-actions {

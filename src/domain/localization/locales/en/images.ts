@@ -12,8 +12,6 @@ export const images = {
   "images.pagesHint": "Up to 20 pages, depending on resolution.",
   "images.previewHint": "Check the preview against the original.",
   "images.previewPage": "Preview page",
-  "images.pageLabel": "Page",
-  "images.pageTotal": "of {count}",
   "images.previousPage": "Previous page",
   "images.nextPage": "Next page",
   "images.choosePages": "Choose pages",
@@ -31,7 +29,7 @@ export const images = {
   "images.pdfResolutionOption": "{quality} · up to {dpi} dpi",
   "images.imageResolutionOption": "{quality} · up to {megapixels} MP",
   "images.resolutionHint": "Higher resolution uses more memory and allows fewer pages per drawing.",
-  "images.pdfDetails": "{width} × {height} pixels · approx. {dpi} dpi",
+  "images.previewDpi": "approx. {dpi} dpi",
   "images.pdfResolutionLimited":
     "This page was limited to approx. {dpi} dpi to stay within the selected resolution budget.",
   "images.preview": "Image preview",

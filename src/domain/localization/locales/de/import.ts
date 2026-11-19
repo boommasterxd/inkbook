@@ -35,13 +35,12 @@ export const inkImport = {
   "import.finishedStatus": "Vorgang abgeschlossen. Prüfe das Ergebnis und mögliche Konflikte.",
   "import.stop": "Stoppen",
   "import.stoppingStatus": "Wird nach dem aktuellen sicheren Schritt gestoppt…",
-  "import.entryHeading": "Importiere deine Handschrift",
-  "import.entrySummary": "Finde unterstützte Handschrift, ohne deine Dateien zu verändern.",
+  "import.entrySummary":
+    "Durchsuche deinen Vault nach eingebetteter Handschrift. Die Suche verändert keine Dateien.",
   "import.entryHelp": "Beispiele und Ablauf",
-  "import.entryHelpDescription": "Vergleiche die Darstellung und erfahre, wie der Import abläuft.",
-  "import.controlTitle": "Du behältst die Kontrolle",
+  "import.entryHelpDescription": "Sieh, wie sich Handschrift bei der Umwandlung verändern kann.",
   "import.controlDescription":
-    "Originaldateien bleiben erhalten, Zeichenflächen bleiben unverändert und du kannst den Import später rückgängig machen.",
+    "Originaldateien und Zeichenflächen bleiben unverändert. Im Importverlauf kannst du die ursprünglichen Einbettungen wiederherstellen.",
   "import.previewGuidance":
     "Wähle die gewünschten Dateien aus der Liste. Prüfe Unterschiede und Warnungen vor dem Import.",
   "import.scanLimit": "Suchlimit erreicht",
@@ -86,9 +85,10 @@ export const inkImport = {
   "import.stepFind": "Handschrift finden",
   "import.stepReview": "Ergebnisse prüfen",
   "import.stepSwitch": "Einbettungen umstellen",
-  "import.journeyFind": "Deine Handschrift finden",
+  "import.journey": "So läuft der Import ab",
+  "import.journeyFind": "Vault durchsuchen",
   "import.journeyFindDescription":
-    "Wir suchen unterstützte Obsidian-Ink-Handschrift, auf die deine Notizen verweisen. Die Suche ändert keine Dateien.",
+    "Finde unterstützte Obsidian-Ink-Handschrift, auf die deine Notizen verweisen.",
   "import.journeyReviewDescription":
     "Prüfe die gefundenen Dateien und mögliche Darstellungsunterschiede.",
   "import.journeySwitchDescription":

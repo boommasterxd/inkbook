@@ -22,6 +22,7 @@ export interface SettingsControlContentOptions extends NativeControlFeedbackOpti
   readonly fontManagementAction?: FontChoiceDropdownOptions["fontManagementAction"];
   readonly controls: () => readonly StyleControl[];
   readonly descriptions: Readonly<Record<string, string>>;
+  readonly externalCopy?: { readonly headingId: string; readonly descriptionId: string };
   readonly idPrefix: string;
   readonly onChange: (controlId: string, value: boolean | number | string) => Promise<void>;
   readonly ownerDocument: Document;
@@ -56,7 +57,10 @@ export function prepareSettingsControlContent(
     const fragment = createStyleMenuContent({
       workScheduler: options.workScheduler,
       ...(options.t === undefined ? {} : { t: options.t }),
-      controlDescriptions: options.descriptions,
+      settingsCopy: {
+        descriptions: options.descriptions,
+        headingId: options.externalCopy?.headingId,
+      },
       controls,
       fontPreviews: options.fontPreviews,
       fontManagementAction: options.fontManagementAction,
@@ -90,7 +94,12 @@ export function prepareSettingsControlContent(
       },
       renderIcon: (element, icon) => setIcon(element, icon),
     });
-    const errors = installControlAccessibility(fragment, controls, options.idPrefix);
+    const errors = installControlAccessibility(
+      fragment,
+      controls,
+      options.idPrefix,
+      options.externalCopy?.descriptionId,
+    );
     currentErrors = errors;
     releaseFeedback?.();
     container.replaceChildren(fragment);
@@ -122,6 +131,7 @@ function installControlAccessibility(
   fragment: DocumentFragment,
   controls: readonly StyleControl[],
   idPrefix: string,
+  externalDescriptionId?: string,
 ): Map<string, HTMLElement> {
   const errors = new Map<string, HTMLElement>();
   for (const control of controls) {
@@ -136,7 +146,9 @@ function installControlAccessibility(
     error.id = errorId;
     error.hidden = true;
     error.setAttribute("aria-live", "polite");
-    const describedBy = description === null ? errorId : `${descriptionId} ${errorId}`;
+    const describedBy = [externalDescriptionId ?? description?.id, errorId]
+      .filter(Boolean)
+      .join(" ");
     for (const element of section.querySelectorAll<HTMLElement>("button, input")) {
       element.setAttribute(
         "aria-describedby",

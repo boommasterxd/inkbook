@@ -277,7 +277,7 @@ it("places phone raster options before the placement preview and keeps actions o
   }
 });
 
-it("starts the phone page chooser closed and renders thumbnails only while expanded", async () => {
+it("puts phone page review before import settings and renders thumbnails only while expanded", async () => {
   Platform.isPhone = true;
   Platform.isMobile = true;
   try {
@@ -286,7 +286,7 @@ it("starts the phone page chooser closed and renders thumbnails only while expan
     const panel = document.getElementById(trigger.getAttribute("aria-controls")!)!;
     const quality = document.querySelector<HTMLSelectElement>("select")!;
     const lock = document.querySelector<HTMLInputElement>(".inkbook-image-import-placement input")!;
-    const inOrder = [state.range, quality, lock, trigger, state.page];
+    const inOrder = [state.page, trigger, state.range, quality, lock];
     for (const [index, control] of inOrder.slice(1).entries())
       expect(
         inOrder[index]!.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING,

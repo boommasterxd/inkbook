@@ -59,7 +59,8 @@ export const settingsControls = {
     "Raste Tabellentrenner an ihren Standardpositionen und gleichmäßig verteilten Positionen ein.",
   "settings.controls.snappingEnabled": "Einrasten aktivieren",
   "settings.controls.snappingEnabledHelp": "Aktiviere alle konfigurierten Einrastfunktionen.",
-  "settings.controls.bufferHelp": "Lege den beschreibbaren Seitenpuffer für neue Dateien fest.",
+  "settings.controls.bufferHelp":
+    "Lege fest, wie viele beschreibbare Pufferzeilen neue Dateien erhalten.",
   "settings.controls.pageDefaults": "Seitenvorgaben",
   "settings.controls.background": "Hintergrund",
   "settings.controls.backgroundHelp": "Konfiguriere den Hintergrund für neue Dateien.",
@@ -72,15 +73,12 @@ export const settingsControls = {
   "settings.controls.backgroundSaveFailed":
     "Die Hintergrundvorgabe konnte nicht gespeichert werden.",
   "settings.controls.pageBuffer": "Seitenpuffer",
-  "settings.controls.bufferLines": "Aktive Pufferzeilen",
   "settings.controls.performance": "Leistung",
   "settings.controls.refreshRate": "Bildwiederholrate",
   "settings.controls.selectionHighlights": "Auswahlhervorhebungen",
   "settings.controls.autoDetecting": "Automatisch (wird erkannt…)",
   "settings.controls.auto": "Automatisch",
   "settings.controls.scrollPreload": "Vorladebereich beim Scrollen",
-  "settings.controls.screenPixels": "Bildschirmpixel",
-  "settings.controls.scrollPixelsHelp": "Wähle eine ganze Zahl zwischen 100 und 800 Pixeln.",
   "settings.controls.resetGroup": "Gruppe zurücksetzen",
   "settings.controls.drawingTools": "Zeichenwerkzeuge",
   "settings.controls.shapesStructures": "Formen und Strukturen",
@@ -227,7 +225,7 @@ export const settingsControls = {
   "settings.controls.refreshFallbackHelp":
     "Verwende die schnelle Erkennung pro Fenster oder wähle ein festes Bildratenprofil. {profileDescription}",
   "settings.controls.scrollPreloadHelp":
-    "Bereite vorhandene Striche innerhalb dieser Anzahl von Bildschirmpixeln oberhalb und unterhalb des sichtbaren Bereichs vor. Höhere Werte können sichtbares Nachladen beim Scrollen verringern, benötigen aber mehr Speicher und Vorbereitung. Niedrigere Werte laden weniger vor. Große Sprünge können weiterhin Nachladen erfordern. Nur für dieses Gerät und diesen Vault gespeichert.",
+    "Bereite vorhandene Striche 100 bis 800 Bildschirmpixel oberhalb und unterhalb des sichtbaren Bereichs vor. Höhere Werte können sichtbares Nachladen beim Scrollen verringern, benötigen aber mehr Speicher und Vorbereitung. Große Sprünge können weiterhin Nachladen erfordern. Nur für dieses Gerät und diesen Vault gespeichert.",
   "settings.shortcuts.heading": "Tastenkürzel",
   "settings.shortcuts.keyboard": "Tastenkürzel",
   "settings.shortcuts.keyboardHelp":

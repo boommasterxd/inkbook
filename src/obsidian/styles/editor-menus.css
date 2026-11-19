@@ -147,7 +147,6 @@
 
 .inkbook-menu-color-grid .inkbook-menu-empty-color-choice {
   grid-column: 1 / -1;
-  justify-content: flex-start;
 }
 
 .inkbook-menu-choice-palette [role="option"][aria-selected="true"],

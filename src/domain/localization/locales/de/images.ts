@@ -12,8 +12,6 @@ export const images = {
   "images.pagesHint": "Bis zu 20 Seiten, abhängig von der Auflösung.",
   "images.previewHint": "Prüfe, ob die Vorschau dem Original entspricht.",
   "images.previewPage": "Vorschauseite",
-  "images.pageLabel": "Seite",
-  "images.pageTotal": "von {count}",
   "images.previousPage": "Vorherige Seite",
   "images.nextPage": "Nächste Seite",
   "images.choosePages": "Seiten auswählen",
@@ -32,7 +30,7 @@ export const images = {
   "images.imageResolutionOption": "{quality} · bis {megapixels} MP",
   "images.resolutionHint":
     "Höhere Auflösung benötigt mehr Speicher und lässt weniger Seiten pro Zeichnung zu.",
-  "images.pdfDetails": "{width} × {height} Pixel · ca. {dpi} dpi",
+  "images.previewDpi": "ca. {dpi} dpi",
   "images.pdfResolutionLimited":
     "Diese Seite wurde auf ca. {dpi} dpi begrenzt, um die gewählte Auflösungsgrenze einzuhalten.",
   "images.preview": "Bildvorschau",

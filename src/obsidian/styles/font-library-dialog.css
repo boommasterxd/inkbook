@@ -216,7 +216,7 @@
   line-height: var(--line-height-normal);
   margin: 0;
   overflow-wrap: anywhere;
-  padding-block-start: var(--size-4-2);
+  padding-block: var(--size-4-2);
 }
 
 .inkbook-font-library-container[data-inkbook-modal-platform="phone"]

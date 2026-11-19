@@ -22,7 +22,7 @@ export function scrollPreloadDefinition(values: ScrollPreloadValues): SettingDef
     name: t("settings.controls.scrollPreload"),
     desc: t("settings.controls.scrollPreloadHelp"),
     render: (setting) => {
-      const content = createSettingsVisualControlRow(
+      const { content, copy } = createSettingsVisualControlRow(
         setting,
         t("settings.controls.scrollPreload"),
         t("settings.controls.scrollPreloadHelp"),
@@ -33,14 +33,15 @@ export function scrollPreloadDefinition(values: ScrollPreloadValues): SettingDef
           {
             id: "scroll-preload-margin",
             kind: "number",
-            label: t("settings.controls.screenPixels"),
+            label: t("settings.controls.scrollPreload"),
             min: MIN_SCROLL_PRELOAD_MARGIN_PX,
             max: MAX_SCROLL_PRELOAD_MARGIN_PX,
             step: 1,
             value: Number(values.get("device.scrollPreloadMarginPx")),
           },
         ],
-        descriptions: { "scroll-preload-margin": t("settings.controls.scrollPixelsHelp") },
+        descriptions: {},
+        externalCopy: copy,
         idPrefix: "inkbook-setting-scroll-preload",
         onChange: (_controlId, value) => values.set("device.scrollPreloadMarginPx", value),
         ownerDocument: setting.settingEl.ownerDocument,

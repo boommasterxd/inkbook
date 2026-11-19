@@ -78,7 +78,7 @@ export class ImageImportThumbnails {
       });
       this.#trigger.setAttribute("aria-expanded", "false");
       const icon = this.#trigger.createSpan({ attr: { "aria-hidden": "true" } });
-      setIcon(icon, "list-checks");
+      setIcon(icon, "chevron-right");
       this.#listen(this.#trigger, "click", () => this.#toggle());
       for (const event of ["pointerenter", "pointerdown", "focus"])
         this.#listen(this.#trigger, event, () => this.#prepareDisclosure());

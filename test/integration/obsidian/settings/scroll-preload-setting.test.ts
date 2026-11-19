@@ -37,8 +37,11 @@ describe("scroll preload margin setting", () => {
     expect(slider.step).toBe("1");
     expect(slider.value).toBe("300");
     expect(field.value).toBe("300");
-    expect(field.getAttribute("aria-label")).toBe("Screen pixels");
-    expect(field.getAttribute("aria-describedby")).toContain("scroll-preload-margin-description");
+    expect(field.getAttribute("aria-label")).toBe("Scroll preload margin");
+    const [descriptionId] = field.getAttribute("aria-describedby")!.split(" ");
+    expect(rendered.container.querySelector(`#${descriptionId}`)?.textContent).toContain(
+      "100 to 800 screen pixels",
+    );
 
     slider.value = "800";
     slider.dispatchEvent(new Event("input"));

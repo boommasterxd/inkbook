@@ -92,7 +92,7 @@ function renderBackgroundSetting(setting: Setting, values: PageDefaultsValues): 
     "inkbook-settings-background-row",
     "inkbook-settings-validation-surface",
   );
-  const description = createSettingsHeading(
+  const { descriptionId } = createSettingsHeading(
     setting.settingEl,
     t("settings.controls.background"),
     t("settings.controls.backgroundPatternHelp"),
@@ -104,7 +104,7 @@ function renderBackgroundSetting(setting: Setting, values: PageDefaultsValues): 
   error.hidden = true;
   const context: BackgroundRenderContext = {
     content,
-    descriptionId: description.id,
+    descriptionId,
     error,
     validation: createSettingsValidationMotion(content, values),
     writes: new SettingsWriteFeedback(values.t),
@@ -196,7 +196,7 @@ function bufferDefinition(values: PageDefaultsValues): SettingDefinitionRender {
     name: t("settings.controls.pageBuffer"),
     desc: t("settings.controls.bufferHelp"),
     render: (setting) => {
-      const content = createSettingsVisualControlRow(
+      const { content, copy } = createSettingsVisualControlRow(
         setting,
         t("settings.controls.pageBuffer"),
         t("settings.controls.bufferHelp"),
@@ -204,7 +204,8 @@ function bufferDefinition(values: PageDefaultsValues): SettingDefinitionRender {
       return renderSettingsControlContent(content, {
         ...(values.t === undefined ? {} : { t: values.t }),
         controls: () => [bufferControl(values)],
-        descriptions: { "active-buffer-lines": t("settings.controls.bufferHelp") },
+        descriptions: {},
+        externalCopy: copy,
         idPrefix: "inkbook-setting-page-buffer",
         onChange: (_controlId, value) => values.set("pageDefaults.activeBufferLines", value),
         ownerDocument: setting.settingEl.ownerDocument,
@@ -220,7 +221,7 @@ function bufferControl(values: PageDefaultsValues): StyleControl {
   return {
     id: "active-buffer-lines",
     kind: "number",
-    label: t("settings.controls.bufferLines"),
+    label: t("settings.controls.pageBuffer"),
     min: 1,
     max: 8,
     step: 1,
