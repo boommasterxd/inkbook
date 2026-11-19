@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 const execute = promisify(execFile);
 export const codeFile = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 export const testFile = /^test\/(?:unit|integration|performance)\/.+\.test\.(?:ts|tsx|mjs)$/;
+const fontAsset = /^src\/persistence\/fonts\/assets\/[a-zA-Z0-9-]+(?:\.(?:ttf|woff2)|-OFL\.txt)$/;
 
 async function git(root, args) {
   const result = await execute("git", args, {
@@ -95,7 +96,9 @@ async function collectFiles(root, directory, files) {
     const filename = path.posix.join(directory, entry.name);
     if (entry.isSymbolicLink()) throw new Error(`Unsupported graph symlink: ${filename}`);
     if (entry.isDirectory()) await collectFiles(root, filename, files);
-    else if (entry.isFile() && codeFile.test(filename)) files.push(filename);
+    else if (entry.isFile() && (codeFile.test(filename) || fontAsset.test(filename))) {
+      files.push(filename);
+    }
   }
 }
 
@@ -108,7 +111,12 @@ export async function readHeadFiles(root) {
   }
   return new Map(
     await Promise.all(
-      filenames.sort().map(async (file) => [file, await readFile(path.join(root, file), "utf8")]),
+      filenames
+        .sort()
+        .map(async (file) => [
+          file,
+          fontAsset.test(file) ? null : await readFile(path.join(root, file), "utf8"),
+        ]),
     ),
   );
 }
@@ -150,18 +158,23 @@ export async function readBaseFiles(root, revision) {
     })
     .filter(
       ({ file }) =>
-        codeFile.test(file) && (!file.includes("/") || /^(?:src|test|scripts)\//.test(file)),
+        fontAsset.test(file) ||
+        (codeFile.test(file) && (!file.includes("/") || /^(?:src|test|scripts)\//.test(file))),
     );
   if (!entries.length) return new Map();
-  if (entries.some(({ metadata }) => metadata[0] === "120000"))
-    throw new Error("Unsupported base graph symlink");
+  if (entries.some(({ metadata }) => metadata[0] === "120000" || metadata[1] !== "blob"))
+    throw new Error("Unsupported base graph file");
+  const files = new Map(
+    entries.filter(({ file }) => fontAsset.test(file)).map(({ file }) => [file, null]),
+  );
+  const sources = entries.filter(({ file }) => !files.has(file));
+  if (!sources.length) return files;
   const output = await readBlobs(
     root,
-    entries.map(({ metadata }) => metadata[2]),
+    sources.map(({ metadata }) => metadata[2]),
   );
-  const files = new Map();
   let offset = 0;
-  for (const { file } of entries) {
+  for (const { file } of sources) {
     const end = output.indexOf(10, offset);
     const header = output.subarray(offset, end).toString("utf8").split(" ");
     const size = Number(header[2]);

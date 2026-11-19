@@ -111,6 +111,11 @@ function installEditableViewport() {
   return viewport;
 }
 
+export function observeSheetOcclusion(fixture: ReturnType<typeof createPhoneSheetEditableFixture>) {
+  const surface = fixture.input.closest<HTMLElement>(".inkbook-adaptive-panel")!;
+  return vi.spyOn(surface, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 300, 360, 200));
+}
+
 function createEditableMotionDriver(motion: "full" | "reduced") {
   const manualTiming = MotionGlobalConfig.useManualTiming;
   let motionTime = 0;
@@ -119,10 +124,10 @@ function createEditableMotionDriver(motion: "full" | "reduced") {
     processFrame(0);
   }
   return {
-    advance: async (duration: number): Promise<void> => {
+    advance: async (duration: number, frameDuration = 1000 / 120): Promise<void> => {
       const end = motionTime + duration;
       while (motionTime < end) {
-        motionTime = Math.min(end, motionTime + 1000 / 120);
+        motionTime = Math.min(end, motionTime + frameDuration);
         processFrame(motionTime);
         await Promise.resolve();
       }

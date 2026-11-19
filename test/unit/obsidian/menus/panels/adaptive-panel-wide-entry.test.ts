@@ -61,6 +61,18 @@ it("finishes an open exit when the system reduces motion", async () => {
 });
 
 describe.each([false, true])("wide menu entrance, tablet=%s", (tablet) => {
+  it("releases the interrupted entrance when starting an animated exit", () => {
+    Platform.isMobile = tablet;
+    const fixture = createAdaptivePanelFixture("style", { motion: "full" });
+    vi.advanceTimersToNextFrame();
+    fixture.session.close();
+    expect(vi.getTimerCount()).toBe(1);
+    expect(fixture.onClosed).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(120);
+    expect(fixture.onClosed).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("finishes a running exit when the motion preference changes", async () => {
     Platform.isMobile = tablet;
     const fixture = createAdaptivePanelFixture("style", { motion: "full" });

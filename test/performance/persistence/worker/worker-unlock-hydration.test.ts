@@ -10,12 +10,18 @@ import type { InkElementV1, InkSnapshotV1 } from "../../../../src/domain/schema/
 import { verifyVaultUnlockIntegrity } from "../../../../src/obsidian/embeds/document-session/vault-unlock-integrity";
 import * as metadata from "../../../../src/persistence/serialization/metadata/canonical-metadata";
 import * as canonical from "../../../../src/persistence/serialization/metadata/canonical-snapshot";
+import { StrokeSampleEncodingCache } from "../../../../src/persistence/serialization/metadata/stroke-sample-encoding-cache";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { ElementStore } from "../../../../src/domain/store/public";
 import { prepareVaultStoreDelta } from "../../../../src/obsidian/embeds/document-session/vault-document-model-delta";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
-import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/public";
+import {
+  DocumentWorkerRuntime,
+  GestureAwareSliceScheduler,
+} from "../../../../src/persistence/worker/runtime/public";
+import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/model/document-model";
+import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { createStandardPersistenceFixture, replaceFirstStroke } from "../fixtures";
 
 import * as pressureUnion from "../../../../src/domain/geometry/pressure/pressure-union";
@@ -151,7 +157,19 @@ describe("validated worker export work", () => {
     expect(expectedBuilds).toBeGreaterThan(0);
     const builds = vi.spyOn(pressureUnion, "iteratePressureUnion");
     const sampleScans = vi.spyOn(strokeSamples, "assertStrokeSamplesV1");
-    const runtime = new DocumentWorkerRuntime({ sessionId: "phases", workerEpoch: 1 });
+    const records = vi.spyOn(canonical, "canonicalElementWithFontResourcesSteps");
+    let admittedRecords = 0;
+    const scheduler = new GestureAwareSliceScheduler({
+      isInputActive: () => false,
+      workScheduler: new TestWorkScheduler({
+        checkpoint: () => {
+          expect(records.mock.calls.length - admittedRecords).toBeLessThanOrEqual(256);
+          admittedRecords = records.mock.calls.length;
+          return undefined;
+        },
+      }),
+    });
+    const runtime = new DocumentWorkerRuntime({ sessionId: "phases", workerEpoch: 1 }, scheduler);
     const builder = ElementStore.createBuilder({
       shouldYield: () => false,
       yieldControl: async () => undefined,
@@ -185,6 +203,8 @@ describe("validated worker export work", () => {
       },
     );
     expect(unlocked.type).toBe("unlock-success");
+    expect(records).toHaveBeenCalledTimes(snapshot.elements.length);
+    expect(records.mock.calls.length - admittedRecords).toBeLessThan(256);
     expect(builds).not.toHaveBeenCalled();
     expect(sampleScans).not.toHaveBeenCalled();
     if (unlocked.type !== "unlock-success") throw new Error("Unlock failed.");
@@ -227,6 +247,87 @@ describe("validated worker export work", () => {
     runtime.terminate();
   }, 120_000);
 });
+
+it("keeps the prior model when staged sample-cache reconciliation is cancelled after hydration", async () => {
+  const snapshot = { ...fixtureSnapshot(), elements: fixtureSnapshot().elements.slice(0, 257) };
+  const serialized = serializeInkbookDocument(snapshot);
+  if (!serialized.ok) throw new Error(serialized.error.code);
+  const previous = serializeInkbookDocument({
+    ...snapshot,
+    elements: snapshot.elements.slice(0, 1),
+    revision: snapshot.revision + 1,
+  });
+  if (!previous.ok) throw new Error(previous.error.code);
+  const runtime = new DocumentModelRuntime();
+  await runtime.unlock(previous.value.svg);
+  const retained = runtime.instrumentation.sampleEncodingCacheBytes;
+  expect(retained).toBeGreaterThan(0);
+  const controller = new AbortController();
+  const lookup = observeSampleCacheLookups();
+  let transferred = 0;
+  await expect(
+    runtime.unlock(
+      serialized.value.svg,
+      {
+        signal: controller.signal,
+        checkpoint: () => {
+          if (lookup.visits > 0) controller.abort();
+          return undefined;
+        },
+      },
+      (candidate) => {
+        transferred = candidate.elements.length;
+      },
+    ),
+  ).rejects.toThrow();
+  expect(transferred).toBe(snapshot.elements.length);
+  expect(lookup.visits).toBe(256);
+  expect(runtime.modelRevision).toBe(snapshot.revision + 1);
+  expect(runtime.instrumentation.sampleEncodingCacheBytes).toBe(retained);
+  expect(runtime.instrumentation.sampleEncodingCacheElements).toBe(1);
+  const beforeRetry = lookup.visits;
+  let admitted = beforeRetry;
+  await expect(
+    runtime.unlock(serialized.value.svg, {
+      signal: new AbortController().signal,
+      checkpoint: () => {
+        expect(lookup.visits - admitted).toBeLessThanOrEqual(256);
+        admitted = lookup.visits;
+        return undefined;
+      },
+    }),
+  ).resolves.toMatchObject({
+    snapshot: { revision: snapshot.revision },
+  });
+  expect(lookup.visits - beforeRetry).toBe(snapshot.elements.length);
+  expect(lookup.visits - admitted).toBeLessThan(256);
+  expect(runtime.modelRevision).toBe(snapshot.revision);
+  expect(runtime.instrumentation.sampleEncodingCacheElements).toBe(
+    snapshot.elements.filter((element) => element.kind === "stroke").length,
+  );
+  runtime.clear();
+  expect(runtime.instrumentation.sampleEncodingCacheBytes).toBe(0);
+});
+
+function observeSampleCacheLookups() {
+  const work = { visits: 0 };
+  const reconcile = Reflect.get(StrokeSampleEncodingCache.prototype, "reconcileElementsSteps");
+  vi.spyOn(StrokeSampleEncodingCache.prototype, "reconcileElementsSteps").mockImplementation(
+    function (this: StrokeSampleEncodingCache, elements, nodesPerStep) {
+      const observed = new Proxy(elements, {
+        get(target, property): unknown {
+          if (property !== "get") return Reflect.get(target, property, target);
+          return (id: string) => {
+            work.visits += 1;
+            return target.get(id);
+          };
+        },
+      });
+      return reconcile.call(this, observed, nodesPerStep);
+    },
+  );
+  return work;
+}
 
 async function verifyHydrationProof(snapshot: InkSnapshotV1, store: ElementStore): Promise<void> {
   const syncHash = vi.spyOn(metadata, "canonicalMetadataSha256");

@@ -255,7 +255,17 @@ describe("image import source ownership", () => {
   );
 
   it("uses an explicit page range, reuses the current preview and inserts the selected pages in order", async () => {
-    const { resource, render, dispose, pending } = await setupPdfImport();
+    const { render, dispose, pending } = await setupPdfImport();
+    const pagesByNumber = new Map(
+      await Promise.all(
+        [1, 3, 5].map(async (page) => [page, await capacityImageResource(page)] as const),
+      ),
+    );
+    render.mockImplementation(async (page) => {
+      const resource = pagesByNumber.get(page);
+      if (resource === undefined) throw new Error(`Unexpected PDF page ${page}.`);
+      return resource;
+    });
     selectFile();
     await vi.waitFor(() => expect(imageImportSubmit().disabled).toBe(false));
     const pages = document.querySelector<HTMLInputElement>('input[type="text"]')!;
@@ -264,7 +274,7 @@ describe("image import source ownership", () => {
     await assertImageDialogSemantics(["label", "select-name"]);
     imageImportSubmit().click();
     expect(await pending).toEqual({
-      resources: [resource, resource, resource],
+      resources: [pagesByNumber.get(1), pagesByNumber.get(3), pagesByNumber.get(5)],
       source: "pdf",
       placement: "page-width-locked",
     });
@@ -273,42 +283,42 @@ describe("image import source ownership", () => {
     expect(openPdfImageSource).toHaveBeenCalledOnce();
     expect(dispose).toHaveBeenCalled();
   });
+});
 
-  it("discards a pending decode on owner cancellation without accepting its late result", async () => {
-    vi.mocked(readImageSource).mockResolvedValue(new Uint8Array([1]));
-    let finish!: (resource: Awaited<ReturnType<typeof prepareRasterImage>>) => void;
-    vi.mocked(prepareRasterImage).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
-    );
-    const { pending, abort } = setup();
-    selectFile();
-    await vi.waitFor(() => expect(prepareRasterImage).toHaveBeenCalled());
-    expect(document.querySelector(".inkbook-image-import-body")?.getAttribute("aria-busy")).toBe(
-      "true",
-    );
-    expect(document.querySelector<HTMLElement>(".inkbook-image-import-source-name")?.hidden).toBe(
-      true,
-    );
-    expect(document.querySelector(".inkbook-image-import-source-hint")?.textContent).toBe(
-      "Preparing image…",
-    );
-    expect(
-      document
-        .querySelector<HTMLElement>('[role="status"]:not([hidden])')
-        ?.closest('[aria-busy="true"]'),
-    ).toBeNull();
-    expect(dialogButton("Insert").disabled).toBe(true);
-    expect(document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(true);
-    expect(dialogButton("Cancel").disabled).toBe(false);
-    abort.abort();
-    expect(await pending).toBeUndefined();
-    finish({ resource: await validImageResource() });
-    await Promise.resolve();
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-  });
+it("discards a pending decode on owner cancellation without accepting its late result", async () => {
+  vi.mocked(readImageSource).mockResolvedValue(new Uint8Array([1]));
+  let finish!: (resource: Awaited<ReturnType<typeof prepareRasterImage>>) => void;
+  vi.mocked(prepareRasterImage).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const { pending, abort } = setup();
+  selectFile();
+  await vi.waitFor(() => expect(prepareRasterImage).toHaveBeenCalled());
+  expect(document.querySelector(".inkbook-image-import-body")?.getAttribute("aria-busy")).toBe(
+    "true",
+  );
+  expect(document.querySelector<HTMLElement>(".inkbook-image-import-source-name")?.hidden).toBe(
+    true,
+  );
+  expect(document.querySelector(".inkbook-image-import-source-hint")?.textContent).toBe(
+    "Preparing image…",
+  );
+  expect(
+    document
+      .querySelector<HTMLElement>('[role="status"]:not([hidden])')
+      ?.closest('[aria-busy="true"]'),
+  ).toBeNull();
+  expect(dialogButton("Insert").disabled).toBe(true);
+  expect(document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(true);
+  expect(dialogButton("Cancel").disabled).toBe(false);
+  abort.abort();
+  expect(await pending).toBeUndefined();
+  finish({ resource: await validImageResource() });
+  await Promise.resolve();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
 
 describe("import preview and recovery", () => {

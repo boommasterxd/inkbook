@@ -37,9 +37,19 @@ const sources = Object.fromEntries(
   ),
 );
 const license = sources["LICENSE"].trim();
-// Encodes activateInkbookPlugin and its nested, dependency-free createPortableMathRenderer module.
+const png =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII=";
+const packageAssets = {
+  "src/obsidian/settings/import/import-example-images.ts": `export const IMPORT_EXAMPLE_IMAGES = [{ before: { src: ${JSON.stringify(png)} }, after: { src: ${JSON.stringify(png)} } }];`,
+  "src/persistence/fonts/assets/fixture.woff2": "wOF2package-license-font",
+  "node_modules/brotli-dec-wasm/package.json": JSON.stringify({
+    exports: { "./web/bg.wasm": "./fixture.wasm" },
+  }),
+  "node_modules/brotli-dec-wasm/fixture.wasm": new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]),
+};
+// Native Base91/gzip runtime with both standalone modules and the two exact binary fixture payloads.
 const encodedRuntime =
-  "<Ah!!!!!9-SOdck#m2<Rsm:XItCE68b%o<o;Kk/Ag?&um6_{(m_82<jYD7eFfZyc@<LNrR*[SqlVY9#d8>kS|3%%wavH/}TU<H<uZjx8Ol-@/7Xsf@PAe;No0J~e;HE^2YNLkkwi[5fE3._UrDUP+21]3dVO2a,Xv=r)}BmRG&;DGYS&s;db)O)r>]n:!!!!";
+  "<Ah!!!!!9-SO]:GwAX'#-sf)e_O@c@eO((Y>32e%Y7nqv46eCJ'Nk0sebw.wr[~m9YDY}tb3Ny#Ck9SSu.j,tSuEmy{wJ-_0syN:=fe|&d3b?y^rquF9{55!j6VJWJhbE_uJAisw2%RdqP_AEi6NC)|1;$78Cm_@qNhyH&v/4lyfHZ90U0<<~p2=M<^gx>ft|tp34[A*wz;zYOWrw-grR_dPbA[%M;AM~O?Ca+dBN'urmdh%O2E4ct'_[LFVKnyj2qqE9KX,.,eJs#=qOo-X<|i(E*kpyr_R(6nLDPfI4{W^3q7ok$h^a]7D:I?KW+M]~-5TN.Y!bsetJay1hPw%2/#HU_|xK:^vYSE9#fWjbT,5>H^'[56BEVZ7,e$G;yNe/-o]tp7I_,*BQEqVp;BmoLIce0!DN1WR%?*)AgEXuWDb;wSHm[K4_1-mnCV%}b(+73{%Nd9xV$x}w/E*!7tfHm/wKiAFV!u;<CiJK>vzOvW<o.NB.rli>[owH7E]^*Wlr-v^Mb_B)J{uYY$=F,UJTrIFp+z(6&7-yu%VIBK{sDQ}rh>HQq%kv4Tf8-3A<6Nrud{YBi4!!!";
 const runtime = `void "inkbook-plugin-bootstrap";const payload = ${JSON.stringify(encodedRuntime)};import("data:text/javascript,");`;
 const main = `/*!\n${license}\n*/\n${runtime}`;
 
@@ -54,6 +64,7 @@ async function verify(overrides = {}) {
   directories.push(root);
   await write(root, {
     ...sources,
+    ...packageAssets,
     "dist/main.js": main,
     "dist/manifest.json": sources["manifest.json"],
     "dist/styles.css": ".inkbook-root {}",

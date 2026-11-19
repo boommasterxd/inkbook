@@ -5,7 +5,10 @@ import "../../../fixtures/obsidian/menu-motion";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { InkImportPreview } from "../../../../src/obsidian/import/types";
-import { renderImportFindings } from "../../../../src/obsidian/settings/import/import-findings";
+import {
+  renderImportFindings,
+  type ImportViewContext,
+} from "../../../../src/obsidian/settings/import/import-findings";
 import {
   createImportSelection,
   type ImportSelectionChange,
@@ -62,6 +65,16 @@ function fileInputs(container: HTMLElement): HTMLInputElement[] {
   return [...container.querySelectorAll<HTMLInputElement>("input[data-inkbook-import-source]")];
 }
 
+function selectionContext(disposers: Array<() => void>): ImportViewContext {
+  return {
+    compactLayout: window.matchMedia("not all"),
+    localization: new Localization(),
+    mutate: (update) => update(),
+    readMotion: () => "reduced",
+    own: (dispose) => disposers.push(dispose),
+  };
+}
+
 it("retains the full selection across bounded pages and updates shared note counts without rebuilding rows", () => {
   const referencesRead = vi.fn();
   const warningsRead = vi.fn();
@@ -71,12 +84,7 @@ it("retains the full selection across bounded pages and updates shared note coun
     else findings.setSelected(change.path, change.selected);
   });
   const disposers: Array<() => void> = [];
-  const context = {
-    localization: new Localization(),
-    mutate: (update: () => void) => update(),
-    readMotion: () => "reduced" as const,
-    own: (dispose: () => void) => disposers.push(dispose),
-  };
+  const context = selectionContext(disposers);
   const selection = createImportSelection(preview, context, changed);
   const findings = prepareImportPreviewFindings(
     preview,

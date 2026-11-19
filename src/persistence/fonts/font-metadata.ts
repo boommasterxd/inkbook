@@ -1,7 +1,8 @@
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
-import { FONT_LIMITS, fontTag, invalidFont } from "./font-container";
+import { fontTag, invalidFont } from "./font-container";
 import { inspectFont } from "./font-validation";
 import { readFontFamilyName, readFontWeightRange } from "./font-name-table";
+import { inflateFontBinary } from "./packaged-font-binary";
 import { readWoff2MetadataTables } from "./woff2-metadata";
 
 export interface ImportedFontMetadata {
@@ -47,7 +48,14 @@ export async function readImportedFontMetadata(
     const source = bytes.subarray(start, start + length);
     tables.set(
       tag,
-      length === original ? source : await inflateFontTable(source, original, scheduler, signal),
+      length === original
+        ? source
+        : await inflateFontBinary(
+            new Uint8Array(source),
+            { format: "deflate", expectedBytes: original },
+            scheduler,
+            signal,
+          ),
     );
     const pending = scheduler.checkpoint(signal, "background");
     if (pending !== undefined) await pending;
@@ -81,38 +89,4 @@ function metadataFromTables(tables: ReadonlyMap<string, Uint8Array>): ImportedFo
     ...(familyName === undefined ? {} : { familyName }),
     ...(weightRange === undefined ? {} : { weightRange }),
   };
-}
-
-async function inflateFontTable(
-  source: Uint8Array,
-  expected: number,
-  scheduler: WorkScheduler,
-  signal?: AbortSignal,
-): Promise<Uint8Array> {
-  if (expected > FONT_LIMITS.decodedBytes) invalidFont();
-  const owned = new Uint8Array(source);
-  const stream = new Blob([owned]).stream().pipeThrough(new DecompressionStream("deflate"));
-  const reader = stream.getReader();
-  const output = new Uint8Array(expected);
-  let offset = 0;
-  try {
-    let chunk = await reader.read();
-    while (!chunk.done) {
-      if (chunk.value.length > expected - offset) invalidFont();
-      output.set(chunk.value, offset);
-      offset += chunk.value.length;
-      const pending = scheduler.checkpoint(signal, "background");
-      if (pending !== undefined) await pending;
-      signal?.throwIfAborted();
-      chunk = await reader.read();
-    }
-    if (offset !== expected) invalidFont();
-    return output;
-  } finally {
-    try {
-      await reader.cancel();
-    } finally {
-      reader.releaseLock();
-    }
-  }
 }

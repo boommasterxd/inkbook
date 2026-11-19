@@ -121,6 +121,11 @@
   font-size: var(--font-ui-smaller);
 }
 
+.inkbook-image-dialog-container[data-inkbook-modal-platform="phone"]
+  :is(.inkbook-image-import-source-hint, .inkbook-image-import-replace) {
+  color: inherit;
+}
+
 .inkbook-image-import-content .inkbook-image-import-source[data-selected="true"] {
   border-style: solid;
   flex-direction: row;
@@ -292,7 +297,6 @@
 }
 
 .inkbook-image-import-field-error {
-  color: var(--inkbook-tone-danger);
   margin: 0;
 }
 
@@ -315,10 +319,6 @@
 
 .inkbook-image-import-pdf .inkbook-image-import-pages-hint {
   margin-block: calc(-1 * var(--size-4-1)) var(--size-4-1);
-}
-
-.inkbook-image-import-content .inkbook-image-import-error {
-  color: var(--inkbook-tone-danger);
 }
 
 .inkbook-image-import-content .inkbook-image-import-resize-warning {

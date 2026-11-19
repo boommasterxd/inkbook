@@ -15,8 +15,7 @@ export function createMenuColorAnimator(
   anchor: HTMLElement,
   ownerWindow: Window,
   isActive: (item: HTMLElement) => boolean,
-  items: readonly HTMLElement[] = [...root.querySelectorAll<HTMLElement>(PAINT_SELECTOR)],
-): { change: ChangeMenuColor; finish: () => void; dispose: () => void } {
+) {
   const active = new Map<HTMLElement, () => void>();
   const originals = new Map<HTMLElement, InlinePaint>();
   const read = (item: HTMLElement): Paint => {
@@ -58,15 +57,26 @@ export function createMenuColorAnimator(
       ),
     );
   };
-  for (const item of items) {
-    if (!item.matches(PAINT_SELECTOR) || item.closest("[data-inkbook-feedback-owner]") !== root)
-      continue;
-    remember(item);
-    syncPaintState(item);
-  }
+  const forget = (item: HTMLElement): void => {
+    active.get(item)?.();
+    active.delete(item);
+    restore(item);
+    originals.delete(item);
+    delete item.dataset.inkbookMenuGesture;
+    delete item.dataset.inkbookChoiceState;
+    delete item.dataset.inkbookRecordingState;
+  };
   const observer = observeSelection(root, ownerWindow, change);
   return {
     change,
+    refresh: (items: ReadonlySet<HTMLElement>): void => {
+      for (const item of originals.keys()) if (!items.has(item)) forget(item);
+      for (const item of items) {
+        if (!item.matches(PAINT_SELECTOR) || originals.has(item)) continue;
+        remember(item);
+        syncPaintState(item);
+      }
+    },
     finish: () => {
       for (const [item, stop] of active) {
         stop();
@@ -76,15 +86,7 @@ export function createMenuColorAnimator(
     },
     dispose: () => {
       observer.disconnect();
-      for (const stop of active.values()) stop();
-      for (const item of originals.keys()) {
-        restore(item);
-        delete item.dataset.inkbookMenuGesture;
-        delete item.dataset.inkbookChoiceState;
-        delete item.dataset.inkbookRecordingState;
-      }
-      active.clear();
-      originals.clear();
+      for (const item of originals.keys()) forget(item);
     },
   };
 }

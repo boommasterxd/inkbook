@@ -153,7 +153,9 @@ function coverageScope(graph, tests, changes, files) {
   const roots = tests.filter((file) => !file.startsWith("test/performance/"));
   const scope = reachable(graph.edges, roots);
   for (const file of affectedFiles([graph], changes)) if (file.startsWith("src/")) scope.add(file);
-  return [...scope].filter((file) => file.startsWith("src/") && files.has(file)).sort();
+  return [...scope]
+    .filter((file) => file.startsWith("src/") && codeFile.test(file) && files.has(file))
+    .sort();
 }
 
 function needsCompleteRuntimeTests(graph, selected, coverage, plan) {
@@ -215,7 +217,9 @@ export async function createSelection({
   const files = await readHeadFiles(root);
   const tests = [...files.keys()].filter((file) => testFile.test(file)).sort();
   plan.tests = tests;
-  plan.coverage = [...files.keys()].filter((file) => file.startsWith("src/")).sort();
+  plan.coverage = [...files.keys()]
+    .filter((file) => file.startsWith("src/") && codeFile.test(file))
+    .sort();
   const global = comparison.changes.find(globalChange);
   if (forceFull || historyError || !comparison.changes.length || global) {
     plan.reason =

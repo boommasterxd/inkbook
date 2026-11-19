@@ -222,6 +222,24 @@ it("announces a failed load without private details and retries to the empty sta
   expect(access.history).toHaveBeenCalledTimes(2);
 });
 
+it("announces a failed open and retries the same import without reloading history", async () => {
+  const { container, access, trigger } = fixture();
+  const saved = journal();
+  access.history.mockResolvedValueOnce([saved]);
+  access.open.mockRejectedValueOnce(new Error("private vault content"));
+  trigger.click();
+  await settled(container, "1 saved import.");
+
+  rows(container)[0]!.click();
+  await settled(container, "This import could not be opened.");
+  expect(container.querySelector('[role="status"]')?.textContent).toContain("Try again");
+  expect(container.textContent).not.toContain("private vault content");
+
+  button(container, "Try again").click();
+  expect(access.open).toHaveBeenNthCalledWith(2, window, saved, expect.any(AbortSignal));
+  expect(access.history).toHaveBeenCalledTimes(1);
+});
+
 it("cancels collapsed requests and never publishes their late results after reopening", async () => {
   const { container, access, trigger, panel, changed } = fixture();
   const pending = pendingHistory();

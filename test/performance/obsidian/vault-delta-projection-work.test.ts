@@ -1,7 +1,11 @@
 import { expect, it, vi } from "vitest";
 
+import type { PageV1 } from "../../../src/domain/schema/public";
 import { ElementStore, type StoreDelta } from "../../../src/domain/store/public";
-import { recordVaultStoreDelta } from "../../../src/obsidian/embeds/document-session/vault-document-model";
+import {
+  commitVaultPage,
+  recordVaultStoreDelta,
+} from "../../../src/obsidian/embeds/document-session/vault-document-model";
 import { VaultDocumentSessionMutations } from "../../../src/obsidian/embeds/document-session/vault-document-session-mutations";
 import type { AutosaveCoordinator } from "../../../src/persistence/saving/autosave/public";
 import {
@@ -9,6 +13,7 @@ import {
   uninterruptedMutationScheduler,
 } from "../../fixtures/domain/element-mutation";
 import { createStandardRuntimeDomainFixture } from "../domain/standard-domain-fixture";
+import { createPageHeightStore } from "../editor/page-height-performance-fixture";
 
 function observeDeltaProjection() {
   const work = { afterReads: 0, classifications: 0, entryVisits: 0, temporaryArrays: 0 };
@@ -137,4 +142,34 @@ it("skips delta projection when autosave is unavailable", () => {
     paintVersion: 0,
   };
   expect(() => recordVaultStoreDelta({ autosave: undefined, delta, revision: 1 })).not.toThrow();
+});
+
+it("commits a background change in the 10,000-stroke document without visiting its records", async () => {
+  const store = await createPageHeightStore(ElementStore);
+  const readRecord = vi.spyOn(store, "get");
+  const materializeBand = vi.spyOn(store, "materializeBandOrder");
+  const scanOrder = vi.spyOn(store, "beginOrder");
+  const commit = vi.fn();
+  const recordCommit = vi.fn<AutosaveCoordinator["recordCommit"]>();
+  const page: PageV1 = {
+    activeBufferLines: 3,
+    background: { spacing: 50, type: "dots" },
+    innerWidth: 2000,
+    lockedBufferLines: 1,
+    margin: 24.3,
+  };
+
+  commitVaultPage({
+    autosave: { recordCommit } as unknown as AutosaveCoordinator,
+    commit,
+    page,
+    revision: 1,
+    store,
+  });
+
+  expect(readRecord.mock.calls).toHaveLength(0);
+  expect(materializeBand).not.toHaveBeenCalled();
+  expect(scanOrder).not.toHaveBeenCalled();
+  expect(commit).toHaveBeenCalledExactlyOnceWith({ page, revision: 2 });
+  expect(recordCommit).toHaveBeenCalledExactlyOnceWith({ page, modelRevision: 2 });
 });

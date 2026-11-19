@@ -50,6 +50,7 @@ export function registerOwnedMotionPress(
     if (ownerWindow === null) return end;
     const finish = (): void => {
       if (!active.delete(cancel)) return;
+      element.removeEventListener("lostpointercapture", captureLost);
       ownerWindow.removeEventListener("blur", cancel);
       ownerWindow.removeEventListener("pagehide", cancel);
       end?.();
@@ -76,7 +77,15 @@ export function registerOwnedMotionPress(
         finish();
       }
     };
+    const captureLost = (lostEvent: Event): void => {
+      if (
+        (lostEvent.target === element || lostEvent.target === event.target) &&
+        (lostEvent as PointerEvent).pointerId === event.pointerId
+      )
+        cancel();
+    };
     active.add(cancel);
+    element.addEventListener("lostpointercapture", captureLost);
     ownerWindow.addEventListener("blur", cancel);
     ownerWindow.addEventListener("pagehide", cancel);
     return finish;

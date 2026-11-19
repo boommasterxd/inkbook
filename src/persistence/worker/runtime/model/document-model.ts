@@ -8,6 +8,7 @@ import * as preparedPaths from "./prepared-pressure-path-adoption";
 import { parseRuntimeInput } from "./parse-runtime-input";
 import type { SafeStaticProof } from "../../../serialization/input/safe-static-proof";
 import type { ValidatedSnapshotConsumer } from "../../../serialization/metadata/validated-snapshot-adoption";
+import type { StrokeSampleEncodingCache } from "../../../serialization/metadata/stroke-sample-encoding-cache";
 import type {
   InkSnapshotV1,
   SnapshotValidationDerivations,
@@ -43,7 +44,6 @@ import {
   copyElementsToRuntime,
   copyParsed,
   copySnapshotToRuntime,
-  copySnapshotToRuntimeSliced,
   hasRuntimeStrokeSamples,
   type RuntimeInkSnapshot,
   type RuntimeStrokeSamples,
@@ -92,7 +92,6 @@ export class DocumentModelRuntime {
   #prewarmVisitedElementCount = 0;
   #prewarmCursor = 0;
   #modelRevision: number | null = null;
-  #snapshot: InkSnapshotV1 | null = null;
 
   public constructor(readonly ownsTransferredSamples = false) {}
 
@@ -116,45 +115,40 @@ export class DocumentModelRuntime {
     onValidatedSnapshot?: ValidatedSnapshotConsumer,
     safeStaticProof?: SafeStaticProof,
   ): Promise<ModelUnlockResult> {
-    let stagedSnapshot: RuntimeInkSnapshot | null = null;
-    let stagedDerivations: SnapshotValidationDerivations | null = null;
+    const staged: { snapshot?: RuntimeInkSnapshot; encodings?: StrokeSampleEncodingCache } = {};
     const parsed = await parseRuntimeInput(
       input,
       sliceContext,
       async (snapshot, derivations, signal) => {
-        stagedSnapshot = await copyParsed(
+        staged.snapshot = await copyParsed(
           snapshot,
           derivations,
           this.#pointCopies,
           sliceContext === undefined ? undefined : { ...sliceContext, signal },
         );
         signal.throwIfAborted();
-        stagedDerivations = derivations;
-        await onValidatedSnapshot?.(stagedSnapshot, derivations, signal);
+        await onValidatedSnapshot?.(staged.snapshot, derivations, signal);
       },
       this.ownsTransferredSamples ? "worker-safe" : "safe",
-      this.#serializer.sampleEncodingCache,
+      sliceContext === undefined
+        ? this.#serializer.sampleEncodingCache
+        : (encodings) => {
+            staged.encodings = encodings;
+          },
       safeStaticProof,
     );
     if (!parsed.ok) throw new RuntimeModelError(parsed.error.code, false);
     sliceContext?.signal.throwIfAborted();
-    const runtimeSnapshot =
-      stagedSnapshot ??
-      (sliceContext
-        ? await copySnapshotToRuntimeSliced(parsed.value.snapshot, sliceContext, this.#pointCopies)
-        : copySnapshotToRuntime(parsed.value.snapshot, this.#pointCopies));
-    this.#resetValidated(runtimeSnapshot, stagedDerivations ?? parsed.value.derivations);
-    const snapshot = this.#snapshot;
-    if (snapshot === null) throw new RuntimeModelError("snapshot-invalid", false);
-    sliceContext?.signal.throwIfAborted();
-    this.#modelRevision = snapshot.revision;
-    return {
-      lockedHeight: parsed.value.lockedHeight,
-      outputHash: parsed.value.hash,
-      requiresCanonicalRewrite: parsed.value.requiresCanonicalRewrite,
-      snapshot,
-      sourceVersion: parsed.value.sourceVersion,
-    };
+    if (!staged.snapshot) throw new RuntimeModelError("snapshot-invalid", false);
+    const { derivations, hash, lockedHeight, requiresCanonicalRewrite, sourceVersion } =
+      parsed.value;
+    const snapshot = await this.#resetValidated(
+      staged.snapshot,
+      derivations,
+      sliceContext,
+      staged.encodings,
+    );
+    return { lockedHeight, outputHash: hash, requiresCanonicalRewrite, snapshot, sourceVersion };
   }
 
   public async verifyOutput(
@@ -167,7 +161,9 @@ export class DocumentModelRuntime {
 
   public initialize(snapshot: InkSnapshotV1): void {
     this.#outputProofs.clear();
-    this.#reset(snapshot);
+    const result = this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot), true);
+    if (!result.ok) throw new RuntimeModelError(result.error.code, false);
+    this.#confirmSynchronization();
   }
 
   public clear(): void {
@@ -179,7 +175,6 @@ export class DocumentModelRuntime {
     this.#prewarmVisitedElementCount = 0;
     this.#prewarmCursor = 0;
     this.#modelRevision = null;
-    this.#snapshot = null;
   }
 
   public async export(
@@ -216,7 +211,6 @@ export class DocumentModelRuntime {
         serialized.value.snapshot.revision,
         proofEpoch,
       );
-      this.#snapshot = serialized.value.snapshot;
       this.#modelRevision = serialized.value.snapshot.revision;
       preparation?.confirm();
       this.#resetPrewarmState();
@@ -275,7 +269,6 @@ export class DocumentModelRuntime {
     if (revision === null) {
       throw new RuntimeModelError("snapshot-invalid", false);
     }
-    this.#snapshot = null;
     this.#modelRevision = revision;
     this.#resetPrewarmState();
   }
@@ -442,20 +435,27 @@ export class DocumentModelRuntime {
     );
   }
 
-  #reset(snapshot: InkSnapshotV1): void {
-    this.#adoptResetResult(this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot), true));
-    this.#modelRevision = this.#snapshot!.revision;
-  }
-
-  #resetValidated(snapshot: InkSnapshotV1, derivations: SnapshotValidationDerivations): void {
-    this.#adoptResetResult(this.#serializer.resetValidatedRuntime(snapshot, derivations, true));
-  }
-
-  #adoptResetResult(result: ReturnType<IncrementalDocumentSerializer["resetRuntime"]>): void {
+  async #resetValidated(
+    snapshot: InkSnapshotV1,
+    derivations: SnapshotValidationDerivations,
+    context: RuntimeSliceContext | undefined,
+    encodings: StrokeSampleEncodingCache | undefined,
+  ): Promise<InkSnapshotV1> {
+    const result =
+      context === undefined
+        ? this.#serializer.resetValidatedRuntime(snapshot, derivations, true)
+        : await this.#serializer.resetRuntimeSliced(
+            snapshot,
+            context,
+            true,
+            { adopt: () => this.#confirmSynchronization(), derivations },
+            encodings,
+          );
     if (!result.ok) throw new RuntimeModelError(result.error.code, false);
-    this.#snapshot = this.#serializer.currentSnapshot();
-    if (this.#snapshot === null) throw new RuntimeModelError("snapshot-invalid", false);
-    this.#resetPrewarmState();
+    const canonical = context === undefined ? this.#serializer.currentSnapshot() : result.value;
+    if (!canonical) throw new RuntimeModelError("snapshot-invalid", false);
+    if (context === undefined) this.#confirmSynchronization();
+    return canonical;
   }
 
   #resetPrewarmState(): void {

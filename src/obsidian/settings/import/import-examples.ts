@@ -2,6 +2,7 @@ import type { Localization } from "../../../domain/localization";
 import { canonicalizeGeometryNumber } from "../../../domain/schema/canonical";
 import { createImportExampleComparison, type ImagePair } from "./import-example-comparison";
 import type { ExampleImage, ImportExampleId } from "./import-example-images";
+import { acquireImportExamples } from "./import-example-loader";
 import type { ImportViewContext } from "./import-findings";
 
 const EXAMPLES: readonly ImportExampleId[] = [
@@ -19,8 +20,26 @@ export interface ImportExampleGallery {
   readonly show: (example: ImportExampleId, focus?: boolean) => void;
 }
 
-export function prepareImportExamples(): void {
-  void import("./import-example-images").catch(() => undefined);
+export function createImportExamplePreloader(
+  container: HTMLElement,
+  context: ImportViewContext,
+): () => void {
+  let pending: ReturnType<typeof acquireImportExamples> | undefined;
+  let prepared = false;
+  context.own(() => pending?.release());
+  return () => {
+    if (pending !== undefined || prepared) return;
+    const lease = acquireImportExamples(container.ownerDocument.defaultView);
+    pending = lease;
+    const finish = (): void => {
+      lease.release();
+      pending = undefined;
+    };
+    void lease.module.then(() => {
+      prepared = true;
+      finish();
+    }, finish);
+  };
 }
 
 /** Five named choices share one lazily created comparison and one pair of image slots. */
@@ -36,10 +55,11 @@ export function renderImportExamples(
   let selected: ImportExampleId | undefined;
   let published: ImportExampleId | undefined;
   let captures: Captures | undefined;
-  let loading = false;
+  let pending: ReturnType<typeof acquireImportExamples> | undefined;
   let disposed = false;
   context.own(() => {
     disposed = true;
+    pending?.release();
   });
 
   const buttons = new Map<ImportExampleId, HTMLButtonElement>();
@@ -77,17 +97,22 @@ export function renderImportExamples(
   }
 
   function prepare(example: ImportExampleId): void {
-    if (!isCapture(example) || captures !== undefined || loading || disposed) return;
-    loading = true;
-    void import("./import-example-images").then(
+    if (!isCapture(example) || captures !== undefined || pending !== undefined || disposed) return;
+    const lease = acquireImportExamples(container.ownerDocument.defaultView);
+    pending = lease;
+    const finish = (): void => {
+      lease.release();
+      pending = undefined;
+    };
+    void lease.module.then(
       ({ IMPORT_EXAMPLE_IMAGES: images }) => {
-        loading = false;
+        finish();
         if (disposed) return;
         captures = images;
         if (selected !== undefined && isCapture(selected)) publish(selected);
       },
       () => {
-        loading = false;
+        finish();
         if (!disposed && selected !== undefined && isCapture(selected))
           note.textContent = localization.t("import.examplesUnavailable");
       },
@@ -110,12 +135,7 @@ export function renderImportExamples(
         stage.append(note);
       });
     if (published !== example) publish(example);
-    if (focus) {
-      button.focus({ preventScroll: true });
-      const body = section.closest<HTMLElement>(".inkbook-import-body");
-      if (body)
-        body.scrollTop += section.getBoundingClientRect().top - body.getBoundingClientRect().top;
-    }
+    if (focus) revealExample(section, button);
   }
 
   const selectedExample = state?.example ?? initial;
@@ -123,10 +143,17 @@ export function renderImportExamples(
   return { id: section.id, prepare, show };
 }
 
+function revealExample(section: HTMLElement, button: HTMLButtonElement): void {
+  button.focus({ preventScroll: true });
+  const body = section.closest<HTMLElement>(".inkbook-import-body");
+  if (body)
+    body.scrollTop += section.getBoundingClientRect().top - body.getBoundingClientRect().top;
+}
+
 function createGalleryStage(container: HTMLElement, localization: Localization) {
   const section = container.createEl("section", { cls: "inkbook-import-examples" });
   section.id = `inkbook-examples-${section.ownerDocument.defaultView!.crypto.randomUUID()}`;
-  const heading = section.createEl("h4", { text: localization.t("import.examples") });
+  const heading = section.createEl("h3", { text: localization.t("import.examples") });
   heading.id = `${section.id}-title`;
   section.setAttribute("aria-labelledby", heading.id);
   section.createEl("p", {

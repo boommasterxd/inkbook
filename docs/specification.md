@@ -49,7 +49,7 @@ The first release does not include:
 - Runtime code MUST use Web APIs and Obsidian APIs only. Node.js and Electron APIs are forbidden because they are unavailable on mobile.
 - Settings MUST use the declarative settings API available in Obsidian 1.13.
 - `npm` and `esbuild` SHOULD be used to match the official sample-plugin workflow and keep the toolchain small.
-- `obsidian`, CodeMirror, and Lezer modules MUST remain external to the production bundle. Direct CodeMirror development dependencies are added only when implementation imports require them, use the exact peer versions declared by the selected `obsidian` package, and are updated as one compatibility set rather than through isolated package updates.
+- `obsidian`, CodeMirror, and Lezer modules MUST remain external to the production bundle. Add direct CodeMirror development dependencies only when implementation imports require them. Use the exact version declared by the selected `obsidian` package for each of its CodeMirror peers. For other imported CodeMirror modules provided by the host, use exact development versions verified against the supported host integration. Review the direct CodeMirror dependencies as one compatibility set when any version changes.
 - The release artifact contains only `main.js`, `manifest.json`, and `styles.css` when styles are required.
 
 The complete host API, lifecycle, UI, and Community directory contract is defined in [Obsidian Integration](obsidian-integration.md).

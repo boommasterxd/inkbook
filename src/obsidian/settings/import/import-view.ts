@@ -15,7 +15,7 @@ import { renderImportIntroduction, renderImportStep } from "./import-journey";
 import { createImportSelection, type ImportSelectionChange } from "./import-selection";
 import { buildImportPreviewFindings, prepareImportPreviewFindings } from "./preview-findings";
 import { createPreviewFindingsView, renderPreviewFindings } from "./import-review-findings";
-import { prepareImportExamples, renderImportExamples } from "./import-examples";
+import { createImportExamplePreloader, renderImportExamples } from "./import-examples";
 
 export type { ImportViewContext } from "./import-findings";
 
@@ -47,7 +47,7 @@ export function renderImportEntry(container: HTMLElement, context: ImportViewCon
       title: context.localization.t("import.entryHelp"),
       description: context.localization.t("import.entryHelpDescription"),
       icon: "info",
-      prepare: prepareImportExamples,
+      prepare: createImportExamplePreloader(container, context),
       populate: (content, scope) => {
         const help = content.createDiv({ cls: "inkbook-import-entry-help" });
         renderImportExamples(help, scope.context, "diagram");

@@ -38,6 +38,8 @@ export class ImportHistory {
   #expanded = false;
   #useCachedHistory = true;
   #disposed = false;
+  #opening = false;
+  #retry: (() => void) | undefined;
   #selectedId: string | undefined;
 
   public constructor(setting: Setting, options: ImportHistoryOptions) {
@@ -126,23 +128,13 @@ export class ImportHistory {
       );
       this.#mutate(() => {
         this.#results.replaceChildren();
-        renderImportHistory(
-          this.#results,
-          history,
-          (journal) => {
-            this.#selectedId = journal.id;
-            if (this.#options.state !== undefined) this.#options.state.selectedId = journal.id;
-            void this.#options.access
-              .open(this.#results.ownerDocument.defaultView, journal, this.#lifetime.signal)
-              .catch(() => this.#failure());
-          },
-          {
-            mutate: this.#mutate,
-            selectedId: focusedRun ?? this.#selectedId,
-            localization: this.#options.localization,
-            ...(this.#options.state === undefined ? {} : { state: this.#options.state }),
-          },
-        );
+        this.#retry = undefined;
+        renderImportHistory(this.#results, history, this.#open, {
+          mutate: this.#mutate,
+          selectedId: focusedRun ?? this.#selectedId,
+          localization: this.#options.localization,
+          ...(this.#options.state === undefined ? {} : { state: this.#options.state }),
+        });
         if (focusedRun !== undefined) {
           [...this.#results.querySelectorAll<HTMLButtonElement>("[data-inkbook-import-run]")]
             .find((button) => button.dataset.inkbookImportRun === focusedRun)
@@ -178,10 +170,26 @@ export class ImportHistory {
     );
   }
 
-  #failure(): void {
-    if (this.#disposed) return;
-    this.#status.textContent = this.#options.localization.t("import.historyFailure");
+  #open = (journal: InkImportJournal): void => {
+    if (this.#opening || this.#disposed || !this.#expanded) return;
+    this.#opening = true;
+    this.#selectedId = journal.id;
+    if (this.#options.state !== undefined) this.#options.state.selectedId = journal.id;
+    void this.#options.access
+      .open(this.#results.ownerDocument.defaultView, journal, this.#lifetime.signal)
+      .catch(() => this.#failure(journal))
+      .finally(() => {
+        this.#opening = false;
+      });
+  };
+
+  #failure(journal?: InkImportJournal): void {
+    if (this.#disposed || !this.#expanded) return;
+    this.#status.textContent = this.#options.localization.t(
+      journal === undefined ? "import.historyFailure" : "import.historyOpenFailure",
+    );
     this.#status.setAttribute("data-inkbook-history-error", "true");
+    this.#retry = journal === undefined ? () => void this.#load() : () => this.#open(journal);
     if (this.#results.querySelector(".inkbook-import-history-retry") !== null) return;
     this.#mutate(() => {
       const retry = this.#results.createEl("button", {
@@ -190,7 +198,7 @@ export class ImportHistory {
       });
       retry.type = "button";
       retry.addEventListener("click", () => {
-        if (this.#request === undefined) void this.#load();
+        if (!this.#opening && this.#request === undefined) this.#retry?.();
       });
     });
   }
@@ -204,6 +212,7 @@ export class ImportHistory {
   public dispose = (): void => {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#retry = undefined;
     this.#lifetime.abort();
     this.#request?.abort();
     this.#releaseChanges();

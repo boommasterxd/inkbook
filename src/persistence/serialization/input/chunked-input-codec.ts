@@ -55,8 +55,8 @@ export class ChunkedInkbookInputParser {
   readonly #inputSliceBytes: number;
   readonly #staticValidation: "canonical" | "safe";
   readonly #safeStaticProof: SafeStaticProof | undefined;
-  readonly #sampleEncodingCache: StrokeSampleEncodingCache | undefined;
-  readonly #stagedSampleEncodings: StrokeSampleEncodingCache | undefined;
+  readonly #sampleEncodingCache: ChunkedInkbookInputOptions["sampleEncodingCache"];
+  #stagedSampleEncodings: StrokeSampleEncodingCache | undefined;
   readonly #onValidatedSnapshot: ValidatedSnapshotConsumer | undefined;
   readonly #adoption: ValidatedSnapshotAdoption;
   readonly #signal: AbortSignal | undefined;
@@ -169,9 +169,8 @@ export class ChunkedInkbookInputParser {
   public async finish(): Promise<DocumentCodecResult<ParsedInkbookDocument>> {
     this.#assertCollecting();
     this.#throwIfCancelled();
-    if (this.#inputHash.writePending) {
+    if (this.#inputHash.writePending)
       this.#failure = failure("invalid-svg", "Owned export input is still being written.");
-    }
     this.#state = "finishing";
     try {
       if (this.#failure !== null) return this.#failure;
@@ -202,29 +201,29 @@ export class ChunkedInkbookInputParser {
       ) {
         return failure("invalid-svg", "Document bytes no longer match the owned safe SVG proof.");
       }
-      this.#sampleEncodingCache?.adoptValidated(
-        this.#stagedSampleEncodings!,
-        this.#runtimeSnapshot,
-        this.#migrated.sourceVersion,
-      );
-      return {
-        ok: true,
-        value: {
-          derivations: this.#migrated.derivations,
-          hash,
-          lockedHeight: this.#prelude.lockedHeight,
-          requiresCanonicalRewrite:
-            this.#prelude.requiresCanonicalRewrite ||
-            (await requiresTextLengthRewrite(
-              this.#runtimeSnapshot,
-              this.#staticMatcher,
-              this.#safeStaticProof,
-              () => this.#runCheckpoint() ?? undefined,
-            )),
-          snapshot: this.#runtimeSnapshot,
-          sourceVersion: this.#migrated.sourceVersion,
-        },
+      const value = {
+        derivations: this.#migrated.derivations,
+        hash,
+        lockedHeight: this.#prelude.lockedHeight,
+        requiresCanonicalRewrite:
+          this.#prelude.requiresCanonicalRewrite ||
+          (await requiresTextLengthRewrite(
+            this.#runtimeSnapshot,
+            this.#staticMatcher,
+            this.#safeStaticProof,
+            () => this.#runCheckpoint() ?? undefined,
+          )),
+        snapshot: this.#runtimeSnapshot,
+        sourceVersion: this.#migrated.sourceVersion,
       };
+      this.#throwIfCancelled();
+      const staged = this.#stagedSampleEncodings!;
+      if (typeof this.#sampleEncodingCache === "function") {
+        if (value.sourceVersion < 1) staged.clear();
+        this.#stagedSampleEncodings = undefined;
+        this.#sampleEncodingCache(staged);
+      } else this.#sampleEncodingCache?.adoptValidated(staged, value.snapshot, value.sourceVersion);
+      return { ok: true, value };
     } finally {
       this.#adoption.cancel();
       const settling = this.#adoption.settle();

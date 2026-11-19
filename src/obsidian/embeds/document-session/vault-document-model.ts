@@ -385,17 +385,24 @@ export function requireVaultPage(page: InkSnapshotV1["page"] | undefined): InkSn
 }
 
 function validatePageExtent(store: ElementStore, page: InkSnapshotV1["page"]): void {
+  const indexedBottom = store.size === 0 ? null : store.getMaximumBottom();
+  if (indexedBottom !== undefined && pageExtentFits(page, indexedBottom)) return;
+
+  // The index can retain an overestimate after its bounded cleanup of stale entries.
   let bottom: number | null = null;
-  for (const band of ["image", "highlight", "content"] as const) {
-    for (const id of store.materializeBandOrder(band)) {
-      const maxY = store.get(id)!.bounds.maxY;
-      bottom = bottom === null ? maxY : Math.max(bottom, maxY);
-    }
+  const order = store.beginOrder();
+  for (let step = order.advance(); step.id !== undefined; step = order.advance()) {
+    const maxY = store.get(step.id)!.bounds.maxY;
+    bottom = bottom === null ? maxY : Math.max(bottom, maxY);
   }
-  const extent = derivePageExtent(page, bottom);
-  if (extent.activeHeight > MAX_DERIVED_HEIGHT || extent.lockedHeight > MAX_DERIVED_HEIGHT) {
+  if (!pageExtentFits(page, bottom)) {
     throw new RangeError("Page update exceeds the maximum derived height.");
   }
+}
+
+function pageExtentFits(page: InkSnapshotV1["page"], bottom: number | null): boolean {
+  const extent = derivePageExtent(page, bottom);
+  return extent.activeHeight <= MAX_DERIVED_HEIGHT && extent.lockedHeight <= MAX_DERIVED_HEIGHT;
 }
 
 export function createVaultStoreScheduler(

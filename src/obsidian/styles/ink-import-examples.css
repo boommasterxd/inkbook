@@ -15,7 +15,7 @@
   padding-block-start: 0;
 }
 
-.inkbook-import-examples h4 {
+.inkbook-import-examples > h3 {
   font-size: var(--font-ui-small);
   margin: 0 0 var(--size-4-2);
 }
@@ -54,7 +54,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.inkbook-import-examples-pair.inkbook-import-example-single {
+.inkbook-import-dialog-compact .inkbook-import-examples-pair {
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -83,10 +83,6 @@
   outline-offset: -2px;
 }
 
-.inkbook-import-example-single figcaption {
-  display: none;
-}
-
 .inkbook-import-example {
   margin: 0;
   min-inline-size: 0;
@@ -96,6 +92,10 @@
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   margin-block-end: var(--size-4-2);
+}
+
+.inkbook-import-dialog-compact .inkbook-import-examples-pair figcaption {
+  display: none;
 }
 
 .inkbook-import-example-image {
@@ -125,7 +125,7 @@
   padding-block-start: var(--size-4-3);
 }
 
-.inkbook-import-workflow > h4 {
+.inkbook-import-workflow > h3 {
   font-size: var(--font-ui-small);
   margin: 0 0 var(--size-4-3);
 }
@@ -162,12 +162,10 @@
   margin: 0;
 }
 
-@media (width <= 480px) {
-  .inkbook-import-body .inkbook-import-examples-note {
-    min-block-size: 3lh;
-  }
+:where(.inkbook-import-dialog-compact) .inkbook-import-body .inkbook-import-examples-note {
+  min-block-size: 3lh;
+}
 
-  .inkbook-import-journey {
-    grid-template-columns: minmax(0, 1fr);
-  }
+:where(.inkbook-import-dialog-compact) .inkbook-import-journey {
+  grid-template-columns: minmax(0, 1fr);
 }

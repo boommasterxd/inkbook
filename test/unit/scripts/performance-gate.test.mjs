@@ -22,10 +22,14 @@ describe("deterministic performance gate", () => {
     await expect(executePerformanceGate("/repo", runs)).rejects.toThrow("Empty");
     expect(batch).not.toHaveBeenCalled();
   });
-  it("propagates execution errors", async () => {
-    batch.mockRejectedValue(new Error("startup failed"));
+  it("propagates an interruption without launching another profile", async () => {
+    batch.mockRejectedValueOnce(new Error("Performance batch interrupted (SIGTERM)."));
     await expect(
-      executePerformanceGate("/repo", [{ label: "all", refreshRate: 120, testFiles: ["a"] }]),
-    ).rejects.toThrow("startup failed");
+      executePerformanceGate("/repo", [
+        { label: "cadence", refreshRate: 60, testFiles: ["a"] },
+        { label: "cadence", refreshRate: 90, testFiles: ["a"] },
+      ]),
+    ).rejects.toThrow("interrupted (SIGTERM)");
+    expect(batch).toHaveBeenCalledTimes(1);
   });
 });

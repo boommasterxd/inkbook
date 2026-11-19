@@ -53,21 +53,19 @@ it.each([false, true])(
           expect(ownerDocument.activeElement).toBe(target);
         }
       }
-      if (popout) {
-        for (const type of ["pointerenter", "pointerdown", "pointerup", "pointerleave"]) {
-          act(() => {
-            draw.dispatchEvent(
-              new PointerEvent(type, {
-                button: 0,
-                isPrimary: true,
-                pointerId: 1,
-                pointerType: "mouse",
-                bubbles: true,
-              }),
-            );
-          });
-          await settle();
-        }
+      for (const type of ["pointerenter", "pointerdown", "pointerup", "pointerleave"]) {
+        act(() => {
+          draw.dispatchEvent(
+            new PointerEvent(type, {
+              button: 0,
+              isPrimary: true,
+              pointerId: 1,
+              pointerType: "mouse",
+              bubbles: true,
+            }),
+          );
+        });
+        await settle();
       }
       expect(reads).not.toHaveBeenCalled();
       expect(groupReads).not.toHaveBeenCalled();

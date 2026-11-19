@@ -15,6 +15,7 @@ export interface ImportViewState {
 }
 
 export interface ImportViewContext {
+  readonly compactLayout: MediaQueryList;
   readonly state?: ImportViewState;
   readonly path?: string;
   readonly localization: Localization;

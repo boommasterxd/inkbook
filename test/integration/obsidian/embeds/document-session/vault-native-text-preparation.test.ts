@@ -113,15 +113,20 @@ it.each([2, 3, 4] as const)(
 );
 
 it("rejects a trusted-head conflict before native fonts or text preparation run", async () => {
+  let stored: unknown;
   const trustedHeads = new TrustedDocumentHeadLedger({
-    loadLocalStorage: () => undefined,
-    saveLocalStorage: () => undefined,
+    loadLocalStorage: () => structuredClone(stored),
+    saveLocalStorage: (_key, value) => {
+      stored = structuredClone(value);
+    },
   });
-  trustedHeads.reconcile({
-    documentId: "drawings/ink.svg",
-    revision: 8,
-    outputHash: "a".repeat(64),
-  });
+  expect(
+    trustedHeads.reconcile({
+      documentId: "drawings/ink.svg",
+      revision: 8,
+      outputHash: "a".repeat(64),
+    }),
+  ).toMatchObject({ status: "created" });
   const f = await fixture(2, { trustedHeads });
   try {
     expect((await f.harness.session.unlock(operation())).status).toBe("source-changed");

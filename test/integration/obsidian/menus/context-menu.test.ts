@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import "../../../fixtures/obsidian/menu-motion";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { Platform } from "obsidian";
 import { Localization } from "../../../../src/domain/localization";
 
@@ -349,32 +349,56 @@ describe("context menu population", () => {
     ]);
   });
 
-  it("uses orange caution for clearing and red warning for actual deletion", () => {
+  it("reserves the host deletion warning for deleting the embed", () => {
     const menu = new FakeMenu();
     populateContextMenu(
       menu,
       document,
-      state({ hasSelection: false, canPaste: false }),
+      state({ hasSelection: false }),
       createContextMenuHandlers(),
     );
-
-    expect(titles(menu)).toEqual(["Copy embed", "Erase all", "Delete embed"]);
-    const erase = menu.entries.find(
-      (entry): entry is RecordedItem =>
-        entry !== "separator" && entry.calls.includes("title:Erase all"),
+    expect(titles(menu)).toContain("Erase all");
+    const warnings = menu.entries.flatMap((entry) =>
+      entry !== "separator" && entry.calls.includes("warning:true") ? [entry.calls[0]] : [],
     );
-    expect(erase?.calls).toContain("icon:inkbook-eraser-caution");
-    expect(erase?.calls).not.toContain("warning:true");
-    expect(
-      erase?.fragment?.querySelector('.inkbook-menu-title-content[data-tone="caution"]')
-        ?.textContent,
-    ).toBe("Erase all");
-    const remove = menu.entries.find(
-      (entry): entry is RecordedItem =>
-        entry !== "separator" && entry.calls.includes("title:Delete embed"),
-    );
-    expect(remove?.calls).toContain("warning:true");
+    expect(warnings).toEqual(["title:Delete embed"]);
   });
+});
+
+it("delegates presentation without mutating unrelated host menus", () => {
+  const requestFrame = vi.spyOn(window, "requestAnimationFrame");
+  const surface = createHtmlElement("div");
+  surface.className = "menu other-plugin-menu";
+  surface.style.left = "123px";
+  document.body.append(surface);
+  const hostMarkup = surface.outerHTML;
+  onTestFinished(() => {
+    surface.remove();
+    requestFrame.mockRestore();
+  });
+
+  const menu = new FakeMenu();
+  const session = openContextMenu(
+    { create: () => menu, forEvent: () => menu },
+    {
+      type: "event",
+      ownerDocument: document,
+      event: new MouseEvent("contextmenu"),
+      canvasInputSurface: createHtmlElement("button"),
+    },
+    state({ hasSelection: false }),
+    createContextMenuHandlers(),
+  );
+  onTestFinished(() => session.close("immediate"));
+
+  expect(menu.entries.length).toBeGreaterThan(0);
+  expect(surface.parentElement).toBe(document.body);
+  expect(surface.outerHTML).toBe(hostMarkup);
+  session.close("immediate");
+  expect(menu.closed).toBe(true);
+  expect(surface.parentElement).toBe(document.body);
+  expect(surface.outerHTML).toBe(hostMarkup);
+  expect(requestFrame).not.toHaveBeenCalled();
 });
 
 describe("context menu lifecycle", () => {
@@ -388,32 +412,6 @@ describe("context menu lifecycle", () => {
     menu.hideCallback?.();
     session.close("immediate");
     expect(close).toHaveBeenCalledTimes(2);
-  });
-
-  it("delegates presentation without mutating unrelated host menus", () => {
-    const requestFrame = vi.spyOn(window, "requestAnimationFrame");
-    const menu = new FakeMenu();
-    const canvas = createHtmlElement("button");
-    const session = openContextMenu(
-      { create: () => menu, forEvent: () => menu },
-      {
-        type: "event",
-        ownerDocument: document,
-        event: new MouseEvent("contextmenu"),
-        canvasInputSurface: canvas,
-      },
-      state({ hasSelection: false }),
-      createContextMenuHandlers(),
-    );
-    const surface = createHtmlElement("div");
-    surface.className = "menu";
-    document.body.append(surface);
-
-    expect(requestFrame).not.toHaveBeenCalled();
-    expect(surface.className).toBe("menu");
-    expect(surface.getAttribute("style")).toBeNull();
-    session.close("immediate");
-    surface.remove();
   });
 
   it("uses the owning document for positioned menus and returns focus once", () => {

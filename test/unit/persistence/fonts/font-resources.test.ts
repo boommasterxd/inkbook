@@ -1,6 +1,6 @@
 import { loadBuiltinFont } from "../../../../src/persistence/fonts/builtin-fonts";
 import { Platform } from "obsidian";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { inspectFont } from "../../../../src/persistence/fonts/font-validation";
 import {
   createFontResource,
@@ -9,6 +9,7 @@ import {
   validateFontResource,
 } from "../../../../src/persistence/fonts/font-resources";
 import { FONT_LIMITS } from "../../../../src/persistence/fonts/font-container";
+import * as packagedFontBinary from "../../../../src/persistence/fonts/packaged-font-binary";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 
 const root = new URL("../../../../src/persistence/fonts/assets/", import.meta.url);
@@ -21,6 +22,73 @@ async function fixture(name = "inter-400-normal.woff2"): Promise<Uint8Array<Arra
   }
   throw new Error("Asset fixtures require desktop test runtime.");
 }
+
+async function compressedFixture() {
+  const bytes = await fixture();
+  if (Platform.isDesktop) {
+    const { gzipSync } = await import("node:zlib");
+    const payload = gzipSync(bytes).toString("base64");
+    return {
+      bytes,
+      packaged: (length = bytes.length): string =>
+        `data:application/gzip;length=${length};base64,${payload}`,
+    };
+  }
+  throw new Error("Compression fixtures require the desktop test runtime.");
+}
+
+describe("packaged font assets", () => {
+  it("loads bundled font assets through the native asset pipeline and shares Caveat variable weights", async () => {
+    const decode = vi.spyOn(packagedFontBinary, "decodePackagedFontBinary");
+    try {
+      const regular = await loadBuiltinFont("inter", 400, "normal", scheduler);
+      expect(decode).toHaveBeenCalledOnce();
+      expect(regular.id).toBe("e06f6b1bc553aaea4e4668023ed0ab0a147129c3107f511bc7d03d361b0ae085");
+      const caveat = await loadBuiltinFont("caveat", 700, "italic", scheduler);
+      expect(decode).toHaveBeenCalledTimes(2);
+      expect(caveat.weightRange).toEqual([400, 700]);
+      expect(caveat.weight).toBe(400);
+      expect(caveat.style).toBe("normal");
+      expect(caveat.license).toContain("SIL OPEN FONT LICENSE");
+    } finally {
+      decode.mockRestore();
+    }
+  });
+
+  it("restores exact packaged font bytes and rejects a false output length", async () => {
+    const { bytes, packaged } = await compressedFixture();
+    const { decodePackagedFontBinary } = packagedFontBinary;
+    expect(await decodePackagedFontBinary(packaged(), scheduler)).toEqual(bytes);
+    await expect(decodePackagedFontBinary(packaged(bytes.length - 1), scheduler)).rejects.toThrow(
+      "Invalid or unsupported font container",
+    );
+  });
+
+  it("cancels and releases an in-progress packaged asset inflation", async () => {
+    const { packaged } = await compressedFixture();
+    const controller = new AbortController();
+    const read = vi.spyOn(ReadableStreamDefaultReader.prototype, "read");
+    const cancel = vi.spyOn(ReadableStreamDefaultReader.prototype, "cancel");
+    const release = vi.spyOn(ReadableStreamDefaultReader.prototype, "releaseLock");
+    const bounded = new TestWorkScheduler({
+      checkpoint: () => {
+        if (read.mock.calls.length > 0) controller.abort(new Error("Font load cancelled"));
+      },
+    });
+    try {
+      await expect(
+        packagedFontBinary.decodePackagedFontBinary(packaged(), bounded, controller.signal),
+      ).rejects.toThrow("Font load cancelled");
+      expect(read).toHaveBeenCalledOnce();
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(release).toHaveBeenCalledOnce();
+    } finally {
+      read.mockRestore();
+      cancel.mockRestore();
+      release.mockRestore();
+    }
+  });
+});
 
 describe("font admission and portable resources", () => {
   it("admits every bundled full upstream face, including variable TrueType", async () => {
@@ -39,16 +107,6 @@ describe("font admission and portable resources", () => {
       expect(inspectFont(bytes).tables).toBeGreaterThan(5);
       expect(await decodeFontResource(resource, scheduler)).toEqual(bytes);
     }
-  });
-
-  it("loads bundled font assets through the native asset pipeline and shares Caveat variable weights", async () => {
-    const regular = await loadBuiltinFont("inter", 400, "normal", scheduler);
-    expect(regular.id).toBe("e06f6b1bc553aaea4e4668023ed0ab0a147129c3107f511bc7d03d361b0ae085");
-    const caveat = await loadBuiltinFont("caveat", 700, "italic", scheduler);
-    expect(caveat.weightRange).toEqual([400, 700]);
-    expect(caveat.weight).toBe(400);
-    expect(caveat.style).toBe("normal");
-    expect(caveat.license).toContain("SIL OPEN FONT LICENSE");
   });
 
   it("rejects truncated containers and oversized decoded WOFF2 tables", async () => {

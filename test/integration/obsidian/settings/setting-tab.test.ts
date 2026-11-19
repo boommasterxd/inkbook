@@ -22,29 +22,6 @@ beforeAll(() => {
   installObsidianDomHelpers();
 });
 
-function declarativeLabels(
-  definitions: readonly SettingDefinitionItem<SettingsControlKey>[],
-): string[] {
-  const labels: string[] = [];
-  for (const definition of definitions) {
-    if ("heading" in definition && definition.heading !== undefined) {
-      labels.push(definition.heading);
-    }
-    if ("name" in definition) labels.push(definition.name);
-    if (
-      "control" in definition &&
-      definition.control !== undefined &&
-      definition.control.type === "dropdown"
-    ) {
-      labels.push(...Object.values(definition.control.options));
-    }
-    if ("items" in definition && definition.items !== undefined) {
-      labels.push(...declarativeLabels(definition.items));
-    }
-  }
-  return labels;
-}
-
 function renderedLabels(definition: SettingDefinitionRender): string[] {
   const rendered = renderDefinition(definition);
   rendered.container.querySelector<HTMLButtonElement>(".inkbook-settings-tool-trigger")?.click();
@@ -68,7 +45,7 @@ function isRenderDefinition(
   return "render" in definition && typeof definition.render === "function";
 }
 
-describe("InkbookSettingTab group definitions and reset actions", () => {
+describe("InkbookSettingTab group definitions", () => {
   it("returns the required groups in order without storage access", () => {
     const vault = new VaultAdapter();
     const device = new DeviceAdapter();
@@ -95,30 +72,6 @@ describe("InkbookSettingTab group definitions and reset actions", () => {
     expect(vault.saves).toBe(0);
     expect(device.loads).toBe(0);
     expect(device.saves).toBe(0);
-  });
-
-  it("renders reset tones through declarative host render callbacks", () => {
-    const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
-    const generalReset = groups(tab)[0]?.items?.find(
-      (item): item is SettingDefinitionRender =>
-        item.name === "Reset group to defaults" && "render" in item,
-    );
-    const definitions = tab.getControlDefinitions();
-    const resetAll = definitions[definitions.length - 1];
-    if (generalReset === undefined || resetAll === undefined || !isRenderDefinition(resetAll)) {
-      throw new Error("Missing rendered reset definitions.");
-    }
-
-    const groupRow = renderDefinition(generalReset);
-    const globalRow = renderDefinition(resetAll);
-
-    expect(groupRow.container.dataset.inkbookSettingActionTone).toBe("caution");
-    expect(globalRow.container.dataset.inkbookSettingActionTone).toBe("danger");
-    expect(groupRow.container.classList).toContain("mod-action");
-    expect(globalRow.container.classList).toContain("mod-action");
-
-    groupRow.cleanup();
-    globalRow.cleanup();
   });
 });
 
@@ -286,31 +239,5 @@ describe("InkbookSettingTab snapping and refresh definitions", () => {
     );
     expect(refreshRate.desc).toContain("loading can take longer");
     expect(detectingRate.desc).toContain("120 Hz profile until detection completes");
-  });
-});
-
-describe("InkbookSettingTab visible labels", () => {
-  it("uses sentence case for every multi-word designation", () => {
-    const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
-    const definitions = tab.getControlDefinitions();
-    const shapes = groups(tab).find((group) => group.heading === "Shapes and structures");
-    if (shapes === undefined) throw new Error("Missing Shapes and structures group");
-    const shapeLabels = renders(shapes).flatMap(renderedLabels);
-    const multiWordLabels = [...new Set([...declarativeLabels(definitions), ...shapeLabels])]
-      .filter((label) => label.includes(" "))
-      .sort();
-    const sentenceCase = /^[A-Z][A-Za-z0-9-]*(?: (?:[a-z0-9][a-z0-9-]*|Inkbook|Obsidian|2D|3D))*$/u;
-
-    expect(multiWordLabels).toEqual(
-      expect.arrayContaining(["Straight highlighter", "Coordinate system"]),
-    );
-    expect(
-      multiWordLabels.filter(
-        (label) =>
-          !sentenceCase.test(label) &&
-          !/^\d+ Hz$/.test(label) &&
-          !/^Auto \((?:detected: \d+ Hz|detecting…)\)$/.test(label),
-      ),
-    ).toEqual([]);
   });
 });

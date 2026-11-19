@@ -12,6 +12,13 @@ import {
 import { dialogButton } from "../../../fixtures/obsidian/dialog";
 import { assertAccessibleSemantics } from "../../../fixtures/accessibility";
 
+vi.mock("../../../../src/obsidian/settings/import/import-example-loader", () => ({
+  acquireImportExamples: () => ({
+    module: import("../../../../src/obsidian/settings/import/import-example-images"),
+    release: () => undefined,
+  }),
+}));
+
 setupImportDialogTests();
 
 it("creates optional examples on first expansion and reuses them across disclosure toggles", async () => {

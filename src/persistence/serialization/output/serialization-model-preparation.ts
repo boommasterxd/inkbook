@@ -20,13 +20,14 @@ import {
 import * as facts from "./incremental-validation";
 import type { DocumentCodecResult } from "../types";
 import {
+  captureDeltaInputSteps,
   captureSnapshotInputSteps,
   copySerializationElementsSteps,
 } from "./serialization-input-preparation";
+import type { DocumentSerializationDelta } from "./incremental-document-serializer-types";
 import { toValidationError } from "../../../domain/schema/validation-internals";
 import { prepareSerializationRanks, type SerializationRanks } from "./serialization-selection";
 import { updateConnectionTargetCounts } from "./connection-target-counts";
-import { canonicalImageResource } from "../../images/image-resources";
 import { validateSnapshotResourcesSteps } from "./serialization-resource-preparation";
 
 export interface PreparedSerializationModel {
@@ -75,7 +76,8 @@ export function* prepareSerializationModelSteps(
   }
   if (derivations.elements.length !== snapshot.elements.length)
     return codecFailure("invalid-delta", "Validated element derivations are incomplete.");
-  if (!(yield* validateSnapshotResourcesSteps(snapshot)))
+  const imageResources = yield* validateSnapshotResourcesSteps(snapshot);
+  if (imageResources === null)
     return codecFailure("snapshot-invalid", "Document resource content is invalid.");
   const elements = new Map<string, InkElementV1>();
   const elementFacts = new Map<string, facts.ElementFacts>();
@@ -107,7 +109,7 @@ export function* prepareSerializationModelSteps(
   return {
     ok: true,
     value: {
-      imageResources: (snapshot.imageResources ?? []).map(canonicalImageResource),
+      imageResources,
       fontResources: snapshot.fontResources ?? [],
       elements,
       facts: elementFacts,
@@ -144,4 +146,17 @@ export function completeSerializationSteps<T>(steps: Generator<unknown, T>): T {
   let step = steps.next();
   while (!step.done) step = steps.next();
   return step.value;
+}
+
+export async function copySerializationDelta(
+  delta: DocumentSerializationDelta,
+  context: { readonly signal: AbortSignal; checkpoint(): Promise<void> | undefined },
+): Promise<DocumentSerializationDelta> {
+  const captured = await consumeSerializationSteps(captureDeltaInputSteps(delta), context);
+  if (captured.changedElements === undefined) return captured;
+  const changedElements = await consumeSerializationSteps(
+    copySerializationElementsSteps(captured.changedElements),
+    context,
+  );
+  return { ...captured, changedElements };
 }

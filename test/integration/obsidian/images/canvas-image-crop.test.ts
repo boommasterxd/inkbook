@@ -108,6 +108,16 @@ function key(target: HTMLElement, name: string, shiftKey = false): void {
   );
 }
 
+function expectCropNotice(group: HTMLElement, apply: HTMLButtonElement): void {
+  const describedBy = group.getAttribute("aria-describedby")!.split(" ");
+  const notice = document.getElementById(describedBy[1]!)!;
+  expect(notice.textContent).toBe("Hidden pixels stay in the drawing and can be restored.");
+  expect(
+    notice.closest('[hidden], [aria-hidden="true"], .inkbook-menu-visually-hidden'),
+  ).toBeNull();
+  expect(apply.closest('[role="toolbar"]')?.getAttribute("aria-describedby")).toBe(notice.id);
+}
+
 describe("inline canvas image crop", () => {
   it("keeps compatibility mouse clicks inside crop controls away from the host editor", async () => {
     const crop = setup();
@@ -130,7 +140,7 @@ describe("inline canvas image crop", () => {
       '[role="group"][aria-label="Crop image"]',
     );
     expect(group).not.toBeNull();
-    expect(group?.getAttribute("aria-describedby")).toBeTruthy();
+    expectCropNotice(group!, crop.button("Apply crop"));
     expect(crop.button("Cancel")).toBeDefined();
     expect(crop.button("Apply crop")).toBeDefined();
     const handle = crop.container.querySelector<HTMLButtonElement>('[data-edges="left top"]')!;

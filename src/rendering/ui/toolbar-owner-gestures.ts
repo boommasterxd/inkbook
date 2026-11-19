@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 
 import { bindOwnerGestures } from "../motion/toolbar-owner-gestures";
 
-/** Complements Motion 14.6 Space presses and gesture ends in a pop-out's owning window. */
+/** Binds one toolbar press owner and routes pop-out gestures to their owning window. */
 export function useToolbarOwnerGestures(
   elementRef: RefObject<HTMLElement | null>,
   disabled: boolean,

@@ -6,13 +6,15 @@ export function animateWideMenuExit(
   ownerWindow: Window,
   durationMs: number,
   onComplete: () => void,
+  stopEntry?: () => void,
 ): () => void {
-  const style = ownerWindow.getComputedStyle(surface);
+  const { opacity, scale } = ownerWindow.getComputedStyle(surface);
+  stopEntry?.();
   return playMenuMotion(
     surface,
     {
-      opacity: [style.opacity || "1", "0"],
-      scale: [!style.scale || style.scale === "none" ? "1" : style.scale, "0.96"],
+      opacity: [opacity || "1", "0"],
+      scale: [!scale || scale === "none" ? "1" : scale, "0.96"],
     },
     durationMs,
     onComplete,

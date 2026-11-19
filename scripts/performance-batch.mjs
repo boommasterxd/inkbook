@@ -2,8 +2,11 @@ import { spawn } from "node:child_process";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { clearTimeout as cancelTimer, setTimeout as scheduleTimer } from "node:timers";
 
+import { forwardSignal, waitForShutdown } from "./check-execution.mjs";
+
 const OUTPUT_LIMIT = 32 * 1024 * 1024;
 const DURATION_LIMIT = 20 * 60 * 1000;
+const SHUTDOWN_LIMIT = 2_000;
 const REFRESH_RATES = [60, 90, 120, 144, 240];
 
 function normalizeFile(root, file) {
@@ -90,6 +93,7 @@ function spawnBatch({ root, files, refreshRate }) {
     ],
     {
       cwd: root,
+      detached: process.platform !== "win32",
       env: { ...process.env, INKBOOK_PERFORMANCE_REFRESH_RATE: String(refreshRate) },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -102,18 +106,67 @@ function captureBatch(child) {
     let stderr = "";
     let outputBytes = 0;
     let failure;
-    const terminate = (message) => {
-      failure ??= message;
-      child.kill("SIGKILL");
-    };
+    let interruption;
+    let shutdownDeadline;
+    let shutdownTimer;
+    let finishing = false;
+    const interrupt = () => stop("Performance batch interrupted (SIGINT).", "SIGINT");
+    const terminate = () => stop("Performance batch interrupted (SIGTERM).", "SIGTERM");
     const timeout = scheduleTimer(
-      () => terminate("Performance batch exceeded 20 minutes."),
+      () => stop("Performance batch exceeded 20 minutes."),
       DURATION_LIMIT,
     );
+    async function finish(code, signal) {
+      if (finishing) return;
+      finishing = true;
+      cancelTimer(timeout);
+      cancelTimer(shutdownTimer);
+      let stopped = true;
+      try {
+        if (shutdownDeadline !== undefined) {
+          stopped = await waitForShutdown(child, shutdownDeadline);
+        }
+      } catch {
+        stopped = false;
+      } finally {
+        process.removeListener("SIGINT", interrupt);
+        process.removeListener("SIGTERM", terminate);
+      }
+      if (!stopped)
+        failure = `${failure} Performance process group shutdown could not be verified.`;
+      complete({
+        stdout,
+        stderr,
+        interruption,
+        stopped,
+        failure: failure ?? (code === 0 ? undefined : `Vitest exited with ${signal ?? code}.`),
+      });
+    }
+    function stop(message, signal) {
+      interruption ??= signal;
+      if (shutdownDeadline !== undefined) return;
+      failure ??= message;
+      shutdownDeadline = performance.now() + SHUTDOWN_LIMIT;
+      shutdownTimer = scheduleTimer(() => {
+        failure += " Vitest did not close after process group termination.";
+        child.stdout.destroy();
+        child.stderr.destroy();
+        child.unref();
+        void finish(null, null);
+      }, SHUTDOWN_LIMIT);
+      try {
+        forwardSignal(child, "SIGKILL");
+      } catch {
+        failure += " Performance process group could not be signaled.";
+      }
+    }
+    process.on("SIGINT", interrupt);
+    process.on("SIGTERM", terminate);
     const append = (destination, chunk) => {
+      if (failure !== undefined) return;
       outputBytes += Buffer.byteLength(chunk);
       if (outputBytes > OUTPUT_LIMIT) {
-        terminate("Performance batch output exceeded 32 MiB.");
+        stop("Performance batch output exceeded 32 MiB.");
         return;
       }
       if (destination === "stdout") stdout += chunk;
@@ -124,17 +177,9 @@ function captureBatch(child) {
     child.stdout.on("data", (chunk) => append("stdout", chunk));
     child.stderr.on("data", (chunk) => append("stderr", chunk));
     child.once("error", (error) => {
-      cancelTimer(timeout);
-      complete({ stdout, stderr, failure: error.message });
+      failure ??= error.message;
     });
-    child.once("close", (code, signal) => {
-      cancelTimer(timeout);
-      complete({
-        stdout,
-        stderr,
-        failure: failure ?? (code === 0 ? undefined : `Vitest exited with ${signal ?? code}.`),
-      });
-    });
+    child.once("close", (code, signal) => void finish(code, signal));
   });
 }
 
@@ -142,6 +187,9 @@ export async function runPerformanceBatch({ root, testFiles, refreshRate }) {
   if (!REFRESH_RATES.includes(refreshRate)) throw new Error("Unsupported refresh rate.");
   const files = expectedFiles(root, testFiles);
   const captured = await captureBatch(spawnBatch({ root, files, refreshRate }));
+  if (captured.interruption !== undefined || !captured.stopped) {
+    throw new Error(captured.failure);
+  }
   let result = { files, violations: [] };
   try {
     result = parseBatchReport({ root, testFiles, refreshRate, ...captured });

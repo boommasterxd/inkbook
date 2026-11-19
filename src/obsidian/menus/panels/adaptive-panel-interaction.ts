@@ -34,8 +34,7 @@ export function registerPanelInteraction(options: PanelInteractionOptions): void
   owner.register(
     registerFocusNavigation(
       options.layer,
-      !Platform.isPhone &&
-        options.anchor.closest('[data-inkbook-keyboard-navigation="true"]') !== null,
+      options.anchor.closest('[data-inkbook-keyboard-navigation="true"]') !== null,
     ),
   );
   const onKeyDown = (event: KeyboardEvent): void => {

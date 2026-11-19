@@ -24,6 +24,7 @@ import {
   prepareSerializationModelSteps,
   consumeSerializationSteps,
   completeSerializationSteps,
+  copySerializationDelta,
   type PreparedSerializationModel,
 } from "./serialization-model-preparation";
 import * as incrementalValidation from "./incremental-validation";
@@ -33,18 +34,13 @@ import type {
 } from "./incremental-document-serializer-types";
 import { checkBackgroundLimit } from "./serialization-budgets";
 import { serializeDocumentFragments } from "./synchronous-document-export";
-import {
-  captureDeltaInputSteps,
-  copySerializationElementsSteps,
-  canonicalizeSerializationElementsSteps,
-} from "./serialization-input-preparation";
+import { canonicalizeSerializationElementsSteps } from "./serialization-input-preparation";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "../sha256";
 import { serializeRuntimeSnapshotToUtf8 } from "./streaming-runtime-export";
 import * as selection from "./serialization-selection";
 import type { SerializationRanks } from "./serialization-selection";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "../types";
-import { canonicalFontResource, snapshotTextResources } from "./text-fonts";
-import { snapshotImageResources } from "./image-markup";
+import { canonicalFontResource } from "./text-fonts";
 import { prepareSerializationDeltaResourcesSteps } from "./serialization-resource-preparation";
 export class IncrementalDocumentSerializer {
   #imageResources: NonNullable<InkSnapshotV1["imageResources"]> = [];
@@ -92,17 +88,17 @@ export class IncrementalDocumentSerializer {
     };
   }
   public currentSnapshot(): InkSnapshotV1 | null {
-    const snapshot = document.orderedSnapshotValue(
-      this.#revision,
-      this.#page,
-      this.#elements,
-      this.#orders,
-      this.#fontResources,
-      this.#imageResources,
+    if (this.#revision === null || this.#page === null) return null;
+    return completeSerializationSteps(
+      document.orderedSnapshotValueSteps({
+        revision: this.#revision,
+        page: this.#page,
+        elements: this.#elements,
+        orders: this.#orders,
+        fontResources: this.#fontResources,
+        imageResources: this.#imageResources,
+      }),
     );
-    if (snapshot === null) return null;
-    const { fontResources: _resources, imageResources: _images, ...header } = snapshot;
-    return { ...header, ...snapshotTextResources(snapshot), ...snapshotImageResources(snapshot) };
   }
   public currentImageResources(): readonly NonNullable<InkSnapshotV1["imageResources"]>[number][] {
     return this.#imageResources;
@@ -217,43 +213,57 @@ export class IncrementalDocumentSerializer {
       }),
     );
     if (!prepared.ok) return prepared;
-    this.#adoptModel(
-      prepared.value,
-      completeSerializationSteps(
-        this.#cache.prepareResetSteps(prepared.value.elements, ownsRuntimeSamples, Infinity),
-      ),
+    const cache = this.#cache.prepareResetSteps(
+      prepared.value.elements,
+      ownsRuntimeSamples,
+      Infinity,
     );
+    this.#adoptModel(prepared.value, completeSerializationSteps(cache));
     return { ok: true, value: undefined };
   }
   public async resetRuntimeSliced(
     snapshot: InkSnapshotV1,
     context: { readonly signal: AbortSignal; checkpoint(): Promise<void> | undefined },
     ownsSamples = false,
-  ): Promise<DocumentCodecResult<void>> {
+    validated?: { derivations: SnapshotValidationDerivations; adopt(): void },
+    encodings?: StrokeSampleEncodingCache,
+  ): Promise<DocumentCodecResult<InkSnapshotV1 | undefined>> {
     const epoch = this.#epoch;
     const prepared = await consumeSerializationSteps(
       prepareSerializationModelSteps(snapshot, {
         runtimeStrokeBuffers: true,
         ownsRuntimeSamples: ownsSamples,
+        ...(validated === undefined ? {} : { derivations: validated.derivations }),
       }),
       context,
     );
-    this.#fullValidationRuns += 1;
+    if (validated === undefined) this.#fullValidationRuns += 1;
     if (!prepared.ok) return prepared;
     const cache = await consumeSerializationSteps(
       this.#cache.prepareResetSteps(prepared.value.elements, true),
       context,
     );
+    const canonical =
+      validated === undefined
+        ? undefined
+        : await consumeSerializationSteps(
+            document.orderedSnapshotValueSteps(prepared.value),
+            context,
+          );
+    const encodingSteps = encodings?.reconcileElementsSteps(prepared.value.elements);
+    if (encodingSteps) await consumeSerializationSteps(encodingSteps, context);
     context.signal.throwIfAborted();
     if (epoch !== this.#epoch)
       return codecFailure("base-revision-mismatch", "The staged model is stale.");
-    this.#adoptModel(prepared.value, cache);
-    return { ok: true, value: undefined };
+    if (encodings) this.sampleEncodingCache.adoptStaged(encodings);
+    this.#adoptModel(prepared.value, cache, encodings !== undefined);
+    validated?.adopt();
+    return { ok: true, value: canonical };
   }
-  #adoptModel(model: PreparedSerializationModel, cache: ElementFragmentCache): void {
+  #adoptModel(model: PreparedSerializationModel, cache: ElementFragmentCache, staged = false) {
     this.#imageResources = model.imageResources;
     this.#fontResources = model.fontResources.map(canonicalFontResource);
-    this.sampleEncodingCache.reconcileElements(model.elements);
+    if (!staged) this.sampleEncodingCache.reconcileElements(model.elements);
     for (const id of this.#shapeCache.ids()) {
       if (!model.elements.has(id)) this.#shapeCache.remove(id);
     }
@@ -281,20 +291,7 @@ export class IncrementalDocumentSerializer {
     context: { readonly signal: AbortSignal; checkpoint(): Promise<void> | undefined },
     ownsSamples = false,
   ): Promise<DocumentCodecResult<void>> {
-    if (!ownsSamples) {
-      const header = await consumeSerializationSteps(captureDeltaInputSteps(delta), context);
-      delta = {
-        ...header,
-        ...(header.changedElements === undefined
-          ? {}
-          : {
-              changedElements: await consumeSerializationSteps(
-                copySerializationElementsSteps(header.changedElements),
-                context,
-              ),
-            }),
-      };
-    }
+    if (!ownsSamples) delta = await copySerializationDelta(delta, context);
     return consumeSerializationSteps(
       this.#applyDeltaSteps(delta, true, 256, context.signal),
       context,

@@ -1,7 +1,7 @@
 import { ChunkedInkbookInputParser } from "../../../serialization/input/chunked-input-codec";
 import type { ValidatedSnapshotConsumer } from "../../../serialization/metadata/validated-snapshot-adoption";
 import type { RuntimeSliceContext } from "../types";
-import type { StrokeSampleEncodingCache } from "../../../serialization/metadata/stroke-sample-encoding-cache";
+import type { ChunkedInkbookInputOptions } from "../../../serialization/input/chunked-input-types";
 import { SafeStaticProof } from "../../../serialization/input/safe-static-proof";
 import { hashConfirmedRuntimeInput } from "./runtime-input-hash";
 import { isNativeArrayBuffer, isNativeUint8Array } from "../../../serialization/transfer-array";
@@ -13,7 +13,7 @@ export async function parseRuntimeInput(
   context?: RuntimeSliceContext,
   onValidatedSnapshot?: ValidatedSnapshotConsumer,
   validation: "canonical" | "safe" | "worker-safe" = "canonical",
-  sampleEncodingCache?: StrokeSampleEncodingCache,
+  sampleEncodingCache?: ChunkedInkbookInputOptions["sampleEncodingCache"],
   safeStaticProof?: SafeStaticProof,
 ) {
   const inputSliceBytes = context?.workProfile?.inputByteLimit ?? 256 * 1024;

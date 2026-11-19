@@ -186,7 +186,12 @@ describe("pressure collinear pruning ordering and cancellation", () => {
     try {
       const job = iteratePressureCollinearPruning(points);
       // First removal is index 3; ring initialization itself reads no coordinates.
-      while (work.coordinateReads < 16 * 12) job.next();
+      for (let steps = 0; work.coordinateReads < 16 * 12; steps += 1) {
+        expect(steps, "Collinear pruning never reached coordinate work").toBeLessThan(
+          points.length,
+        );
+        expect(job.next().done, "Collinear pruning finished before suspension").toBe(false);
+      }
       job.return(undefined);
       cancelled = { ...work, capacities: [...work.capacities] };
       expect(job.next()).toEqual({ done: true, value: undefined });

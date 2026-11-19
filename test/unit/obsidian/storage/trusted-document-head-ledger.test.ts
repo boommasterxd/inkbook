@@ -107,7 +107,7 @@ describe("TrustedDocumentHeadLedger", () => {
 
 describe("TrustedDocumentHeadLedger storage boundary", () => {
   it("fails closed when stored data or a candidate is invalid", () => {
-    const malformed = new TrustedDocumentHeadLedger(storage({ heads: [], version: 2 }));
+    const malformed = new TrustedDocumentHeadLedger(storage({ heads: [head()], version: 2 }));
     expect(malformed.reconcile(head())).toEqual({ operation: "validate", status: "storage-error" });
 
     const ledger = new TrustedDocumentHeadLedger(storage());
@@ -118,12 +118,11 @@ describe("TrustedDocumentHeadLedger storage boundary", () => {
   });
 
   it("does not trust an advancement when device storage rejects the write", () => {
-    const initial = { heads: [head()], version: 1 };
-    const ledger = new TrustedDocumentHeadLedger({
-      loadLocalStorage: () => initial,
-      saveLocalStorage: () => {
-        throw new Error("quota exceeded");
-      },
+    const port = storage();
+    const ledger = new TrustedDocumentHeadLedger(port);
+    ledger.reconcile(head());
+    port.save.mockImplementationOnce(() => {
+      throw new Error("quota exceeded");
     });
 
     expect(ledger.reconcile(head(undefined, 8, HASH_B))).toEqual({
@@ -133,6 +132,24 @@ describe("TrustedDocumentHeadLedger storage boundary", () => {
     expect(ledger.reconcile(head())).toMatchObject({ status: "unchanged" });
   });
 
+  it("preserves legacy state on a silent host write failure and retries before trusting the ledger", async () => {
+    const legacy = { heads: [head()], version: 1 };
+    const port = storage(legacy);
+    const ledger = new TrustedDocumentHeadLedger(port);
+    port.save.mockImplementationOnce(() => undefined);
+
+    await expect(ledger.ready()).resolves.toMatchObject({
+      operation: "save",
+      status: "storage-error",
+    });
+    expect(port.loadLocalStorage(TRUSTED_DOCUMENT_HEADS_STORAGE_KEY)).toEqual(legacy);
+    expect(ledger.reconcile(head(undefined, 6))).toMatchObject({ status: "storage-error" });
+    await expect(ledger.ready()).resolves.toBeUndefined();
+    expect(ledger.reconcile(head(undefined, 6))).toMatchObject({ reason: "lower-revision" });
+  });
+});
+
+describe("trusted head storage validation and projection", () => {
   it("rejects duplicate and over-limit persisted entries", () => {
     const duplicate = { heads: [head(), head()], version: 1 };
     const tooMany = {
@@ -169,7 +186,7 @@ describe("TrustedDocumentHeadLedger storage boundary", () => {
 
     expect(port.save).toHaveBeenCalledWith(
       TRUSTED_DOCUMENT_HEADS_STORAGE_KEY,
-      expect.objectContaining({ version: 1 }),
+      expect.objectContaining({ version: 2 }),
     );
   });
 
@@ -181,9 +198,10 @@ describe("TrustedDocumentHeadLedger storage boundary", () => {
     candidate.revision = 1;
 
     expect(ledger.reconcile(head())).toMatchObject({ status: "unchanged" });
+    const documentKey: unknown = expect.stringMatching(/^[\da-f]{64}$/u);
     expect(port.save).toHaveBeenCalledWith(TRUSTED_DOCUMENT_HEADS_STORAGE_KEY, {
-      heads: [head()],
-      version: 1,
+      heads: [{ documentKey, outputHash: HASH_A, revision: 7 }],
+      version: 2,
     });
   });
 });

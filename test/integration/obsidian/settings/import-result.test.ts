@@ -56,6 +56,7 @@ function view(
     container,
     value,
     {
+      compactLayout: window.matchMedia("not all"),
       localization: new Localization(),
       mutate: (update) => update(),
       readMotion: () => motion,
@@ -132,6 +133,7 @@ it("shows the affected note and persisted undo reason in both result and history
   const historyContainer = document.body.createDiv();
   const disposers: Array<() => void> = [];
   renderImportJournal(historyContainer, (await fixture.service.history())[0]!, {
+    compactLayout: window.matchMedia("not all"),
     mutate: (update) => update(),
     localization: new Localization(),
     readMotion: () => "reduced",

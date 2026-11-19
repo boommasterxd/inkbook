@@ -9,8 +9,12 @@ import { createMenuColorAnimator, type ChangeMenuColor } from "./menu-choice-mot
 import { registerMenuSwitchFeedback } from "./menu-switch-feedback";
 import { registerBackgroundChoiceMotion } from "./background-choice-motion";
 
+const MENU_FEEDBACK_SELECTOR =
+  ".inkbook-adaptive-panel-back, .inkbook-owned-menu-item[tabindex], .inkbook-menu-choice, .inkbook-menu-stepper-button, .inkbook-menu-background-choice, .inkbook-dialog-actions button, .inkbook-import-actions button, .inkbook-import-history-row, .inkbook-import-page-button, .inkbook-import-history-retry, .inkbook-import-open-note, .inkbook-shortcut-icon-button, .inkbook-shortcut-recorder, .inkbook-shortcuts-group-reset, .inkbook-font-import-action, .inkbook-font-import-dropzone, .inkbook-width-warning-button, .inkbook-image-import-page-action, .inkbook-image-import-thumbnail-preview, .inkbook-image-import-thumbnails-disclosure";
+
 interface MenuChoiceController {
-  readonly items: readonly HTMLElement[];
+  readonly items: () => readonly HTMLElement[];
+  readonly refresh: (items: ReadonlySet<HTMLElement>) => void;
   readonly itemAt: (target: EventTarget | null) => HTMLElement | undefined;
   readonly change: ChangeMenuColor;
   readonly moveHover: (event: PointerEvent) => void;
@@ -35,22 +39,16 @@ function createMenuChoiceController(
   anchor: HTMLElement,
   ownerWindow: Window,
 ): MenuChoiceController {
-  const selector =
-    ".inkbook-adaptive-panel-back, .inkbook-owned-menu-item[tabindex], .inkbook-menu-choice, .inkbook-menu-stepper-button, .inkbook-menu-background-choice, .inkbook-dialog-actions button, .inkbook-import-actions button, .inkbook-import-history-row, .inkbook-import-page-button, .inkbook-import-history-retry, .inkbook-import-open-note, .inkbook-shortcut-icon-button, .inkbook-shortcut-recorder, .inkbook-shortcuts-group-reset, .inkbook-font-import-action, .inkbook-font-import-dropzone, .inkbook-width-warning-button, .inkbook-image-import-page-action, .inkbook-image-import-thumbnail-preview, .inkbook-image-import-thumbnails-disclosure";
-  const itemAt = menuItemLookup(root, selector);
+  const { itemAt, items } = menuItems(root);
   let hovered: HTMLElement | undefined;
   let pressed: HTMLElement | undefined;
   let keyboardFocus: HTMLElement | undefined;
   let keyboardNavigation = false;
-  const items = [root, ...root.querySelectorAll<HTMLElement>(selector)].filter(
-    (item) => item.matches(selector) && itemAt(item) === item,
-  );
   const motion = createMenuColorAnimator(
     root,
     anchor,
     ownerWindow,
     (item) => item === hovered || item === keyboardFocus || item === pressed,
-    items,
   );
   const update: ChangeMenuColor = (item, color) =>
     motion.change(
@@ -107,6 +105,12 @@ function createMenuChoiceController(
   };
   return {
     items,
+    refresh: (items) => {
+      if (hovered !== undefined && !items.has(hovered)) hovered = undefined;
+      if (pressed !== undefined && !items.has(pressed)) pressed = undefined;
+      if (keyboardFocus !== undefined && !items.has(keyboardFocus)) keyboardFocus = undefined;
+      motion.refresh(items);
+    },
     itemAt,
     change,
     moveHover,
@@ -131,7 +135,7 @@ function registerMenuChoiceFeedback(
   root: HTMLElement,
   ownerWindow: Window,
   state: MenuChoiceController,
-): () => void {
+) {
   const observerConstructor = (
     ownerWindow as Window & { MutationObserver: typeof MutationObserver }
   ).MutationObserver;
@@ -152,13 +156,35 @@ function registerMenuChoiceFeedback(
   const leaveHover = popout
     ? registerOwnedWindowHover(root, state.finishHover)
     : hover([root], () => state.finishHover);
-  const leavePress = popout
+  const stopWindowPress = popout
     ? registerOwnedWindowPress(root, ownerWindow, state.itemAt, state.change)
-    : registerOwnedMotionPress(state.items, (_, event) => {
-        const item = state.itemAt(event.target);
-        state.change(item, "var(--interactive-hover)");
-        return () => state.change(item);
-      });
+    : undefined;
+  const presses = new Map<HTMLElement, () => void>();
+  const refresh = (): void => {
+    const items = new Set(state.items());
+    for (const [item, stop] of presses) {
+      if (items.has(item)) continue;
+      stop();
+      presses.delete(item);
+    }
+    state.refresh(items);
+    if (popout) return;
+    for (const item of items) {
+      if (presses.has(item)) continue;
+      presses.set(
+        item,
+        registerOwnedMotionPress([item], (_, event) => {
+          const pressed = state.itemAt(event.target);
+          if (pressed === undefined) return;
+          state.change(pressed, "var(--interactive-hover)");
+          return () => {
+            if (root.contains(pressed)) state.change(pressed);
+          };
+        }),
+      );
+    }
+  };
+  refresh();
   const leaveKeyboard = registerKeyboardPress(
     root,
     (event) => {
@@ -169,11 +195,13 @@ function registerMenuChoiceFeedback(
     },
     popout,
   );
-  return () => {
+  const dispose = (): void => {
     observer.disconnect();
     leaveKeyboard();
     leaveHover();
-    leavePress();
+    stopWindowPress?.();
+    for (const stop of presses.values()) stop();
+    presses.clear();
     root.removeEventListener("pointerover", state.moveHover);
     root.ownerDocument.removeEventListener("keydown", state.onKeyDown, true);
     root.removeEventListener("pointerdown", state.onPointerDown);
@@ -181,6 +209,7 @@ function registerMenuChoiceFeedback(
     root.removeEventListener("focusout", state.onFocusOut);
     state.dispose();
   };
+  return { refresh, dispose };
 }
 
 /** Menu-owned Motion gestures and theme-aware state changes. */
@@ -191,7 +220,7 @@ export function registerMenuFeedback(
 ): MenuFeedbackRegistration {
   root.dataset.inkbookFeedbackOwner = "true";
   const choices = createMenuChoiceController(root, anchor, ownerWindow);
-  const releaseChoices = registerMenuChoiceFeedback(root, ownerWindow, choices);
+  const choiceFeedback = registerMenuChoiceFeedback(root, ownerWindow, choices);
   const switches = registerMenuSwitchFeedback(root, anchor, ownerWindow);
   const backgrounds = registerBackgroundChoiceMotion(root, anchor, ownerWindow);
   const releasePreference = observeMenuMotionPreference(anchor, ownerWindow, () => {
@@ -204,14 +233,16 @@ export function registerMenuFeedback(
     if (disposed) return;
     disposed = true;
     releasePreference();
-    releaseChoices();
+    choiceFeedback.dispose();
     switches.dispose();
     backgrounds.dispose();
     delete root.dataset.inkbookFeedbackOwner;
   };
   return Object.assign(dispose, {
     refresh: () => {
-      if (!disposed) switches.refresh();
+      if (disposed) return;
+      choiceFeedback.refresh();
+      switches.refresh();
     },
   });
 }
@@ -265,15 +296,20 @@ function registerOwnedWindowPress(
   };
 }
 
-function menuItemLookup(root: HTMLElement, selector: string): MenuChoiceController["itemAt"] {
-  return (target: EventTarget | null): HTMLElement | undefined => {
+function menuItems(root: HTMLElement) {
+  const owns = (item: HTMLElement): boolean =>
+    item.closest("[data-inkbook-feedback-owner]") === root;
+  const itemAt = (target: EventTarget | null): HTMLElement | undefined => {
     if (target === null || !("closest" in target)) return undefined;
-    const item = (target as Element).closest<HTMLElement>(selector);
-    return item !== null &&
-      root.contains(item) &&
-      item.closest("[data-inkbook-feedback-owner]") === root &&
-      !item.matches(":disabled, [aria-disabled='true']")
+    const item = (target as Element).closest<HTMLElement>(MENU_FEEDBACK_SELECTOR);
+    return item !== null && owns(item) && !item.matches(":disabled, [aria-disabled='true']")
       ? item
       : undefined;
   };
+  const items = (): readonly HTMLElement[] => {
+    const choices = [...root.querySelectorAll<HTMLElement>(MENU_FEEDBACK_SELECTOR)];
+    if (root.matches(MENU_FEEDBACK_SELECTOR)) choices.unshift(root);
+    return choices.filter(owns);
+  };
+  return { itemAt, items };
 }

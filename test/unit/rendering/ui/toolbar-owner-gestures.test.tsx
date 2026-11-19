@@ -144,6 +144,34 @@ describe("toolbar pop-out owner gestures", () => {
 });
 
 describe("toolbar main-window owner gestures", () => {
+  it("releases an active Motion press on owner blur, lost capture, and disable", () => {
+    const { button, state, root } = mountPopout(window);
+    pointer(button, "pointerdown", "mouse");
+    expect(state()).toBe("false:press");
+    act(() => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    expect(state()).toBe("false:rest");
+
+    const icon = document.createElement("span");
+    button.append(icon);
+    pointer(icon, "pointerdown", "touch");
+    pointer(icon, "lostpointercapture", "touch", 8);
+    expect(state()).toBe("false:press");
+    pointer(icon, "lostpointercapture", "touch");
+    expect(state()).toBe("false:rest");
+
+    pointer(button, "pointerdown", "mouse");
+    act(() => root.render(<GestureButton disabled />));
+    pointer(window, "pointerup", "mouse");
+    act(() => root.render(<GestureButton />));
+    expect(state()).toBe("false:rest");
+    pointer(button, "pointerdown", "mouse");
+    expect(state()).toBe("false:press");
+    pointer(window, "pointerup", "mouse");
+    expect(state()).toBe("false:rest");
+  });
+
   it("keeps main-window Space presses across rerenders and releases them on pagehide or disable", () => {
     const { button, state, root } = mountPopout(window);
     act(() => button.focus());

@@ -54,11 +54,12 @@ class FontChoiceDropdown {
   readonly #list: HTMLElement;
   readonly #surface: HTMLElement;
   readonly #managementButton: HTMLButtonElement | undefined;
-  readonly #items: HTMLElement[];
   readonly #popup: FontChoicePopup;
   readonly #previews = new Map<HTMLElement, () => void>();
+  #items: HTMLElement[] | undefined;
   #observer: IntersectionObserver | undefined;
   #value: string | null;
+  #selected = -1;
   #active = 0;
   #open = false;
   #disposed = false;
@@ -90,16 +91,30 @@ class FontChoiceDropdown {
     this.#list = this.#surface.createDiv({ cls: "inkbook-font-dropdown-list" });
     this.#list.id = `inkbook-font-options-${++nextDropdown}`;
     this.#surface.id = `${this.#list.id}-popup`;
-    this.#list.setAttribute("role", "listbox");
     this.#list.hidden = true;
     this.#popup = new FontChoicePopup(this.#trigger, this.#surface, options.workScheduler);
     this.#managementButton = this.#createManagementButton();
-    this.#items = control.options.map((option, index) => {
+    for (const event of ["pointerenter", "focus", "pointerdown"])
+      this.#trigger.addEventListener(event, this.#prepareOptions);
+    this.#trigger.addEventListener("click", () => this.#setOpen(!this.#open));
+    body.addEventListener("focusout", (event) => {
+      if (!this.#contains(event.relatedTarget as Node | null)) this.#setOpen(false);
+    });
+    updateMenuText(options, () => this.#renderValue());
+    this.setValue(control.value);
+    if (options.registerActivation === undefined) this.#activateLifecycle();
+    else options.registerActivation(() => this.#activateLifecycle());
+  }
+
+  readonly #prepareOptions = (): void => {
+    if (this.#disposed || this.#items !== undefined) return;
+    this.#items = this.#control.options.map((option, index) => {
       const item = this.#list.createDiv({ cls: "inkbook-font-dropdown-option" });
       item.id = `${this.#list.id}-${index}`;
       item.dataset.value = option.value;
       item.setAttribute("role", "option");
       item.setAttribute("aria-label", option.label);
+      item.setAttribute("aria-selected", String(index === this.#selected));
       item.title = option.label;
       item.createSpan({ cls: "inkbook-font-dropdown-label", text: option.label });
       item.addEventListener("pointerdown", (event) => event.preventDefault());
@@ -110,15 +125,9 @@ class FontChoiceDropdown {
       });
       return item;
     });
-    this.#trigger.addEventListener("click", () => this.#setOpen(!this.#open));
-    body.addEventListener("focusout", (event) => {
-      if (!this.#contains(event.relatedTarget as Node | null)) this.#setOpen(false);
-    });
-    updateMenuText(options, () => this.#renderValue());
-    this.setValue(control.value);
-    if (options.registerActivation === undefined) this.#activateLifecycle();
-    else options.registerActivation(() => this.#activateLifecycle());
-  }
+    this.#list.setAttribute("role", "listbox");
+    this.#list.setAttribute("aria-label", controlLabel(this.#options, this.#control));
+  };
 
   #activateLifecycle(): void {
     if (this.#activeLifecycle || this.#disposed) return;
@@ -166,8 +175,12 @@ class FontChoiceDropdown {
   public setValue(value: string | null): void {
     if (this.#disposed) return;
     this.#value = value;
-    for (const item of this.#items)
-      item.setAttribute("aria-selected", String(item.dataset.value === value));
+    const selected = this.#control.options.findIndex((option) => option.value === value);
+    if (selected !== this.#selected) {
+      this.#items?.[this.#selected]?.setAttribute("aria-selected", "false");
+      this.#items?.[selected]?.setAttribute("aria-selected", "true");
+      this.#selected = selected;
+    }
     this.#renderValue();
     if (this.#activeLifecycle && this.#previewFamily !== value) {
       this.#selectedPreview?.();
@@ -183,13 +196,15 @@ class FontChoiceDropdown {
     this.#disposed = true;
     this.#selectedPreview?.();
     this.#selectedPreview = undefined;
+    for (const event of ["pointerenter", "focus", "pointerdown"])
+      this.#trigger.removeEventListener(event, this.#prepareOptions);
     this.#body.ownerDocument.removeEventListener("keydown", this.#onKeyDown, true);
     this.#body.ownerDocument.removeEventListener("pointerdown", this.#onOutsidePointer, true);
   }
 
   #renderValue(): void {
     const label =
-      this.#control.options.find(({ value }) => value === this.#value)?.label ??
+      this.#control.options[this.#selected]?.label ??
       this.#value ??
       menuTranslator(this.#options)("editor.style.mixed");
     this.#label.textContent = label;
@@ -198,7 +213,8 @@ class FontChoiceDropdown {
       "aria-label",
       `${controlLabel(this.#options, this.#control)}: ${label}`,
     );
-    this.#list.setAttribute("aria-label", controlLabel(this.#options, this.#control));
+    if (this.#items !== undefined)
+      this.#list.setAttribute("aria-label", controlLabel(this.#options, this.#control));
     const heading = this.#body.parentElement?.querySelector(".inkbook-menu-control-label");
     if (heading !== null && heading !== undefined)
       heading.textContent =
@@ -213,6 +229,7 @@ class FontChoiceDropdown {
 
   #setOpen(open: boolean): void {
     if (this.#disposed || this.#open === open) return;
+    if (open) this.#prepareOptions();
     this.#open = open;
     this.#list.hidden = !open;
     this.#trigger.setAttribute("aria-expanded", String(open));
@@ -231,17 +248,17 @@ class FontChoiceDropdown {
     this.#popup.open();
     this.#releaseEscape = installMenuEscapeScope(this.#options.keymap, () => this.#setOpen(false));
     this.#trigger.setAttribute("aria-controls", this.#list.id);
-    const selected = this.#items.findIndex((item) => item.dataset.value === this.#value);
-    this.#activate(Math.max(0, selected));
+    this.#activate(Math.max(0, this.#selected));
     this.#observePreviews();
   }
 
   #activate(index: number): void {
+    const previous = this.#items?.[this.#active];
     this.#active = index;
-    for (const [position, item] of this.#items.entries())
-      item.dataset.active = String(position === index);
-    const item = this.#items[index];
+    const item = this.#items?.[index];
     if (item === undefined) return;
+    if (previous !== item) previous?.removeAttribute("data-active");
+    if (item.dataset.active !== "true") item.dataset.active = "true";
     this.#trigger.setAttribute("aria-activedescendant", item.id);
     item.scrollIntoView({ block: "nearest" });
   }
@@ -334,10 +351,11 @@ class FontChoiceDropdown {
   }
 
   #navigate(key: string): boolean {
+    const { options } = this.#control;
     if (/^(ArrowDown|ArrowUp|Home|End)$/.test(key)) {
       const wasOpen = this.#open;
       this.#setOpen(true);
-      const last = this.#items.length - 1;
+      const last = options.length - 1;
       const next =
         key === "Home"
           ? 0
@@ -349,11 +367,10 @@ class FontChoiceDropdown {
     }
     if (key.length !== 1) return false;
     this.#setOpen(true);
-    for (let offset = 1; offset <= this.#items.length; offset += 1) {
-      const index = (this.#active + offset) % this.#items.length;
-      if (
-        this.#control.options[index]?.label.toLocaleLowerCase().startsWith(key.toLocaleLowerCase())
-      ) {
+    const prefix = key.toLocaleLowerCase();
+    for (let offset = 1; offset <= options.length; offset += 1) {
+      const index = (this.#active + offset) % options.length;
+      if (options[index]?.label.toLocaleLowerCase().startsWith(prefix)) {
         this.#activate(index);
         break;
       }
@@ -382,6 +399,6 @@ class FontChoiceDropdown {
       { root: this.#list },
     );
     this.#observer = observer;
-    for (const item of this.#items) observer.observe(item);
+    for (const item of this.#items ?? []) observer.observe(item);
   }
 }

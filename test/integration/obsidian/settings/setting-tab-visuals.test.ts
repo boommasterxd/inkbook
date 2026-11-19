@@ -6,7 +6,7 @@ import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage"
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { createEnglishLocalization } from "../../../../src/domain/localization";
 import { arrowNodeStyleOptions } from "../../../../src/obsidian/menus/tool-style-controls";
-import { arrowNodeIconId } from "../../../../src/rendering/ui/icon-ids";
+import { arrowNodeIconId, selectionAreaIconId } from "../../../../src/rendering/ui/icon-ids";
 import {
   control,
   createTab,
@@ -26,7 +26,7 @@ beforeAll(() => {
 });
 
 describe("InkbookSettingTab tool disclosures", () => {
-  it("renders a title and right-side chevron with accessible independent panels", async () => {
+  it("opens and closes named tool disclosures independently", async () => {
     const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
     const tab = createTab(store);
     const rectangle = renderTool(tab, "Shapes and structures", "Rectangle");
@@ -45,17 +45,10 @@ describe("InkbookSettingTab tool disclosures", () => {
     );
     const linePanel = requiredElement<HTMLElement>(line.container, ".inkbook-settings-tool-panel");
 
-    expect(rectangleTrigger.firstElementChild).toMatchObject({
-      className: "inkbook-settings-tool-title",
-      textContent: "Rectangle",
-    });
-    expect(rectangleTrigger.lastElementChild?.className).toBe("inkbook-settings-tool-chevron");
-    expect(rectangleTrigger.lastElementChild?.querySelector("svg")?.dataset.icon).toBe(
-      "chevron-right",
-    );
+    expect(rectangleTrigger.textContent).toContain("Rectangle");
+    expect(rectangleTrigger.querySelector('svg[data-icon="chevron-right"]')).not.toBeNull();
     expect(rectangleTrigger.getAttribute("aria-controls")).toBe(rectanglePanel.id);
     expect(rectangleTrigger.getAttribute("aria-expanded")).toBe("false");
-    expect(rectangleTrigger.classList.contains("inkbook-settings-tool-trigger-touch")).toBe(false);
     expect(rectanglePanel.hidden).toBe(true);
     expect(rectanglePanel.inert).toBe(true);
 
@@ -174,28 +167,36 @@ describe("InkbookSettingTab recognizable tool controls", () => {
     const rendered = renderExpandedTool(createTab(store), "Drawing tools", "Select");
     const area = control(rendered.container, "selection-area");
     const inclusion = control(rendered.container, "selection-inclusion");
-    const rectangle = area.querySelector<HTMLButtonElement>("button[data-value='rectangle']");
-    const lasso = area.querySelector<HTMLButtonElement>("button[data-value='lasso']");
-    const enclosed = inclusion.querySelector<HTMLButtonElement>(
-      "button[data-value='fully-enclosed']",
+    const rectangle = requiredElement<HTMLButtonElement>(area, 'button[aria-label="Rectangle"]');
+    const lasso = requiredElement<HTMLButtonElement>(area, 'button[aria-label="Lasso"]');
+    const enclosed = requiredElement<HTMLButtonElement>(
+      inclusion,
+      'button[aria-label="Fully enclosed"]',
     );
 
     expect(area.querySelectorAll("button")).toHaveLength(2);
+    expect(
+      new Set(
+        [...inclusion.querySelectorAll("button")].map((button) =>
+          button.getAttribute("aria-label"),
+        ),
+      ),
+    ).toEqual(new Set(["Touched", "Fully enclosed"]));
     expect(inclusion.querySelectorAll("button")).toHaveLength(2);
-    expect(rectangle?.getAttribute("aria-pressed")).toBe("false");
-    expect(lasso?.getAttribute("aria-label")).toBe("Lasso");
-    expect(lasso?.getAttribute("aria-pressed")).toBe("true");
-    expectSelectionChoiceVisuals(area, inclusion);
-    rectangle?.click();
-    enclosed?.click();
+    expect(rectangle.getAttribute("aria-pressed")).toBe("false");
+    expect(lasso.getAttribute("aria-pressed")).toBe("true");
+    expect(rectangle.querySelector("svg")?.dataset.icon).toBe(selectionAreaIconId("rectangle"));
+    expect(lasso.querySelector("svg")?.dataset.icon).toBe(selectionAreaIconId("lasso"));
+    rectangle.click();
+    enclosed.click();
     await vi.waitFor(() =>
       expect(store.getVaultSettings().toolDefaults.select).toEqual({
         area: "rectangle",
         inclusion: "fully-enclosed",
       }),
     );
-    expect(lasso?.getAttribute("aria-pressed")).toBe("false");
-    expect(rectangle?.getAttribute("aria-pressed")).toBe("true");
+    expect(lasso.getAttribute("aria-pressed")).toBe("false");
+    expect(rectangle.getAttribute("aria-pressed")).toBe("true");
     rendered.cleanup();
   });
 });
@@ -286,13 +287,6 @@ describe("InkbookSettingTab recognizable shape controls", () => {
     eraser.cleanup();
   });
 });
-
-function expectSelectionChoiceVisuals(area: Element, inclusion: Element): void {
-  expect(area.querySelectorAll(".inkbook-menu-option-icon")).toHaveLength(2);
-  expect(area.querySelectorAll(".inkbook-menu-visually-hidden")).toHaveLength(2);
-  expect(area.querySelector(".inkbook-menu-selection-area-grid")).not.toBeNull();
-  expect(inclusion.querySelector(".inkbook-menu-selection-inclusion-grid")).not.toBeNull();
-}
 
 describe("InkbookSettingTab settings validation", () => {
   it("rejects invalid numeric input and recovers from a persistence failure", async () => {

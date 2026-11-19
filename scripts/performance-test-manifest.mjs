@@ -14,6 +14,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/obsidian/embeds/active-editor/secondary-navigation-work.test.ts",
     "test/performance/obsidian/embeds/live-preview/live-preview-zoom-measure-throttle.test.ts",
     "test/performance/obsidian/embeds/presentation/presentation-entrance-performance.test.ts",
+    "test/performance/obsidian/menus/phone-sheet-editable-refresh-profile.test.ts",
     "test/performance/obsidian/embeds/active-editor/selection-commit-scheduler.test.ts",
     "test/performance/obsidian/embeds/active-editor/selection-query-refresh-profile.test.ts",
     "test/performance/obsidian/embeds/active-editor/selection-resize-frame-pipeline.test.ts",
@@ -26,6 +27,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/tool-cursor-performance.test.ts",
   ]),
   invariant: Object.freeze([
+    "test/performance/obsidian/storage/trusted-document-head-migration.test.ts",
     "test/performance/obsidian/text/native-text-ink-work.test.ts",
     "test/performance/persistence/image-resource-work.test.ts",
     "test/performance/obsidian/images/image-import-work.test.ts",

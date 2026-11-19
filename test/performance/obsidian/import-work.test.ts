@@ -46,6 +46,7 @@ describe("Obsidian Ink import work ownership", () => {
     }
     expect(fixture.conversions).toEqual(["private source body", "private source body"]);
     expect(fixture.reads.filter((path) => path === "Ink/example.svg")).toHaveLength(5);
+    expect(fixture.reads.filter((path) => path === "Ink/example.inkbook.svg")).toHaveLength(3);
     expect(fixture.writes.filter((write) => write.path === "Ink/example.inkbook.svg")).toHaveLength(
       1,
     );
@@ -82,5 +83,76 @@ describe("Obsidian Ink import work ownership", () => {
       listFiles.mockRestore();
       resolveLink.mockRestore();
     }
+  });
+});
+
+describe("Obsidian Ink note preparation", () => {
+  it("visits each preview reference once when applying an import across many notes", async () => {
+    const sourcePaths = Array.from({ length: 8 }, (_, index) => `Ink/source-${index}.svg`);
+    const notes = Array.from({ length: 128 }, (_, index) => {
+      const first = sourcePaths[index % sourcePaths.length]!;
+      const second = sourcePaths[(index + 1) % sourcePaths.length]!;
+      return { path: `note-${index}.md`, sources: [first, second] };
+    });
+    const fixture = importFixture({
+      ...Object.fromEntries(sourcePaths.map((path) => [path, `Writing from ${path}`])),
+      ...Object.fromEntries(
+        notes.map(({ path, sources }) => [
+          path,
+          sources.map((source) => writingEmbed(source)).join("\n\n"),
+        ]),
+      ),
+    });
+    const preview = await fixture.service.scan();
+    let visits = 0;
+    let referenceCount = 0;
+    for (const source of preview.sources) {
+      for (const reference of source.references) {
+        const { notePath } = reference;
+        referenceCount++;
+        Object.defineProperty(reference, "notePath", {
+          get() {
+            visits++;
+            return notePath;
+          },
+        });
+      }
+    }
+
+    const result = await fixture.service.apply(preview);
+
+    expect(referenceCount).toBe(2 * notes.length);
+    expect(visits).toBeGreaterThan(0);
+    expect(visits).toBeLessThanOrEqual(referenceCount);
+    expect(result.conflicts).toBe(0);
+    expect(result.journal.notes).toHaveLength(notes.length);
+    for (const { path, sources } of notes) {
+      expect(fixture.files.get(path)).toBe(
+        sources.map((source) => `![[${source.replace(/\.svg$/u, ".inkbook.svg")}]]`).join("\n\n"),
+      );
+    }
+  });
+
+  it("completes the cancelled journal without changing notes when reference preparation stops", async () => {
+    const original = `${writingEmbed()}\n\n${writingEmbed()}`;
+    const fixture = importFixture({ "Ink/example.svg": "writing source", "note.md": original });
+    const preview = await fixture.service.scan();
+    const controller = new AbortController();
+    let checkpoints = 0;
+    fixture.ports.workScheduler.checkpoint = (signal) => {
+      if (signal !== controller.signal || ++checkpoints !== 2) return undefined;
+      const reason = new DOMException("Import stopped.", "AbortError");
+      controller.abort(reason);
+      return Promise.reject(reason);
+    };
+
+    const result = await fixture.service.apply(preview, controller.signal);
+
+    expect(result.journal.status).toBe("cancelled");
+    expect(result.journal.notes).toEqual([]);
+    expect(result.imported).toBe(1);
+    expect(result.conflicts).toBe(0);
+    expect(fixture.files.get("note.md")).toBe(original);
+    expect((await fixture.service.history())[0]?.status).toBe("cancelled");
   });
 });

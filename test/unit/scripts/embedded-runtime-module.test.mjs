@@ -44,7 +44,7 @@ it.each(["node:fs", "@codemirror/not-hosted"])(
 );
 
 it("reads and parses the actual compressed module through the runtime decoder", async () => {
-  const { readEmbeddedModules, verifyPortableMathPayload } =
+  const { readEmbeddedModules, verifyEmbeddedPackageModules } =
     await import("../../../scripts/embedded-package-modules.mjs");
   const encoded =
     "<Ah!!!!!9-SOx5;6=n}85SXsqn,*>3h^H>}Exb9V{|jvA7Y:d=.UqU,ZbU-W<0z#{mr4#O5Q(g)*!!!!";
@@ -53,7 +53,7 @@ it("reads and parses the actual compressed module through the runtime decoder", 
   expect(module.source).toBe('self.postMessage("inkbook-worker-bootstrap");');
   await expect(readEmbeddedModules("const broken = ;")).rejects.toThrow("malformed");
   await expect(readEmbeddedModules('const payload = "<Ah!!!!!invalid";')).rejects.toThrow();
-  await expect(verifyPortableMathPayload(source)).rejects.toThrow(
+  await expect(verifyEmbeddedPackageModules(source)).rejects.toThrow(
     "exactly one embedded plugin runtime",
   );
 });

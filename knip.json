@@ -4,11 +4,11 @@
   "entry": [
     "src/main.ts!",
     "src/obsidian/plugin-runtime-entry.ts!",
+    "src/obsidian/settings/import/import-example-images.ts!",
     "src/obsidian/text/portable-math-entry.ts!",
     "src/persistence/worker/runtime/document-worker-entry.ts!",
     "src/rendering/ui/editor-chrome-entry.ts!",
-    "scripts/*.mjs",
-    "scripts/cache-lifecycle/run.cjs"
+    "scripts/*.mjs"
   ],
   "project": [
     "src/**/*.{ts,tsx}!",

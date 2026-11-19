@@ -96,6 +96,11 @@
   font-size: var(--font-ui-medium);
 }
 
+.inkbook-owned-menu[data-mobile="true"] .inkbook-owned-menu-item:where(:not([data-label="true"])) {
+  box-sizing: border-box;
+  min-block-size: 44px;
+}
+
 .theme-light .inkbook-adaptive-panel[data-kind="menu"] {
   --interactive-normal: var(--background-primary);
 }

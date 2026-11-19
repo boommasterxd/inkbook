@@ -19,6 +19,7 @@ it("opens affected paths together and pages files independently of notes", () =>
     container,
     [{ category: "difference", message: "Brush difference", sources, notes }],
     {
+      compactLayout: window.matchMedia("not all"),
       localization: new Localization(),
       mutate: (update) => update(),
       readMotion: () => "reduced",
@@ -60,6 +61,7 @@ it("releases nested finding subscriptions on every page turn and all remaining o
       notes: Array.from({ length: 4 }, (_, note) => `notes/${index}-${note}.md`),
     })),
     {
+      compactLayout: window.matchMedia("not all"),
       localization: new Localization(),
       mutate: (update) => update(),
       readMotion: () => "reduced",

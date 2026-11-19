@@ -9,11 +9,10 @@ import type { ImportViewContext } from "./import-findings";
 type Side = "before" | "after";
 export type ImagePair = Readonly<Record<Side, ExampleImage>>;
 const SIDES = ["before", "after"] as const;
-const NARROW_COMPARISON = "(width <= 480px)";
 
 export function createImportExampleComparison(container: HTMLElement, context: ImportViewContext) {
   const owner = container.ownerDocument.defaultView!;
-  const narrow = owner.matchMedia(NARROW_COMPARISON);
+  const { compactLayout } = context;
   const view = container.createDiv({ cls: "inkbook-import-comparison" });
   view.setAttribute("role", "group");
   view.setAttribute("aria-label", context.localization.t("import.exampleView"));
@@ -45,15 +44,14 @@ export function createImportExampleComparison(container: HTMLElement, context: I
     const entry = figures[index]!;
     const active = selected === side;
     entry.button.setAttribute("aria-pressed", String(active));
-    entry.figure.hidden = narrow.matches && !active;
+    entry.figure.hidden = compactLayout.matches && !active;
     if (!entry.figure.hidden && pair !== undefined) setImage(entry.image, pair[side], context);
   };
   const resize = (): void => {
     const focusedSwitch = figures.some(({ button }) => owner.document.activeElement === button);
-    switches.hidden = !narrow.matches;
-    comparison.classList.toggle("inkbook-import-example-single", narrow.matches);
+    switches.hidden = !compactLayout.matches;
     SIDES.forEach(publish);
-    if (focusedSwitch && !narrow.matches) view.focus({ preventScroll: true });
+    if (focusedSwitch && !compactLayout.matches) view.focus({ preventScroll: true });
   };
   view.tabIndex = -1;
   const release = SIDES.map((side, index) => {
@@ -85,12 +83,12 @@ export function createImportExampleComparison(container: HTMLElement, context: I
     },
     context.observeMotion,
   );
-  narrow.addEventListener("change", resize);
+  compactLayout.addEventListener("change", resize);
   resize();
   context.own(() => {
     finishMotion();
     releaseMotion();
-    narrow.removeEventListener("change", resize);
+    compactLayout.removeEventListener("change", resize);
     for (const dispose of release) dispose();
   });
   return {

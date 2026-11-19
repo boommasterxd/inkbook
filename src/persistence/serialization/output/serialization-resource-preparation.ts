@@ -17,15 +17,23 @@ import type {
 } from "./incremental-document-serializer-types";
 import { prepareDeltaFontResourcesSteps, retainsFontFaces } from "./text-fonts";
 
-export function* validateSnapshotResourcesSteps(snapshot: InkSnapshotV1): Generator<void, boolean> {
+export function* validateSnapshotResourcesSteps(
+  snapshot: InkSnapshotV1,
+): Generator<void, ImageResourceV3[] | null> {
   try {
-    for (const resource of snapshot.imageResources ?? [])
-      yield* validateImageResourceSteps(resource);
+    const images = (snapshot.imageResources ?? []).map(canonicalImageResource);
+    for (const resource of images) yield* validateImageResourceSteps(resource);
     for (const resource of snapshot.fontResources ?? []) yield* validateFontResourceSteps(resource);
-    yield* usedFontResourcesSteps(snapshot.elements, snapshot.fontResources ?? []);
-    return true;
+    const text = [];
+    for (let index = 0; index < snapshot.elements.length; index += 1) {
+      const element = snapshot.elements[index]!;
+      if (element.kind === "text") text.push(element);
+      if ((index + 1) % 256 === 0) yield;
+    }
+    yield* usedFontResourcesSteps(text, snapshot.fontResources ?? []);
+    return images;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -44,46 +52,90 @@ export function* prepareSerializationDeltaResourcesSteps(
   const { delta } = source;
   const fonts = yield* prepareDeltaFontResourcesSteps(source.fonts, delta.fontResources, signal);
   if (!fonts.ok) return fonts;
-  if (delta.imageResources !== undefined) {
-    try {
-      yield* assertImageResourcesSteps(delta.imageResources, "$.imageResources");
-    } catch {
-      return codecFailure("invalid-delta", "Invalid image resource registry.");
-    }
-  }
-  const images =
-    delta.imageResources === undefined
-      ? source.images
-      : delta.imageResources.map(canonicalImageResource);
+  const images = yield* prepareImageRegistrySteps(source.images, delta.imageResources, signal);
+  if (!images.ok) return images;
   try {
-    for (const resource of images) yield* validateImageResourceSteps(resource, signal);
-    yield* usedFontResourcesSteps(
-      deltaResourceElements(source, "text", !retainsFontFaces(source.fonts, fonts.value)),
-      fonts.value,
+    const references = yield* deltaResourceElementsSteps(
+      source,
+      !retainsFontFaces(source.fonts, fonts.value),
+      images.value.retained,
     );
-    yield* usedImageResourcesSteps(
-      deltaResourceElements(source, "image", delta.imageResources !== undefined),
-      images,
-    );
+    yield* usedFontResourcesSteps(references.text, fonts.value);
+    yield* usedImageResourcesSteps(references.images, images.value.resources);
   } catch {
     signal?.throwIfAborted();
     return codecFailure("invalid-delta", "Document image or font resources are invalid.");
   }
-  return { ok: true, value: { fonts: fonts.value, images } };
+  return { ok: true, value: { fonts: fonts.value, images: images.value.resources } };
 }
 
-/** Retained references need checking only when their owning registry changes. */
-function* deltaResourceElements(
+function* prepareImageRegistrySteps(
+  current: ImageResourceV3[],
+  proposed: readonly ImageResourceV3[] | undefined,
+  signal?: AbortSignal,
+): Generator<
+  void,
+  DocumentCodecResult<{
+    resources: ImageResourceV3[];
+    retained?: ReadonlyMap<string, ImageResourceV3>;
+  }>
+> {
+  if (proposed === undefined) return { ok: true, value: { resources: current } };
+  try {
+    const previous = new Map(current.map((resource) => [resource.id, resource]));
+    const retained = yield* assertImageResourcesSteps(proposed, "$.imageResources", previous);
+    const resources = proposed.map(
+      (resource) => retained.get(resource.id) ?? canonicalImageResource(resource),
+    );
+    for (const resource of resources) {
+      if (retained.get(resource.id) !== resource)
+        yield* validateImageResourceSteps(resource, signal);
+    }
+    return { ok: true, value: { resources, retained } };
+  } catch {
+    signal?.throwIfAborted();
+    return codecFailure("invalid-delta", "Invalid image resource registry.");
+  }
+}
+
+/** Append-only changes preserve all retained bindings. Other changes visit records cooperatively. */
+function* deltaResourceElementsSteps(
   source: ResourceDeltaSource,
-  kind: "text" | "image",
-  registryChanged: boolean,
-): Iterable<InkElementV1> {
+  fontsChanged: boolean,
+  retainedImages?: ReadonlyMap<string, ImageResourceV3>,
+): Generator<void, { images: InkElementV1[]; text: InkElementV1[] }> {
   const { changed, removed } = source.prepared;
-  if (registryChanged) {
+  const images = yield* retainedImageBindingsSteps(source, retainedImages);
+  const text: InkElementV1[] = [];
+  let visited = 0;
+  if (fontsChanged) {
     for (const element of source.elements.values()) {
-      if (element.kind === kind && !changed.has(element.id) && !removed.has(element.id))
-        yield element;
+      if (element.kind === "text" && !changed.has(element.id) && !removed.has(element.id))
+        text.push(element);
+      if (++visited % 256 === 0) yield;
     }
   }
-  yield* changed.values();
+  for (const element of changed.values()) {
+    if (element.kind === "text") text.push(element);
+    if (element.kind === "image") images.push(element);
+    if (++visited % 256 === 0) yield;
+  }
+  return { images, text };
+}
+
+function* retainedImageBindingsSteps(
+  source: ResourceDeltaSource,
+  retained: ReadonlyMap<string, ImageResourceV3> | undefined,
+): Generator<void, InkElementV1[]> {
+  if (retained === undefined || source.images.every(({ id }) => retained.has(id))) return [];
+  const bindings: InkElementV1[] = [];
+  const { changed, orders } = source.prepared;
+  for (let index = 0; index < orders.image.length; index += 1) {
+    const id = orders.image[index]!;
+    const element = source.elements.get(id);
+    if (element?.kind === "image" && !changed.has(id) && !retained.has(element.assetId))
+      bindings.push(element);
+    if ((index + 1) % 256 === 0) yield;
+  }
+  return bindings;
 }

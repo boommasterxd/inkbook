@@ -31,13 +31,14 @@ Work through an equation, connect the steps of a process, or highlight the part 
 | **Hold to shape**       | Hold a pen stroke still to preview a native shape; release to accept or continue drawing to cancel.                                     |
 | **Type and format**     | Multiline text fields with Markdown tables, LaTeX formulas, local fonts, text colors, and backgrounds.                                  |
 | **Annotate a source**   | Import PNG, JPEG, static WebP or selected PDF pages below your annotations; crop images without losing imported pixels.                 |
+| **Bring existing ink**  | Convert supported Obsidian Ink drawings already embedded in notes and review the changes before applying them.                          |
 | **Refine a drawing**    | Selection and lasso, move, resize, rotate, style, and arrange controls.                                                                 |
 | **Find your rhythm**    | Zoom, undo and redo, copy and paste, and a page that grows as you write.                                                                |
 | **Choose your paper**   | Plain, lined, dotted, or square backgrounds, with adjustable spacing.                                                                   |
 
 Inkbook embeds work in **Live Preview and Reading view**, including split panes and pop-out windows. One drawing is active per workspace. Touch can navigate the page; drawing with a finger is optional and off by default.
 
-Inkbook's interface supports English and German. It follows Obsidian's language by default, and you can choose a language in Inkbook's Interface settings.
+Inkbook's interface supports English and German. It follows Obsidian's language by default. To change it, open **Settings → Inkbook → Appearance → Language**.
 
 ## Add words and formulas
 
@@ -52,16 +53,6 @@ The font dropdown previews each family in its own typeface. Inter, Source Serif 
 ![The same text field rendered in Obsidian's dark Reading view, with formatted paragraphs, a nested list, and inline and display mathematics.](docs/assets/readme-text-reading-dark.webp)
 
 See [Text fields](docs/text-fields.md) for supported formatting, fonts, and export behavior. Use the Image action to import PNG, JPEG, static WebP or selected PDF pages, then draw or highlight above them. Images remain inside the self-contained SVG; cropping retains the complete imported pixels. Inkbook uses lossless WebP when it is smaller than the previous format, with PNG/JPEG fallback. See [Images and PDF pages](docs/images.md) for import, crop, reader compatibility and capacity limits.
-
-## Your notes stay yours
-
-- **Files in your vault.** Every drawing is a self-contained SVG with an embedded editable snapshot. It remains viewable in an SVG viewer without Inkbook.
-- **Local processing.** Inkbook requires no account or remote service and includes no telemetry or analytics. Obsidian and your chosen vault synchronization keep their own settings and behavior.
-- **Keep the original.** Save the original Inkbook SVG for future editing. Changes made in an external vector editor are not imported back as Inkbook elements.
-
-![The saved handwritten diagram on squared paper alongside the surrounding note text in Obsidian's dark Reading view.](docs/assets/readme-reading-dark.webp)
-
-The screenshots show the production plugin running in the real Obsidian desktop application. See the [SVG format and portability contract](docs/svg-envelope.md) for how saved files work outside Obsidian.
 
 ## Install
 
@@ -112,10 +103,24 @@ Markdown-style references such as `![Description](drawing.svg)` are supported to
 
 Inkbook uses native image references exclusively. The plugin does not convert notes on activation. See [Obsidian integration](docs/obsidian-integration.md#native-embeds) for recognition, supported sizes, and host-owned fallback behavior.
 
+To convert supported Obsidian Ink drawings, open **Settings → Inkbook → Import → Start import**. The [import guide](docs/features.md#importing-from-obsidian-ink) covers selection, review, and recovery.
+
+## Your notes stay yours
+
+- **Files in your vault.** Every drawing is a self-contained SVG with an embedded editable snapshot. It remains viewable in an SVG viewer without Inkbook.
+- **Local processing.** Inkbook requires no account, subscription, or remote service and includes no telemetry or analytics. Obsidian and your chosen vault synchronization keep their own settings and behavior.
+- **Local version checks.** Inkbook keeps a small [version index](docs/obsidian-integration.md#settings-boundary) on each device for each vault. It helps detect an older drawing or different contents at the same revision.
+- **Storage for import recovery.** Obsidian Ink conversion preserves originals and creates recovery backups in your vault. These files use extra vault storage and can be included in vault sync.
+- **Keep the original.** Save the original Inkbook SVG for future editing. Changes made in an external vector editor are not imported back as Inkbook elements.
+
+![The saved handwritten diagram on squared paper alongside the surrounding note text in Obsidian's dark Reading view.](docs/assets/readme-reading-dark.webp)
+
+See the [SVG format and portability contract](docs/svg-envelope.md) for how saved files work outside Obsidian.
+
 ## Current limitations
 
-- **Hardware acceptance is ongoing.** Desktop, tablet, and phone layouts have been exercised in Obsidian, but physical mobile devices, pen latency, and palm rejection still require release acceptance. The [verification contract](docs/quality-and-testing.md#manual-release-checks) defines those checks.
-- **Minimum-version acceptance is pending for native embeds.** Reading-view and Live Preview switching with native references has been exercised in Obsidian 1.15.0. The same flow still requires verification on the minimum supported Obsidian 1.13.4.
+- **Hardware acceptance is pending.** Physical mobile device behavior, pen latency, and palm rejection still require the [manual release checks](docs/manual-release-checks.md).
+- **Minimum-version acceptance is pending for native embeds.** Switching between Reading view and Live Preview with native image references still requires release verification on the [declared minimum version](docs/obsidian-integration.md#authority-and-support-surface).
 
 ## Development
 

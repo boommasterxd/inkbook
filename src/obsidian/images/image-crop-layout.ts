@@ -10,19 +10,29 @@ export class ImageCropLayout {
   #bounds: ReturnType<typeof measureElementBox>["contentBox"];
   #camera: SceneCamera = { x: 0, zoom: 1 };
   #offset = { x: 0, y: 0 };
+  #panelSize = { width: 96, height: 48 };
 
   public constructor(
     private readonly container: HTMLElement,
     private readonly image: ImageElementV3,
-    private readonly chromeHost = container,
+    private readonly chromeHost: HTMLElement,
+    private readonly panel: HTMLElement,
   ) {
     this.#bounds = measureElementBox(container).contentBox;
     this.#measureOffset();
+    this.#measurePanel();
   }
 
   public measure(): void {
     this.#bounds = measureElementBox(this.container).contentBox;
     this.#measureOffset();
+    this.#measurePanel();
+  }
+
+  #measurePanel(): void {
+    const width = this.panel.offsetWidth;
+    const height = this.panel.offsetHeight;
+    if (width > 0 && height > 0) this.#panelSize = { width, height };
   }
 
   #measureOffset(): void {
@@ -51,7 +61,7 @@ export class ImageCropLayout {
     };
   };
 
-  public update(crop: ImageCropV3, outline: HTMLElement, actions: HTMLElement): void {
+  public update(crop: ImageCropV3, outline: HTMLElement): void {
     const image = applyImageCrop(this.image, crop);
     const { x, zoom } = this.#camera;
     const origin = rotatePointClockwise(image, image.pivot, image.rotation);
@@ -59,18 +69,25 @@ export class ImageCropLayout {
     outline.style.width = `${image.width * zoom}px`;
     outline.style.height = `${image.height * zoom}px`;
     const bounds = calculateElementBounds(image);
-    const viewport = this.container.ownerDocument.defaultView?.visualViewport;
+    const ownerWindow = this.container.ownerDocument.defaultView;
+    const viewport = ownerWindow?.visualViewport;
     const visibleTop = Math.max(-this.#offset.y, (viewport?.offsetTop ?? 0) - this.#bounds.top);
     const visibleBottom = Math.min(
       this.#bounds.height,
-      (viewport?.height ?? this.#bounds.height) + (viewport?.offsetTop ?? 0) - this.#bounds.top,
+      (viewport?.height ?? ownerWindow?.innerHeight ?? this.#bounds.bottom) +
+        (viewport?.offsetTop ?? 0) -
+        this.#bounds.top,
     );
-    const left = Math.max(
-      8,
-      Math.min(((bounds.minX + bounds.maxX + 2 * x) * zoom) / 2 - 48, this.#bounds.width - 104),
-    );
-    const top = Math.max(8 - this.#offset.y, visibleTop + 8, bounds.minY * zoom - 84);
-    actions.style.transform = `translate(${left + this.#offset.x}px, ${Math.min(top, Math.max(8 - this.#offset.y, visibleBottom - 56)) + this.#offset.y}px)`;
-    actions.hidden = bounds.maxY * zoom < visibleTop || bounds.minY * zoom > visibleBottom;
+    const { width, height } = this.#panelSize;
+    const center = ((bounds.minX + bounds.maxX + 2 * x) * zoom) / 2;
+    const left = Math.max(8, Math.min(center - width / 2, this.#bounds.width - width - 8));
+    const minimumTop = visibleTop + 8;
+    const maximumTop = Math.max(minimumTop, visibleBottom - height - 8);
+    const above = bounds.minY * zoom - height - 24;
+    const below = bounds.maxY * zoom + 24;
+    const preferredTop = above < minimumTop && below <= maximumTop ? below : above;
+    const top = Math.max(minimumTop, Math.min(preferredTop, maximumTop));
+    this.panel.style.transform = `translate(${left + this.#offset.x}px, ${top + this.#offset.y}px)`;
+    this.panel.hidden = bounds.maxY * zoom < visibleTop || bounds.minY * zoom > visibleBottom;
   }
 }

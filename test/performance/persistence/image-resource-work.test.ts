@@ -134,6 +134,57 @@ it("reuses unchanged stroke geometry and encoded fragments across image-only and
   expect(serializer.instrumentation.cacheBytes).toBe(0);
 });
 
+it("validates only new image bytes when the worker receives an appended registry", async () => {
+  const addition = rasterResource();
+  const bytes = new Uint8Array(IMAGE_LIMITS.resourceBytes);
+  bytes.set(Uint8Array.from(atob(addition.data), (character) => character.charCodeAt(0)));
+  const retained = await createImageResource(bytes, "image/png", new TestWorkScheduler());
+  const image = rasterImage(retained);
+  const addedImage = rasterImage(addition, { id: "00000000-0000-4000-8000-000000099999" });
+  const serializer = new IncrementalDocumentSerializer();
+  expect(
+    serializer.reset({
+      ...createSnapshot([image, ...createCapacityStrokes()]),
+      version: 5,
+      imageResources: [{ ...retained }],
+    }).ok,
+  ).toBe(true);
+  const known = serializer.currentImageResources()[0];
+  const hashes = vi.spyOn(ChunkedSha256.prototype, "update");
+  const context = { checkpoint: () => undefined, signal: new AbortController().signal };
+  const committed = await serializer.applyDeltaSliced(
+    {
+      baseModelRevision: 7,
+      modelRevision: 8,
+      changedElements: [addedImage],
+      imageResources: [{ ...retained }, addition],
+      orderChanges: { image: [image.id, addedImage.id] },
+    },
+    context,
+  );
+  expect(committed.ok).toBe(true);
+  expect(serializer.currentImageResources()[0]).toBe(known);
+  expect(hashes).toHaveBeenCalledOnce();
+  expect(hashes.mock.calls[0]![0].byteLength).toBe(atob(addition.data).length);
+
+  // Keep the claimed digest and metadata while changing only the final decoded byte.
+  const changed = { ...retained, data: retained.data.slice(0, -4) + "AAE=" };
+  for (const imageResources of [[changed, addition], [addition]]) {
+    const invalid = await serializer.applyDeltaSliced(
+      {
+        baseModelRevision: 8,
+        modelRevision: 9,
+        imageResources,
+      },
+      context,
+    );
+    expect(invalid.ok).toBe(false);
+    expect(serializer.currentRevision()).toBe(8);
+    expect(serializer.currentImageResources()[0]).toBe(known);
+  }
+  serializer.clear();
+});
+
 it("bounds real WebP chunk visits between shared scheduler checkpoints and aborts before encoding", async () => {
   const chunks = Array.from({ length: 4096 }, () => webpChunk("TEST"));
   const bytes = webpContainer(extendedWebpHeader(3, 2), webpBytes().slice(12), ...chunks);

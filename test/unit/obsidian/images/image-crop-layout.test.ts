@@ -3,13 +3,15 @@ import { expect, it, vi } from "vitest";
 import { ImageCropLayout } from "../../../../src/obsidian/images/image-crop-layout";
 import { imageElement } from "../../../fixtures/domain/images";
 
-it("keeps the crop pill clear of the top touch handle near the phone canvas edge", () => {
+it("places a crop panel with its warning below the image when there is too little space above", () => {
   const host = document.createElement("div");
   const canvas = document.createElement("div");
   const outline = document.createElement("div");
-  const actions = document.createElement("div");
-  host.append(canvas, outline, actions);
+  const panel = document.createElement("div");
+  host.append(canvas, outline, panel);
   document.body.append(host);
+  vi.spyOn(panel, "offsetWidth", "get").mockReturnValue(240);
+  vi.spyOn(panel, "offsetHeight", "get").mockReturnValue(104);
   let top = 260;
   const canvasReads = vi
     .spyOn(canvas, "getBoundingClientRect")
@@ -26,12 +28,14 @@ it("keeps the crop pill clear of the top touch handle near the phone canvas edge
     pivot: { x: 900, y: 670 },
     crop: { x: 0, y: 0, width: 800, height: 600 },
   };
-  const layout = new ImageCropLayout(canvas, image, host);
+  const layout = new ImageCropLayout(canvas, image, host, panel);
   layout.setCamera({ x: 0, zoom: 0.145 });
-  layout.update({ x: 120, y: 72, width: 680, height: 528 }, outline, actions);
+  layout.update({ x: 120, y: 72, width: 680, height: 528 }, outline);
   const translateY = (element: HTMLElement) =>
     Number(element.style.transform.match(/translate\([^,]+, ([\d.-]+)px\)/)![1]);
-  expect(translateY(actions) + 50).toBeLessThan(translateY(outline) - 22);
+  const imageBottom = translateY(outline) + Number.parseFloat(outline.style.height);
+  expect(translateY(panel)).toBeGreaterThanOrEqual(imageBottom + 22);
+  expect(translateY(panel) + panel.offsetHeight).toBeLessThanOrEqual(400);
   const pointer = { clientX: 21 + 300 * 0.145, clientY: top + 220 * 0.145 };
   expect(layout.sourcePoint(pointer).x).toBeCloseTo(0);
   expect(layout.sourcePoint(pointer).y).toBeCloseTo(0);

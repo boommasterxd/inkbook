@@ -6,10 +6,14 @@ import {
 } from "../../../adapters/obsidian/plugin";
 import { vi } from "vitest";
 import { createObsidianInkImportPorts } from "../../../../src/obsidian/import/adapter";
+import type { InkImportPorts } from "../../../../src/obsidian/import/types";
 import type { WorkScheduler } from "../../../../src/domain/scheduling/work-scheduler";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
-export function importAdapterFixture(workScheduler: WorkScheduler = immediateWorkScheduler()) {
+export function importAdapterFixture(
+  workScheduler: WorkScheduler = immediateWorkScheduler(),
+  convert: InkImportPorts["convert"] = async () => ({ svg: "converted", warnings: [] }),
+) {
   const text = new Map<string, string>();
   const files = new Map<string, TFile>();
   const folders = new Map<string, TFolder>();
@@ -79,7 +83,7 @@ export function importAdapterFixture(workScheduler: WorkScheduler = immediateWor
     app,
     workScheduler,
     createRunId: () => "test-run",
-    convert: async () => ({ svg: "converted", warnings: [] }),
+    convert,
   });
   return { app, ports, put, files, text, views, readHook, processHook, trash, listeners };
 }

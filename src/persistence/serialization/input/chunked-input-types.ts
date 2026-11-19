@@ -14,7 +14,9 @@ export interface ChunkedInkbookInputOptions {
   readonly pathBatchSize?: number;
   readonly signal?: AbortSignal;
   readonly safeStaticProof?: SafeStaticProof;
-  readonly sampleEncodingCache?: StrokeSampleEncodingCache;
+  /** A receiver takes ownership only after complete input validation. */
+  readonly sampleEncodingCache?:
+    StrokeSampleEncodingCache | ((staged: StrokeSampleEncodingCache) => void);
   readonly nativeExportHash?: boolean;
   /** Exact allocation hint only; the parser still hashes its own consumed byte copies. */
   readonly nativeInputBytes?: number;

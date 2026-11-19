@@ -70,7 +70,7 @@ export const images = {
   "images.moveCrop": "Ausschnitt verschieben. Ziehen oder Pfeiltasten verwenden.",
   "images.handle": "Zuschnittgriff: {edges}. Ziehen oder Pfeiltasten verwenden.",
   "images.cropNotice":
-    "Zuschneiden blendet Pixel aus. Das vollständige importierte Bild bleibt eingebettet und kann wiederhergestellt werden. Vertrauliche Inhalte werden dadurch nicht sicher entfernt.",
+    "Ausgeblendete Pixel bleiben in der Zeichnung und lassen sich wiederherstellen.",
   "images.left": "Linke Kante",
   "images.top": "Obere Kante",
   "images.right": "Rechte Kante",

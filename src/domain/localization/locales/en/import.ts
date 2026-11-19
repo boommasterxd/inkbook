@@ -75,6 +75,7 @@ export const inkImport = {
   "import.historyLoading": "Loading import history…",
   "import.historyFailure":
     "Import history could not be loaded. Close any running import and try again.",
+  "import.historyOpenFailure": "This import could not be opened. Try again.",
   "import.retry": "Try again",
   "import.differences": "Appearance differences",
   "import.warnings": "Warnings",
