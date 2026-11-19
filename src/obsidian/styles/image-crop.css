@@ -21,10 +21,16 @@
 }
 
 .inkbook-root .inkbook-image-crop .inkbook-image-crop-handle {
-  /* Adjacent targets share available space and extend outward from the crop. */
+  /* Reserve an inward strip for each edge so clipping cannot erase a tight crop's targets. */
   --inkbook-crop-target: 44px;
-  --inkbook-crop-center-width: min(100cqw, clamp(24px, 50cqw, var(--inkbook-crop-target)));
-  --inkbook-crop-center-height: min(100cqh, clamp(24px, 50cqh, var(--inkbook-crop-target)));
+  --inkbook-crop-center-width: min(
+    100cqw - min(12px, 50cqw),
+    clamp(24px, 50cqw, var(--inkbook-crop-target))
+  );
+  --inkbook-crop-center-height: min(
+    100cqh - min(12px, 50cqh),
+    clamp(24px, 50cqh, var(--inkbook-crop-target))
+  );
   --inkbook-crop-reach-x: min(22px, calc((100cqw - var(--inkbook-crop-center-width)) / 2));
   --inkbook-crop-reach-y: min(22px, calc((100cqh - var(--inkbook-crop-center-height)) / 2));
 
