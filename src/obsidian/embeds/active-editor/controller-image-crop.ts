@@ -1,5 +1,6 @@
 import { createEnglishLocalization } from "../../../domain/localization";
 import { openCanvasImageCrop } from "../../images/canvas-image-crop";
+import type { BrowserScrollElement } from "../../scrolling/index";
 import type { ActiveEditorControllerOptions } from "./controller-types";
 import type { ActiveImageSessionOptions } from "./image-session";
 
@@ -7,11 +8,13 @@ import type { ActiveImageSessionOptions } from "./image-session";
 export function createCanvasImageCropOpening(
   controller: ActiveEditorControllerOptions,
   onActiveChanged: (active: boolean) => void,
+  scrollOwner: () => BrowserScrollElement,
 ): ActiveImageSessionOptions["onCropImage"] {
   return (image, resource, signal) =>
     openCanvasImageCrop({
       container: controller.container,
       chromeHost: controller.container.parentElement ?? controller.container,
+      scrollOwner,
       keymap: controller.keymap,
       image,
       resource,

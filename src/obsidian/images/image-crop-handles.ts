@@ -8,7 +8,7 @@ interface CropDrag {
   readonly pointer: number;
   readonly start: { readonly x: number; readonly y: number };
   readonly crop: ImageCropV3;
-  readonly target: HTMLButtonElement;
+  readonly target: HTMLElement;
   readonly handle: CropHandle;
 }
 
@@ -21,6 +21,7 @@ export class ImageCropHandles {
   public constructor(
     private readonly options: {
       readonly outline: HTMLElement;
+      readonly grips: HTMLElement;
       readonly draft: ImageCropDraft;
       readonly t: Translator;
       readonly sourcePoint: (event: Pick<PointerEvent, "clientX" | "clientY">) => {
@@ -30,7 +31,8 @@ export class ImageCropHandles {
       readonly update: () => void;
     },
   ) {
-    this.#handle("move");
+    const move = this.#handle("move");
+    this.#bindPointer(options.outline, move, "move");
     for (const edges of [
       ["left"],
       ["top"],
@@ -53,12 +55,11 @@ export class ImageCropHandles {
     this.#release.push(() => target.removeEventListener(event, listener));
   }
 
-  #handle(handle: CropHandle): void {
-    const { outline, t } = this.options;
-    const button = outline.ownerDocument.createElement("button");
+  #handle(handle: CropHandle): HTMLButtonElement {
+    const { grips, t } = this.options;
+    const button = grips.ownerDocument.createElement("button");
     button.className = "inkbook-image-crop-handle";
-    if (handle === "move") outline.prepend(button);
-    else outline.append(button);
+    grips.append(button);
     this.#buttons.push(button);
     button.type = "button";
     button.dataset.edges = handle === "move" ? handle : handle.join(" ");
@@ -69,19 +70,29 @@ export class ImageCropHandles {
         ? t("images.moveCrop")
         : t("images.handle", { edges: handle.map((edge) => t(`images.${edge}`)).join(", ") }),
     );
-    this.#listen(button, "pointerdown", (event) => this.#start(button, handle, event));
-    this.#listen(button, "pointermove", (event) => this.#move(event));
-    this.#listen(button, "pointerup", (event) => this.#terminal(event, false));
-    this.#listen(button, "pointercancel", (event) => this.#terminal(event, true));
-    this.#listen(button, "lostpointercapture", (event) => this.#terminal(event, true));
+    this.#bindPointer(button, button, handle);
     this.#listen(button, "keydown", (event) => this.#key(handle, event));
+    return button;
   }
 
-  #start(target: HTMLButtonElement, handle: CropHandle, event: PointerEvent): void {
+  #bindPointer(target: HTMLElement, button: HTMLButtonElement, handle: CropHandle): void {
+    this.#listen(target, "pointerdown", (event) => this.#start(target, button, handle, event));
+    this.#listen(target, "pointermove", (event) => this.#move(event));
+    this.#listen(target, "pointerup", (event) => this.#terminal(event, false));
+    this.#listen(target, "pointercancel", (event) => this.#terminal(event, true));
+    this.#listen(target, "lostpointercapture", (event) => this.#terminal(event, true));
+  }
+
+  #start(
+    target: HTMLElement,
+    button: HTMLButtonElement,
+    handle: CropHandle,
+    event: PointerEvent,
+  ): void {
     if (event.button !== 0 || this.#drag !== undefined) return;
     event.preventDefault();
     event.stopPropagation();
-    target.focus({ preventScroll: true });
+    button.focus({ preventScroll: true });
     this.#drag = {
       pointer: event.pointerId,
       start: this.options.sourcePoint(event),

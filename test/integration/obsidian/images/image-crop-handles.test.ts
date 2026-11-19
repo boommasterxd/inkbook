@@ -5,8 +5,11 @@ import { ImageCropDraft } from "../../../../src/obsidian/images/image-crop-draft
 import { ImageCropHandles } from "../../../../src/obsidian/images/image-crop-handles";
 
 function setup() {
+  const root = document.createElement("div");
   const outline = document.createElement("div");
-  document.body.append(outline);
+  const grips = document.createElement("div");
+  root.append(outline, grips);
+  document.body.append(root);
   const draft = new ImageCropDraft(
     { width: 200, height: 100 },
     { x: 20, y: 10, width: 160, height: 80 },
@@ -14,19 +17,20 @@ function setup() {
   const update = vi.fn();
   const handles = new ImageCropHandles({
     outline,
+    grips,
     draft,
     update,
     t: (key) => key,
     sourcePoint: (event) => ({ x: event.clientY * 2, y: -event.clientX * 2 }),
   });
   const button = (edges: string): HTMLButtonElement => {
-    const target = outline.querySelector<HTMLButtonElement>(`[data-edges="${edges}"]`)!;
+    const target = grips.querySelector<HTMLButtonElement>(`[data-edges="${edges}"]`)!;
     target.setPointerCapture = vi.fn();
     target.hasPointerCapture = () => true;
     target.releasePointerCapture = vi.fn();
     return target;
   };
-  return { outline, draft, update, handles, button };
+  return { root, draft, update, handles, button };
 }
 
 function pointer(target: HTMLElement, type: string, pointerId: number, x = 0, y = 0): PointerEvent {
@@ -44,21 +48,21 @@ function pointer(target: HTMLElement, type: string, pointerId: number, x = 0, y 
 
 describe("image crop handles", () => {
   it("uses mapped source coordinates, clamps corner edges, and commits only the draft", () => {
-    const { draft, handles, button, outline } = setup();
+    const { draft, handles, button, root } = setup();
     const handle = button("left top");
     const bubbled = vi.fn();
-    outline.addEventListener("pointerdown", bubbled);
+    root.addEventListener("pointerdown", bubbled);
     expect(pointer(handle, "pointerdown", 1, 0, 0).defaultPrevented).toBe(true);
     pointer(handle, "pointermove", 1, -100, 100);
     pointer(handle, "pointerup", 1, -100, 100);
     expect(draft.crop).toEqual({ x: 179, y: 89, width: 1, height: 1 });
     expect(bubbled).not.toHaveBeenCalled();
     handles.dispose();
-    outline.remove();
+    root.remove();
   });
 
   it("moves with pointer and keyboard within the resource while preserving size", () => {
-    const { draft, handles, button, outline } = setup();
+    const { draft, handles, button, root } = setup();
     const move = button("move");
     pointer(move, "pointerdown", 1);
     pointer(move, "pointermove", 1, -100, 100);
@@ -78,11 +82,11 @@ describe("image crop handles", () => {
     );
     expect(draft.crop.width).toBe(159);
     handles.dispose();
-    outline.remove();
+    root.remove();
   });
 
   it("ignores other pointers, rolls back cancellation and removes handles on disposal", () => {
-    const { draft, handles, button, outline } = setup();
+    const { draft, handles, button, root } = setup();
     const handle = button("left");
     const release = vi.spyOn(handle, "releasePointerCapture");
     pointer(handle, "pointerdown", 1);
@@ -101,13 +105,13 @@ describe("image crop handles", () => {
     handles.dispose();
     expect(draft.crop.x).toBe(20);
     expect(release).toHaveBeenCalled();
-    expect(outline.querySelectorAll("button")).toHaveLength(0);
-    outline.remove();
+    expect(root.querySelectorAll("button")).toHaveLength(0);
+    root.remove();
   });
 });
 
 it("uses the release position when it differs from the last crop movement", () => {
-  const { draft, handles, button, outline } = setup();
+  const { draft, handles, button, root } = setup();
   const handle = button("left");
   pointer(handle, "pointerdown", 1);
   pointer(handle, "pointermove", 1, 0, 5);
@@ -115,5 +119,5 @@ it("uses the release position when it differs from the last crop movement", () =
   pointer(handle, "pointerup", 1, 0, 15);
   expect(draft.crop).toEqual({ x: 50, y: 10, width: 130, height: 80 });
   handles.dispose();
-  outline.remove();
+  root.remove();
 });

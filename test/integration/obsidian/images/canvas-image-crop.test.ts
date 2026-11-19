@@ -214,6 +214,38 @@ describe("inline canvas image crop", () => {
   );
 });
 
+it("keeps a focused drag handle while moving to and from the compact controls", async () => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 800, 600),
+  );
+  const crop = setup(0, undefined, {
+    image: { x: 300, y: 260, width: 100, height: 100, pivot: { x: 350, y: 310 } },
+  });
+  const grips = crop.container.querySelector<HTMLElement>(".inkbook-image-crop-grips")!;
+  const left = crop.button("Crop handle: Left edge. Drag or use arrow keys.");
+  const release = vi.fn();
+  left.setPointerCapture = vi.fn();
+  left.hasPointerCapture = () => true;
+  left.releasePointerCapture = release;
+  expect(grips.dataset.compact).toBeUndefined();
+
+  left.dispatchEvent(new PointerEvent("pointerdown", { button: 0, pointerId: 1, clientX: 300 }));
+  left.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientX: 325 }));
+  expect(grips.dataset.compact).toBe("true");
+  expect(crop.button("Crop handle: Left edge. Drag or use arrow keys.")).toBe(left);
+  expect(document.activeElement).toBe(left);
+  expect(crop.update).toHaveBeenLastCalledWith({ x: 60, y: 10, width: 120, height: 80 });
+
+  left.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 1 }));
+  expect(release).toHaveBeenCalledExactlyOnceWith(1);
+  expect(grips.dataset.compact).toBeUndefined();
+  expect(document.activeElement).toBe(left);
+  expect(crop.update).toHaveBeenLastCalledWith(crop.image.crop);
+  key(left, "Enter");
+  expect(await crop.promise).toEqual(crop.image.crop);
+  expect(document.activeElement).toBe(crop.inputSurface);
+});
+
 it.each([
   { edges: "left top", start: 0, end: 1, origin: 3996 },
   { edges: "right bottom", start: 1, end: 0, origin: 0 },

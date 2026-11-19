@@ -13,10 +13,13 @@ import { ImageCropDraft } from "./image-crop-draft";
 import { ImageCropHandles } from "./image-crop-handles";
 import { ImageCropLayout } from "./image-crop-layout";
 import { installMenuEscapeScope } from "../menus/menu-escape-scope";
+import { EditorChromeViewport } from "../embeds/active-editor/layout/editor-chrome-viewport";
+import type { BrowserScrollElement } from "../scrolling/index";
 
 export interface CanvasImageCropOptions {
   readonly container: HTMLElement;
   readonly chromeHost?: HTMLElement;
+  readonly scrollOwner?: () => BrowserScrollElement;
   readonly keymap?: Pick<Keymap, "pushScope" | "popScope"> | undefined;
   readonly image: ImageElementV3;
   readonly resource: ImageResourceV3;
@@ -61,9 +64,11 @@ class CanvasImageCrop {
   readonly #draft: ImageCropDraft;
   readonly #root: HTMLDivElement;
   readonly #outline: HTMLDivElement;
+  readonly #grips: HTMLDivElement;
   readonly #panel: HTMLDivElement;
   readonly #actions: HTMLDivElement;
   readonly #layout: ImageCropLayout;
+  readonly #viewport: EditorChromeViewport;
   readonly #release: Array<() => void> = [];
   #handles: ImageCropHandles | undefined;
   #presentation: ReturnType<SvgSceneRenderer["beginImageCrop"]> | undefined;
@@ -97,7 +102,15 @@ class CanvasImageCrop {
     this.#root.setAttribute("aria-describedby", `${hint.id} ${notice.id}`);
     this.#actions.setAttribute("aria-describedby", notice.id);
     this.#outline = this.#root.createDiv({ cls: "inkbook-image-crop-outline" });
-    this.#layout = new ImageCropLayout(options.container, options.image, this.#root, this.#panel);
+    this.#grips = this.#root.createDiv({ cls: "inkbook-image-crop-grips" });
+    this.#viewport = new EditorChromeViewport(this.#root, "image-crop", options.scrollOwner);
+    this.#layout = new ImageCropLayout(
+      options.container,
+      options.image,
+      this.#root,
+      this.#panel,
+      this.#viewport.read,
+    );
   }
 
   public open(): void {
@@ -116,20 +129,33 @@ class CanvasImageCrop {
     );
     this.#handles = new ImageCropHandles({
       outline: this.#outline,
+      grips: this.#grips,
       draft: this.#draft,
       t: options.localization.t,
       sourcePoint: this.#layout.sourcePoint,
       update: () => this.#schedule(false),
     });
+    const move = this.#grips.querySelector<HTMLButtonElement>('[data-edges="move"]')!;
+    options.renderIcon(move, "move");
+    move.querySelector("svg")?.setAttribute("aria-hidden", "true");
     for (const type of ["pointerdown", "mousedown", "click", "dblclick"] as const)
       this.#listen(this.#root, type, (event) => event.stopPropagation());
     this.#listen(this.#root.ownerDocument, "keydown", (event) => this.#key(event));
     this.#listen(this.#root.ownerDocument, "scroll", () => this.#schedule(true), true);
     const ownerWindow = this.#root.ownerDocument.defaultView!;
     this.#listen(ownerWindow, "resize", () => this.#schedule(true));
+    const viewport = ownerWindow.visualViewport;
+    if (viewport) {
+      const measure = (): void => this.#schedule(true);
+      for (const type of ["resize", "scroll"] as const) {
+        viewport.addEventListener(type, measure);
+        this.#release.push(() => viewport.removeEventListener(type, measure));
+      }
+    }
     const resize = new ownerWindow.ResizeObserver(() => this.#schedule(true));
     resize.observe(options.container);
     resize.observe(this.#panel);
+    this.#viewport.observe(resize);
     this.#release.push(() => resize.disconnect());
     this.#release.push(options.subscribeChanges(this.#cancel));
     options.signal.addEventListener("abort", this.#cancel, { once: true });
@@ -226,7 +252,7 @@ class CanvasImageCrop {
     if (this.#closed) return;
     this.#presentation?.update(this.#draft.crop);
     this.options.renderer.flushPointerFeedbackFrame();
-    this.#layout.update(this.#draft.crop, this.#outline);
+    this.#layout.update(this.#draft.crop, this.#outline, this.#grips);
   }
 
   public close(result?: ImageCropV3): void {

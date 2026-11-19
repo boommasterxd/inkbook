@@ -43,6 +43,7 @@ export interface ActiveEditorInteractionsOptions {
   readonly onPasteCommitted: () => void;
   readonly ownerWindow: Window;
   readonly onPendingChanged: (pending: boolean) => void;
+  readonly scrollOwner: () => Scrolling.BrowserScrollElement;
   readonly selection: () => ReadonlySet<string>;
   readonly selectionFrames: SelectionFrameSession;
   readonly setSelection: (selection: ReadonlySet<string>) => void;
@@ -116,7 +117,8 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
   const actions = new ActiveEditorActions({
     onImportImages: controller.onImportImages,
     onCropImage:
-      controller.onCropImage ?? createCanvasImageCropOpening(controller, options.onPendingChanged),
+      controller.onCropImage ??
+      createCanvasImageCropOpening(controller, options.onPendingChanged, options.scrollOwner),
     ...(options.finishText === undefined ? {} : { finishText: options.finishText }),
     copyTextFieldsAsText: controller.copyTextFieldsAsText ?? false,
     confirmEraseAll: controller.confirmEraseAll,
