@@ -21,7 +21,6 @@ export class ImageCropHandles {
   public constructor(
     private readonly options: {
       readonly outline: HTMLElement;
-      readonly grips: HTMLElement;
       readonly draft: ImageCropDraft;
       readonly t: Translator;
       readonly sourcePoint: (event: Pick<PointerEvent, "clientX" | "clientY">) => {
@@ -33,6 +32,7 @@ export class ImageCropHandles {
   ) {
     const move = this.#handle("move");
     this.#bindPointer(options.outline, move, "move");
+    this.#bindTouchBoundary();
     for (const edges of [
       ["left"],
       ["top"],
@@ -46,6 +46,23 @@ export class ImageCropHandles {
       this.#handle(edges);
   }
 
+  #bindTouchBoundary(): void {
+    const { outline } = this.options;
+    const owner = outline.ownerDocument.defaultView;
+    if (owner === null) return;
+    const block = (event: TouchEvent): void => {
+      const target = event.target;
+      if (target === null || !("nodeType" in target) || !outline.contains(target as Node)) return;
+      if (event.cancelable) event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    // Crop drags are pointer-owned. Keep the host's swipe recognizers out of the same gesture.
+    for (const type of ["touchstart", "touchmove"] as const) {
+      owner.addEventListener(type, block, { capture: true, passive: false });
+      this.#release.push(() => owner.removeEventListener(type, block, true));
+    }
+  }
+
   #listen<K extends keyof HTMLElementEventMap>(
     target: HTMLElement,
     event: K,
@@ -56,14 +73,13 @@ export class ImageCropHandles {
   }
 
   #handle(handle: CropHandle): HTMLButtonElement {
-    const { grips, t } = this.options;
-    const button = grips.ownerDocument.createElement("button");
+    const { outline, t } = this.options;
+    const button = outline.ownerDocument.createElement("button");
     button.className = "inkbook-image-crop-handle";
-    grips.append(button);
+    outline.append(button);
     this.#buttons.push(button);
     button.type = "button";
     button.dataset.edges = handle === "move" ? handle : handle.join(" ");
-    if (handle === "move") button.classList.add("inkbook-image-crop-move");
     button.setAttribute(
       "aria-label",
       handle === "move"

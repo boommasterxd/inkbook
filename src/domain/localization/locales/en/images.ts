@@ -66,7 +66,6 @@ export const images = {
     "Drag the crop edges or move the crop area. Arrow keys adjust one pixel, Shift adjusts ten. Home restores the full image. Enter applies; Escape cancels.",
   "images.moveCrop": "Move crop area. Drag or use arrow keys.",
   "images.handle": "Crop handle: {edges}. Drag or use arrow keys.",
-  "images.cropNotice": "Hidden pixels stay in the drawing and can be restored.",
   "images.left": "Left edge",
   "images.top": "Top edge",
   "images.right": "Right edge",

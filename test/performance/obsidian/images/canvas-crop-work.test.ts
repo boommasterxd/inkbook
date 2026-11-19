@@ -8,7 +8,7 @@ import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { ManualHost } from "../../../fixtures/scheduling/manual-frame-host";
 import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
-it("coalesces compact crop pointer feedback and releases queued work on abort", async () => {
+it("coalesces crop handle feedback and releases queued work on abort", async () => {
   installObsidianDomHelpers();
   const container = document.createElement("div");
   const inputSurface = document.createElement("div");
@@ -48,10 +48,9 @@ it("coalesces compact crop pointer feedback and releases queued work on abort", 
       },
     },
   });
-  expect(container.querySelector<HTMLElement>(".inkbook-image-crop-grips")?.dataset.compact).toBe(
-    "true",
-  );
-  const handle = container.querySelector<HTMLButtonElement>('[data-edges="left"]')!;
+  const handle = container.querySelector<HTMLButtonElement>(
+    '.inkbook-image-crop-outline > [data-edges="left"]',
+  )!;
   handle.setPointerCapture = vi.fn();
   handle.hasPointerCapture = () => false;
   handle.dispatchEvent(new PointerEvent("pointerdown", { button: 0, pointerId: 1 }));

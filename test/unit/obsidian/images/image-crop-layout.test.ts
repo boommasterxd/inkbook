@@ -7,13 +7,12 @@ function translateY(element: HTMLElement): number {
   return Number(element.style.transform.match(/translate\([^,]+, ([\d.-]+)px\)/)![1]);
 }
 
-it("places a crop panel with its warning below the image when there is too little space above", () => {
+it("places the crop toolbar below the image when there is too little space above", () => {
   const host = document.createElement("div");
   const canvas = document.createElement("div");
   const outline = document.createElement("div");
-  const grips = document.createElement("div");
   const panel = document.createElement("div");
-  host.append(canvas, outline, grips, panel);
+  host.append(canvas, outline, panel);
   document.body.append(host);
   vi.spyOn(panel, "offsetWidth", "get").mockReturnValue(240);
   vi.spyOn(panel, "offsetHeight", "get").mockReturnValue(104);
@@ -35,7 +34,7 @@ it("places a crop panel with its warning below the image when there is too littl
   };
   const layout = new ImageCropLayout(canvas, image, host, panel);
   layout.setCamera({ x: 0, zoom: 0.145 });
-  layout.update({ x: 120, y: 72, width: 680, height: 528 }, outline, grips);
+  layout.update({ x: 120, y: 72, width: 680, height: 528 }, outline);
   const imageBottom = translateY(outline) + Number.parseFloat(outline.style.height);
   expect(translateY(panel)).toBeGreaterThanOrEqual(imageBottom + 22);
   expect(translateY(panel) + panel.offsetHeight).toBeLessThanOrEqual(400);
@@ -54,10 +53,9 @@ it("places a crop panel with its warning below the image when there is too littl
   host.remove();
 });
 
-it("keeps compact crop controls above the phone navigation bar", () => {
+it("keeps the crop toolbar above the phone navigation bar", () => {
   const canvas = document.createElement("div");
   const outline = document.createElement("div");
-  const grips = document.createElement("div");
   const panel = document.createElement("div");
   const canvasTop = 42;
   const navigationTop = 714;
@@ -68,11 +66,8 @@ it("keeps compact crop controls above the phone navigation bar", () => {
   const readViewport = vi.fn(() => ({ left: 0, top: 44, right: 360, bottom: navigationTop }));
   const layout = new ImageCropLayout(canvas, image, canvas, panel, readViewport);
 
-  layout.update(image.crop, outline, grips);
+  layout.update(image.crop, outline);
 
-  const gripRadius = Number.parseFloat(grips.style.height) / 2 + 22;
-  expect(grips.dataset.compact).toBe("true");
-  expect(canvasTop + translateY(grips) + gripRadius).toBeLessThanOrEqual(navigationTop);
   expect(canvasTop + translateY(panel) + panel.offsetHeight).toBeLessThanOrEqual(navigationTop);
   expect(readViewport).toHaveBeenCalledOnce();
 });

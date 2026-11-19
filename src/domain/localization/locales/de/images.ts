@@ -69,8 +69,6 @@ export const images = {
     "Zuschnittkanten ziehen oder den Ausschnitt verschieben. Pfeiltasten ändern einen Pixel, mit Umschalt zehn. Pos1 stellt das vollständige Bild wieder her. Eingabe übernimmt; Escape bricht ab.",
   "images.moveCrop": "Ausschnitt verschieben. Ziehen oder Pfeiltasten verwenden.",
   "images.handle": "Zuschnittgriff: {edges}. Ziehen oder Pfeiltasten verwenden.",
-  "images.cropNotice":
-    "Ausgeblendete Pixel bleiben in der Zeichnung und lassen sich wiederherstellen.",
   "images.left": "Linke Kante",
   "images.top": "Obere Kante",
   "images.right": "Rechte Kante",
