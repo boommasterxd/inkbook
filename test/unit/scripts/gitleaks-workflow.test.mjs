@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,6 +14,8 @@ let repository;
 let runnerTemp;
 let environment;
 const marker = ["synthetic", "history", "finding"].join("-");
+const fixtureVersion = "1.2.3";
+const fixturePolicy = "[extend]\nuseDefault = true\n";
 
 function execute(command, args, options = {}) {
   return spawnSync(command, args, {
@@ -72,6 +74,8 @@ async function prepareFixture() {
     SCAN_CALLS: join(directory, "calls"),
     SCAN_MARKER: marker,
     SCAN_ARCHIVE: join(directory, "scanner.tar.gz"),
+    SCAN_VERSION: fixtureVersion,
+    SCAN_POLICY: fixturePolicy.trimEnd(),
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_CONFIG_GLOBAL: "/dev/null",
   };
@@ -92,7 +96,11 @@ set -euo pipefail
 mode="$1"
 shift
 printf '%s\\n' "$mode" >> "$SCAN_CALLS"
-[[ " $* " == *" --config .gitleaks.toml "* ]]
+[[ "$1" == --config && "$2" == "$RUNNER_TEMP/gitleaks.toml" ]]
+[[ "$(< "$2")" == "$SCAN_POLICY" ]]
+[[ " $* " == *" --gitleaks-ignore-path /dev/null "* ]]
+[[ " $* " == *" --ignore-gitleaks-allow "* ]]
+[[ ! -e .gitleaksignore && ! -L .gitleaksignore ]]
 [[ " $* " == *" --redact "* ]]
 [[ " $* " == *" --exit-code 1 "* ]]
 if [[ "$mode" == dir ]]; then
@@ -116,13 +124,18 @@ fi
     .digest("hex");
   await writeFile(
     join(repository, ".gitleaks-version"),
-    JSON.stringify({ version: "fixture", sha256: checksum }),
+    JSON.stringify({ version: fixtureVersion, sha256: checksum }),
   );
-  await writeFile(join(repository, ".gitleaks.toml"), "[extend]\nuseDefault = true\n");
+  await writeFile(join(repository, ".gitleaks.toml"), fixturePolicy);
   const download = join(commands, "curl");
   await writeFile(
     download,
-    '#!/usr/bin/env bash\ncp "$SCAN_ARCHIVE" "$RUNNER_TEMP/gitleaks.tar.gz"\n',
+    `#!/usr/bin/env bash
+set -euo pipefail
+url="https://github.com/gitleaks/gitleaks/releases/download/v\${SCAN_VERSION}/gitleaks_\${SCAN_VERSION}_linux_x64.tar.gz"
+[[ " $* " == *" $url "* ]]
+cp "$SCAN_ARCHIVE" "$RUNNER_TEMP/gitleaks.tar.gz"
+`,
   );
   await chmod(download, 0o755);
 }
@@ -163,6 +176,32 @@ describe("gitleaks workflow execution", () => {
     expect(await readFile(environment["SCAN_CALLS"], "utf8")).toBe("dir\n");
   });
 
+  it("uses the exact PR base scanner and policy even when the checkout changes both", async () => {
+    const base = await commit("clean base");
+    await writeFile(
+      join(repository, ".gitleaks-version"),
+      JSON.stringify({ version: "9.8.7", sha256: "0".repeat(64) }),
+    );
+    await writeFile(join(repository, ".gitleaks.toml"), "# Proposed scan policy\n");
+    await writeFile(join(repository, ".gitleaksignore"), "# Proposed fingerprints\n");
+    const head = await commit("clean head");
+    const result = scan("pull_request", base, head);
+    expect(result.status, result.stderr).toBe(0);
+    expect(await readFile(environment["SCAN_CALLS"], "utf8")).toBe("dir\ngit\n");
+  });
+
+  it("fails when the PR base policy is missing even if the checkout provides one", async () => {
+    const policy = join(repository, ".gitleaks.toml");
+    await unlink(policy);
+    const base = await commit("clean base");
+    await writeFile(policy, fixturePolicy);
+    const head = await commit("clean head");
+    expect(scan("pull_request", base, head).status).not.toBe(0);
+    await expect(readFile(environment["SCAN_CALLS"], "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("rejects unsupported events, missing, malformed and unavailable PR commits", async () => {
     const head = await commit("clean");
     for (const args of [
@@ -182,11 +221,12 @@ describe("gitleaks workflow execution", () => {
     const head = await commit("clean");
     await writeFile(join(repository, ".git", "shallow"), `${head}\n`);
     expect(scan("workflow_dispatch").status).toBe(1);
-    await rm(join(repository, ".git", "shallow"));
+    await unlink(join(repository, ".git", "shallow"));
     await writeFile(
       join(repository, ".gitleaks-version"),
-      JSON.stringify({ version: "fixture", sha256: "0".repeat(64) }),
+      JSON.stringify({ version: fixtureVersion, sha256: "0".repeat(64) }),
     );
+    await commit("bad checksum");
     expect(scan("workflow_dispatch").status).not.toBe(0);
     await expect(readFile(environment["SCAN_CALLS"], "utf8")).rejects.toMatchObject({
       code: "ENOENT",
