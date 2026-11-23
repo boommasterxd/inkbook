@@ -40,21 +40,34 @@ jobs:
                 fi
                 git cat-file -e "${commit}^{commit}"
               done
+              policy_revision="$PR_BASE_SHA"
               log_options="${PR_BASE_SHA}..${PR_HEAD_SHA}"
               ;;
-            workflow_dispatch) log_options="--all" ;;
+            workflow_dispatch)
+              policy_revision=HEAD
+              log_options="--all"
+              ;;
             *) echo "Unsupported secret-scan event." >&2; exit 1 ;;
           esac
 
-          version=$(jq -r '.version' .gitleaks-version)
-          checksum=$(jq -r '.sha256' .gitleaks-version)
+          manifest="$RUNNER_TEMP/gitleaks-version.json"
+          policy="$RUNNER_TEMP/gitleaks.toml"
+          git cat-file blob "${policy_revision}:.gitleaks-version" > "$manifest"
+          git cat-file blob "${policy_revision}:.gitleaks.toml" > "$policy"
+          version=$(jq -er '.version | select(test("\\A[0-9]+\\.[0-9]+\\.[0-9]+\\z"))' "$manifest")
+          checksum=$(jq -er '.sha256 | select(test("\\A[a-f0-9]{64}\\z"))' "$manifest")
           archive="$RUNNER_TEMP/gitleaks.tar.gz"
           binary="$RUNNER_TEMP/gitleaks"
-          curl --fail --location --retry 3 --silent --show-error \
+          curl --fail --location --retry 3 --silent --show-error --max-time 60 \
             "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
             --output "$archive"
-          echo "${checksum}  ${archive}" | sha256sum --check --strict
+          printf '%s  %s\n' "$checksum" "$archive" | sha256sum --check --strict
           tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP" gitleaks
-          "$binary" dir --config .gitleaks.toml --no-banner --redact --exit-code 1 --verbose .
-          "$binary" git --config .gitleaks.toml --no-banner --redact --exit-code 1 --verbose \
-            --log-opts="$log_options" .
+
+          # Gitleaks also loads source/.gitleaksignore independently of its flag.
+          # Inkbook has no approved fingerprints. Git history still scans the file.
+          rm -f .gitleaksignore
+          scan_options=(--config "$policy" --gitleaks-ignore-path /dev/null --ignore-gitleaks-allow
+            --no-banner --redact --exit-code 1 --verbose)
+          "$binary" dir "${scan_options[@]}" .
+          "$binary" git "${scan_options[@]}" --log-opts="$log_options" .

@@ -117,4 +117,4 @@ jobs:
               '' \
               '## Verification' \
               '' \
-              'The updater accepted an x.y.z release tag and an exact 64-character lowercase hexadecimal checksum from the upstream checksums file. The required gitleaks check downloads the archive, verifies that pinned checksum, and scans the repository before merge.')"
+              'The updater accepted an x.y.z release tag and an exact 64-character lowercase hexadecimal checksum from the upstream checksums file. The required gitleaks PR check scans with the version and checksum from the PR base. The proposed pin takes effect for later scans once present in their base or in a manually selected revision.')"

@@ -26,6 +26,12 @@ Every active quality run also executes native `npm ls --all`, including when sel
 
 The project has no E2E or Playwright suite. Pull request selection adds no browser, container, or external-service test infrastructure. Existing accessibility checks remain within the selected Unit and Integration coverage.
 
+## Required secret scan
+
+The independent [`gitleaks` job](../.github/workflows/gitleaks.yml) runs for pull requests targeting `main`, subject to GitHub's approval policy for external contributors. It scans the simulated merge worktree and the full `base..head` commit range with findings redacted. The scanner version, archive checksum, and rule configuration come from the exact PR base commit. The job verifies the archive before extracting it. Inkbook has no project-specific fingerprint or inline exceptions. The job disables inline suppressions and clears the runner checkout's root `.gitleaksignore` before scanning. Git history still covers changes to that file. GitHub uses the pull request's workflow definition, so edits to the workflow itself remain subject to review.
+
+Manual dispatch uses the selected revision's scanner pin and rules and scans the worktree and history reachable from all fetched refs. The [version updater](../.github/workflows/update-gitleaks.yml) proposes a new pin for review. The proposed pin becomes active when it is part of a later scan's PR base or selected manual revision.
+
 ## Shared dependency cache
 
 CI selection, quality, both performance shards, and releases use the same [dependency installation action](../.github/actions/install-dependencies/action.yml). Automatic `setup-node` caching is disabled. Only the npm content store at `~/.npm/_cacache` is transferred; credentials, npm logs, installed modules, and build output are excluded. Its versioned key binds runner OS/architecture, Node and npm major versions, `.npmrc`, and `package-lock.json`. A fallback can reuse another lockfile's downloads only within the same platform, tool, and install-configuration boundary. Runtime patch updates and unrelated source changes do not split the store.
