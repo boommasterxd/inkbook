@@ -50,6 +50,11 @@ const toolingFiles = [
   "test/unit/scripts/cache-lifecycle/**/*.cjs",
   "vitest.config.ts",
 ];
+const nodeOnlyGlobals = Object.fromEntries(
+  Object.keys(globals.node)
+    .filter((name) => !Object.hasOwn(globals.browser, name) && name !== "require")
+    .map((name) => [name, "off"]),
+);
 
 function restrictImports(paths = [], groups = [], regexes = []) {
   return [
@@ -98,6 +103,9 @@ export default [
     files: ["**/*.{js,mjs,cjs,ts,mts,cts,tsx,jsx}"],
     languageOptions: {
       globals: {
+        // The upstream preset enables Node globals for all tests. Local Node scopes opt in below.
+        ...nodeOnlyGlobals,
+        NodeJS: "off",
         ...globals.browser,
       },
     },
