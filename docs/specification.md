@@ -142,7 +142,7 @@ Dependency arrows point inward: `editor`, `rendering`, and `persistence` may imp
 
 Each module has one primary reason to change. Feature-specific types, tests, styles, and helpers stay with their owning area. Generic `utils`, `common`, `shared`, `services`, or `helpers` dumping grounds are forbidden. A shared abstraction is introduced only for a current cross-area contract or verified duplication, receives a domain-specific name, and is placed at the narrowest dependency boundary that can own it without creating a cycle.
 
-Cross-area APIs stay small and explicit. Prefer direct imports from the owning module. Add an area-level `public.ts` only when several external consumers need a stable boundary; do not create recursive barrel files or re-export internal implementation details. Dependency cycles, cross-area mutable globals, hidden singleton access, and framework types in pure contracts are forbidden. The automated source import-graph gate includes TypeScript type-only edges and rejects cycles or imports that violate the responsibility directions above. Naming, coverage, and quality enforcement are defined in [Quality and Testing](quality-and-testing.md#coverage-and-ci-gates).
+Cross-area APIs stay small and explicit. Prefer direct imports from the owning module. Add an area-level `public.ts` only when several external consumers need a stable boundary; do not create recursive barrel files or re-export internal implementation details. Dependency cycles, cross-area mutable globals, hidden singleton access, and framework types in pure contracts are forbidden. The automated source import-graph gate includes TypeScript type-only edges and rejects cycles or imports that violate the responsibility directions above. Naming and quality enforcement are defined in [Quality and Testing](quality-and-testing.md#ci-gates).
 
 Tests mirror source ownership. Pure behavior belongs under `test/unit/<area>/`; focused host or worker boundaries belong under `test/integration/<area>/`; reusable external-boundary doubles belong under `test/adapters/<boundary>/`. Tests MUST NOT gain access to internal modules through a broader public API than production code requires.
 
@@ -333,7 +333,7 @@ When behavior is uncertain, preserve data and deny the destructive action.
 3. Implement the editor store, spatial index, input reducer, and direct live previews.
 4. Implement the public Obsidian surfaces, vault persistence, settings, clipboard, and Editor-backed Markdown insertion defined in [Obsidian Integration](obsidian-integration.md).
 5. Implement animation, accessibility, document-worker tasks, culling, caches, and performance tuning.
-6. Complete the unit and integration acceptance matrix before release.
+6. Complete the [quality and release checks](quality-and-testing.md#release-gate) before release.
 
 ## Related Documentation
 

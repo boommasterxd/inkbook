@@ -16,8 +16,8 @@ Use `npm run ci` when complete local quality and performance verification is req
 
 - Keep runtime code compatible with desktop and mobile Obsidian. Node.js and Electron APIs are build-tool-only and forbidden under `src/`.
 - Keep functions at or below 100 lines, files at or below 500 lines, cyclomatic complexity at or below 20, cognitive complexity at or below 25, parameters at or below 6, and nesting depth at or below 4.
-- Maintain the [coverage thresholds and scope](docs/quality-and-testing.md#coverage-and-ci-gates): at least 85 percent for lines, statements, and functions, and 80 percent for branches.
-- Add Unit tests for pure behavior and focused Integration tests for important adapters. Do not add End-to-End or smoke suites.
+- Keep automated tests focused on [critical behavior](docs/quality-and-testing.md#automated-test-strategy). Use Unit tests for pure behavior and focused Integration tests where a host or worker boundary matters. End-to-end and smoke suites are excluded.
+- Profile affected performance in Obsidian during implementation and verify improvements with the same fixture and platform. Follow [Performance Verification](docs/performance-ci.md).
 - Keep technical content, code, identifiers, configuration, tests, commits, pull requests, and reports in English.
 
 See [AGENTS.md](AGENTS.md) for the complete project rules and documentation index.

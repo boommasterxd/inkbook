@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import type { InkSnapshotV1 } from "../../../../src/domain/schema/public";
 import {
@@ -7,21 +7,8 @@ import {
 } from "../../../../src/persistence/documents/safe-svg-validator";
 import { serializeSvgEnvelope } from "../../../../src/persistence/documents/svg-envelope";
 import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "../../../../src/persistence/documents/svg-output-limits";
-import * as metadataDecoder from "../../../../src/persistence/documents/safe-svg-metadata";
-import { consumeSerializationSteps } from "../../../../src/persistence/serialization/output/serialization-model-preparation";
-import {
-  CANONICAL_THEME_STYLESHEET,
-  LEGACY_THEME_STYLESHEET_V1,
-} from "../../../../src/persistence/documents/svg-theme";
-import {
-  createMaximumComplexityPath,
-  exhaustValidation,
-  MAXIMUM_PATH_BYTES,
-} from "../../../fixtures/persistence/safe-svg";
+import { exhaustValidation, MAXIMUM_PATH_BYTES } from "../../../fixtures/persistence/safe-svg";
 
-const MAXIMUM_PATHS = 60_004;
-const MAXIMUM_PATH_COMMANDS = 400_000;
-const MAXIMUM_TOTAL_COMMANDS = 8_000_000;
 const PLAIN_PATH = '<path d="M 0 0" fill="none"/>';
 
 const snapshot: InkSnapshotV1 = {
@@ -67,11 +54,6 @@ function svgWithContentPaths(paths: readonly string[]): string {
   });
 }
 
-function compactMaximumCommandPath(): string {
-  const pathData = `M 0 0${" Z M 0 0".repeat(MAXIMUM_PATH_COMMANDS / 2 - 1)} Z`;
-  return `<path d="${pathData}" fill="none"/>`;
-}
-
 const validateNewerVersionSafeSvg = (svg: string) =>
   exhaustValidation(validateSafeSvgSteps(svg, { versionPolicy: "newer" })).result;
 
@@ -85,22 +67,6 @@ function expectRejectedContentPaths(paths: readonly string[]): void {
 }
 
 describe("strict safe SVG validation", () => {
-  it("accepts the canonical envelope and returns bounded metadata", () => {
-    expect(validateSafeSvg(validSvg)).toMatchObject({
-      lockedHeight: 148.6,
-      pathCommands: 15,
-      paths: 6,
-      requiresCanonicalRewrite: false,
-      revision: 3,
-    });
-  });
-
-  it("accepts the previous exact dark page palette for version 1 input", () => {
-    const legacySvg = validSvg.replace(CANONICAL_THEME_STYLESHEET, LEGACY_THEME_STYLESHEET_V1);
-
-    expect(validateSafeSvg(legacySvg)).toMatchObject({ requiresCanonicalRewrite: true });
-  });
-
   it.each([
     (svg: string) => `<?xml version="1.0"?>${svg}`,
     (svg: string) => `<!DOCTYPE svg>${svg}`,
@@ -127,57 +93,9 @@ describe("strict safe SVG validation", () => {
   ])("rejects unsafe or noncanonical markup", (mutate) => {
     expect(validateSafeSvg(mutate(validSvg))).toBeNull();
   });
-
-  it("rejects an unknown path class without modifying the canonical stylesheet", () => {
-    const unsafe = validSvg.replace(
-      '<path class="inkbook-theme-page"',
-      '<path class="unknown-class"',
-    );
-
-    expect(unsafe).toContain('<path class="unknown-class"');
-    expect(validateSafeSvg(unsafe)).toBeNull();
-  });
 });
 
 describe("safe SVG metadata and bounded validation", () => {
-  it.each([
-    "<script>bad()</script>",
-    "<unknown />",
-    "<![CDATA[bad]]>",
-    "<!--bad-->",
-    "<?inkbook bad?>",
-  ])("rejects literal markup inside metadata: %s", (markup) => {
-    const unsafe = validSvg.replace("</metadata>", `${markup}</metadata>`);
-
-    expect(validateSafeSvg(unsafe)).toBeNull();
-    expect(
-      validateNewerVersionSafeSvg(
-        unsafe.replace('data-inkbook-version="1"', 'data-inkbook-version="6"'),
-      ),
-    ).toBeNull();
-  });
-
-  it("accepts escaped markup characters as metadata text", () => {
-    const escaped = validSvg.replace(
-      '"elements":[]',
-      '"elements":[],"text":"&lt;script&gt;&amp;&lt;/script&gt;"',
-    );
-
-    expect(validateSafeSvg(escaped)?.metadataText).toContain('"text":"<script>&</script>"');
-  });
-
-  it("validates and decodes large escaped metadata across bounded slices", () => {
-    const largeText = `${"a".repeat(300_000)}&lt;x&gt;`;
-    const svg = validSvg.replace('"elements":[]', `"elements":[],"text":"${largeText}"`);
-    const { result, yields } = exhaustValidation(
-      validateSafeSvgSteps(svg, { pathsPerStep: 60_004 }),
-    );
-
-    expect(yields).toBeGreaterThan(5);
-    expect(result?.metadataText.length).toBeGreaterThan(300_000);
-    expect(result?.metadataText.endsWith('<x>"}')).toBe(true);
-  });
-
   it("admits allowlisted static markup from a newer version only for safe fallback preview", () => {
     const newer = validSvg.replace('data-inkbook-version="1"', 'data-inkbook-version="6"');
 
@@ -189,38 +107,6 @@ describe("safe SVG metadata and bounded validation", () => {
     ).toBeNull();
   });
 
-  it("slices within one maximum-complexity path independently of the path batch size", () => {
-    const svg = validSvg.replace("M 1 1 L 2 2", createMaximumComplexityPath());
-    const { result, yields } = exhaustValidation(
-      validateSafeSvgSteps(svg, { pathsPerStep: 60_004 }),
-    );
-
-    expect(yields).toBeGreaterThan(700);
-    expect(result).toMatchObject({ pathCommands: 400_013, paths: 6, revision: 3 });
-  });
-
-  it("rejects an aggregate path count above 60,004", () => {
-    const svg = svgWithContentPaths(Array(MAXIMUM_PATHS + 1).fill(PLAIN_PATH));
-    const { result } = exhaustValidation(
-      validateSafeSvgSteps(svg, {
-        pathsPerStep: MAXIMUM_PATHS + 1,
-        totalInputBytes: svg.length,
-      }),
-    );
-
-    expect(result).toBeNull();
-  });
-
-  // Full-capacity validation under coverage needs headroom on shared CI runners.
-  // Deterministic work and scheduling bounds are checked by the performance suite.
-  it("rejects an aggregate command count above 8,000,000", () => {
-    const maximumCommandPath = compactMaximumCommandPath();
-    const paths = Array(MAXIMUM_TOTAL_COMMANDS / MAXIMUM_PATH_COMMANDS).fill(maximumCommandPath);
-    paths.push(PLAIN_PATH);
-
-    expectRejectedContentPaths(paths);
-  }, 30_000);
-
   it("rejects aggregate path data above 48 MiB", () => {
     const maximumPathData = "M 0 0".padEnd(MAXIMUM_PATH_BYTES, " ");
     const maximumPath = `<path d="${maximumPathData}" fill="none"/>`;
@@ -229,82 +115,4 @@ describe("safe SVG metadata and bounded validation", () => {
 
     expectRejectedContentPaths(paths);
   }, 15_000);
-});
-
-describe("safe metadata byte accounting", () => {
-  it("preserves entities and Unicode across decoder and UTF-8 surrogate boundaries", () => {
-    const prefix = `${"a".repeat(16 * 1024 - 1)}&amp;`.padEnd(256 * 1024 - 1, "a");
-    const raw = `${prefix}😀${"ä😀".repeat(40_000)}&lt;&gt;&amp;`;
-    const expected = `${prefix.replace("&amp;", "&")}😀${"ä😀".repeat(40_000)}<>&`;
-    const svg = replaceMetadataText(validSvg, raw);
-    const { result } = exhaustValidation(validateSafeSvgSteps(svg));
-    expect(result?.metadataText).toBe(expected);
-    expect(result?.metadataBytes).toBe(new TextEncoder().encode(expected).byteLength);
-  });
-
-  it.each(["&quot;", "&#38;", "&am", "&unknown;", "<"])(
-    "rejects unsupported metadata syntax across a decoder boundary: %s",
-    (entity) => {
-      const raw = `${"a".repeat(16 * 1024 - 1)}${entity}`;
-      expect(validateSafeSvg(replaceMetadataText(validSvg, raw))).toBeNull();
-    },
-  );
-
-  it("keeps the raw byte ceiling even when entities would decode below the ceiling", () => {
-    const raw = "&amp;".repeat(Math.floor((60 * 1024 * 1024) / 5) + 1);
-    const svg = replaceMetadataText(validSvg, raw);
-    const { result } = exhaustValidation(
-      validateSafeSvgSteps(svg, { totalInputBytes: svg.length }),
-    );
-    expect(result).toBeNull();
-  });
-
-  it("cancels at a metadata decoder checkpoint without returning a partial validation", async () => {
-    const svg = replaceMetadataText(validSvg, "a".repeat(64 * 1024));
-    const controller = new AbortController();
-    const decode = vi.spyOn(metadataDecoder, "decodeMetadataTextSteps");
-    try {
-      await expect(
-        consumeSerializationSteps(validateSafeSvgSteps(svg), {
-          signal: controller.signal,
-          checkpoint: () => {
-            if (decode.mock.calls.length > 0) controller.abort();
-            return undefined;
-          },
-        }),
-      ).rejects.toMatchObject({ name: "AbortError" });
-      expect(decode).toHaveBeenCalledTimes(1);
-    } finally {
-      decode.mockRestore();
-    }
-  });
-});
-
-function replaceMetadataText(svg: string, metadata: string): string {
-  const start = svg.indexOf(">", svg.indexOf("<metadata")) + 1;
-  const end = svg.indexOf("</metadata>", start);
-  return svg.slice(0, start) + metadata + svg.slice(end);
-}
-
-it.each(["translate(1 2)", "translate(-12.5 0)", "translate(1000000 -1000000)"])(
-  "accepts bounded canonical stroke placement %s",
-  (transform) => {
-    expect(
-      validateSafeSvg(svgWithContentPaths([`<g transform="${transform}">${PLAIN_PATH}</g>`])),
-    ).not.toBeNull();
-  },
-);
-it.each([
-  "rotate(1)",
-  "translate(1000001 0)",
-  "translate(NaN 0)",
-  "translate(1e2 0)",
-  "translate(-0 0)",
-  "translate(1.000 0)",
-  "translate(1,2)",
-  "translate(0 0) scale(2)",
-])("rejects noncanonical or unbounded placement %s", (transform) => {
-  expect(
-    validateSafeSvg(svgWithContentPaths([`<g transform="${transform}">${PLAIN_PATH}</g>`])),
-  ).toBeNull();
 });

@@ -1,8 +1,3 @@
-import { type SceneStorePort, type SpatialQuerySink } from "../../../../src/rendering/scene";
-import type { SceneElementRecord } from "../../../../src/rendering/scene/types";
-import type { RenderBand } from "../../../../src/domain/commands/render-bands";
-import type { Bounds } from "../../../../src/domain/geometry/public";
-import type { BoxShapeElementV1 } from "../../../../src/domain/schema/public";
 import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-frame-scheduler";
 import type { WorkScheduler } from "../../../../src/domain/scheduling/work-scheduler";
 
@@ -260,49 +255,12 @@ export class FakeDocument extends EventTarget {
   }
 }
 
-export function asDocument(document: FakeDocument): Document {
-  return document as unknown as Document;
-}
-
 export function asElement(node: FakeNode): HTMLElement {
   return node as unknown as HTMLElement;
 }
 
 export function fakeNode(node: Element): FakeNode {
   return node as unknown as FakeNode;
-}
-
-/** Finds a retained scene band by its production-owned class, independent of camera child order. */
-export function sceneBandNode(root: FakeNode, band: RenderBand): FakeNode {
-  const className = {
-    image: "inkbook-scene-images",
-    highlight: "inkbook-scene-highlights",
-    content: "inkbook-scene-content",
-  }[band];
-  return sceneNodeWithClass(root, className, `The ${band} scene band is missing.`);
-}
-
-/** Finds a rendered scene node by its production-owned class, independent of sibling indexes. */
-export function sceneNodeWithClass(
-  root: FakeNode,
-  className: string,
-  message = `${className} is missing.`,
-): FakeNode {
-  const visit = (node: FakeNode): FakeNode | undefined => {
-    const attributes = node.attributes as Map<string, string> | NamedNodeMap | undefined;
-    const classes =
-      attributes instanceof Map
-        ? attributes.get("class")
-        : attributes?.getNamedItem?.("class")?.value;
-    if (classes?.split(/\s+/).includes(className)) return node;
-    const children = node.nodes ?? Array.from((node as unknown as ParentNode).childNodes ?? []);
-    return Array.from(children)
-      .map(visit)
-      .find((candidate) => candidate !== undefined);
-  };
-  const result = visit(root);
-  if (result === undefined) throw new Error(message);
-  return result;
 }
 
 export class FakeScheduler {
@@ -373,80 +331,4 @@ export class FakeScheduler {
       frames += 1;
     }
   }
-}
-
-export class FakeSceneStore implements SceneStorePort {
-  public readonly records = new Map<string, SceneElementRecord>();
-  public lastQuery: Bounds | undefined;
-
-  public get(id: string): SceneElementRecord | undefined {
-    return this.records.get(id);
-  }
-
-  public query(bounds: Bounds, sink: SpatialQuerySink): void {
-    this.lastQuery = bounds;
-    for (const record of this.records.values()) {
-      if (
-        record.bounds.maxX < bounds.minX ||
-        record.bounds.minX > bounds.maxX ||
-        record.bounds.maxY < bounds.minY ||
-        record.bounds.minY > bounds.maxY
-      ) {
-        continue;
-      }
-      sink.add(record.id);
-    }
-  }
-}
-
-export function fakeRectangleRecord(
-  id: string,
-  rank: number,
-  x: number,
-  y = 10,
-): SceneElementRecord {
-  const element: BoxShapeElementV1 = {
-    createdAt: rank,
-    height: 20,
-    id,
-    kind: "rectangle",
-    pivot: { x: x + 10, y: y + 10 },
-    rotation: 0,
-    style: {
-      fillColor: null,
-      fillOpacity: 1,
-      outlineColor: { type: "rgba", value: "#112233FF" },
-      outlineOpacity: 1,
-      outlineStyle: "solid",
-      outlineWidth: 2,
-    },
-    width: 20,
-    x,
-    y,
-  };
-  return {
-    band: "content",
-    bounds: { maxX: x + 21, maxY: y + 21, minX: x - 1, minY: y - 1 },
-    element,
-    geometryVersion: 1,
-    id,
-    paintVersion: 1,
-    rank,
-  };
-}
-
-export function replaceWithRectangles(
-  store: FakeSceneStore,
-  prefix: string,
-  count: number,
-  yAt: (rank: number) => number,
-): string[] {
-  store.records.clear();
-  const ids = new Array<string>(count);
-  for (let rank = 0; rank < count; rank += 1) {
-    const id = `${prefix}-${rank.toString().padStart(4, "0")}`;
-    ids[rank] = id;
-    store.records.set(id, fakeRectangleRecord(id, rank, yAt(rank)));
-  }
-  return ids;
 }

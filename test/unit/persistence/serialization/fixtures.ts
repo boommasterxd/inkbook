@@ -5,24 +5,7 @@ import type {
   OutlineStyleV1,
   ShapeStyleV1,
   StrokeStyleV1,
-  TextLayoutV2,
 } from "../../../../src/domain/schema/public";
-import { rewriteDocumentMetadata } from "../../../fixtures/persistence/metadata-rewrite";
-
-export function inlineFormulaLayout(): NonNullable<TextLayoutV2["math"]> {
-  return [
-    {
-      start: 0,
-      end: 3,
-      display: false,
-      x: 0,
-      y: 0,
-      width: 10,
-      height: 10,
-      paths: [{ d: "M0 0L10 10L0 10Z" }],
-    },
-  ];
-}
 
 const strokeStyle: StrokeStyleV1 = {
   color: { type: "rgba" as const, value: "#000000FF" as const },
@@ -59,32 +42,6 @@ export function createSnapshot(elements: InkElementV1[] = []): InkSnapshotV1 {
     },
     elements,
   };
-}
-
-export function createDottedRectangleSnapshot(y: number): InkSnapshotV1 {
-  const snapshot = createSnapshot([
-    {
-      kind: "rectangle",
-      id: uuid(99),
-      createdAt: 99,
-      rotation: 0,
-      pivot: { x: 150, y: y + 50 },
-      x: 100,
-      y,
-      width: 100,
-      height: 100,
-      style: {
-        outlineColor: { type: "rgba" as const, value: "#000000FF" as const },
-        outlineWidth: 4,
-        outlineOpacity: 1,
-        outlineStyle: "solid",
-        fillColor: null,
-        fillOpacity: 0,
-      },
-    },
-  ]);
-  snapshot.page.background = { type: "dots", spacing: 25 };
-  return snapshot;
 }
 
 const ALL_ELEMENTS: readonly InkElementV1[] = [
@@ -206,23 +163,6 @@ const ALL_ELEMENTS: readonly InkElementV1[] = [
 
 export function createAllElementSnapshot(): InkSnapshotV1 {
   return createSnapshot(ALL_ELEMENTS.map((element) => structuredClone(element)));
-}
-
-export function appendMetadataProperty(svg: string, propertyJson: string): string {
-  return rewriteDocumentMetadata(
-    svg,
-    (metadata) => {
-      const marker = '"elements":[]}';
-      if (!metadata.includes(marker)) throw new Error("Expected empty serialized elements.");
-      return metadata.replace(marker, `"elements":[],${propertyJson}}`);
-    },
-    true,
-  );
-}
-
-export function wideMetadataArrayProperty(entries: number): string {
-  const values = entries === 0 ? "" : `${"0,".repeat(entries - 1)}0`;
-  return `"wide":[${values}]`;
 }
 
 export function uuid(value: number): string {

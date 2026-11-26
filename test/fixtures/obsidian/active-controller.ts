@@ -140,10 +140,6 @@ export function createDiv(): HTMLDivElement {
   return element;
 }
 
-export function createButton(): HTMLButtonElement {
-  return document.createElementNS("http://www.w3.org/1999/xhtml", "button") as HTMLButtonElement;
-}
-
 export function createActiveEditorModel(store: ElementStore): EditableDocumentModel {
   return {
     mutationAvailability: "available",

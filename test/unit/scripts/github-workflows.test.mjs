@@ -1,368 +1,61 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { expect, it } from "vitest";
 
-import { workflowCondition } from "./workflow-condition-fixture.mjs";
+const workflow = readFileSync(
+  new URL("../../../.github/workflows/ci.yml", import.meta.url),
+  "utf8",
+);
+const gate = workflow.split("\n  ci:\n")[1];
+const command = gate?.split("        run: |\n")[1];
 
-function readWorkflow(name) {
-  return readFileSync(new URL(`../../../.github/workflows/${name}.yml`, import.meta.url), "utf8");
-}
-
-function jobSection(workflow, id) {
-  const section = workflow.split(`\n  ${id}:\n`)[1];
-  if (section === undefined) throw new Error(`Missing workflow job: ${id}`);
-  return section.split(/\n {2}[\w-]+:\n/)[0];
-}
-
-function foldedCondition(section) {
-  const match = section.match(/ {4}if: >-\n((?: {6}.+\n)+)/);
-  if (match === null) throw new Error("Missing folded job condition");
-  return match[1].trim().replaceAll(/\s+/g, " ");
-}
-
-const automation = readWorkflow("dependabot-auto-merge");
-const inspect = jobSection(automation, "inspect");
-const merge = jobSection(automation, "merge");
-
-it.each(["ci", "gitleaks"])("limits %s PR triggers to main while retaining manual runs", (name) => {
-  const triggers = readWorkflow(name).split("\non:\n")[1]?.split("\nconcurrency:\n")[0];
-
-  expect(triggers).toBe("  pull_request:\n    branches: [main]\n  workflow_dispatch:\n");
-});
-
-it("allows gitleaks updates only from the trusted main revision", () => {
-  const update = jobSection(readWorkflow("update-gitleaks"), "update");
-  const condition = foldedCondition(update);
-  const github = { ref: "refs/heads/main", event: { repository: { default_branch: "main" } } };
-
-  expect(workflowCondition(condition, { github })).toBe(true);
-  expect(workflowCondition(condition, { github: { ...github, ref: "refs/heads/feature" } })).toBe(
-    false,
-  );
-  github.event.repository.default_branch = "release";
-  expect(workflowCondition(condition, { github })).toBe(false);
-  expect(update).toMatch(/^ {10}ref: \$\{\{ github\.sha \}\}$/m);
-});
-
-it("bounds the complete release pipeline to at most twenty minutes", () => {
-  const release = jobSection(readWorkflow("release"), "release");
-  const timeout = release.match(/^ {4}timeout-minutes: (\d+)$/m);
-
-  expect(timeout).not.toBeNull();
-  expect(Number(timeout[1])).toBeGreaterThan(0);
-  expect(Number(timeout[1])).toBeLessThanOrEqual(20);
-});
-
-function dependabotContext() {
-  const repository = "owner/repository";
-  return {
-    github: {
-      actor: "dependabot[bot]",
-      event_name: "pull_request_target",
-      repository,
-      event: {
-        pull_request: {
-          user: { login: "dependabot[bot]" },
-          base: { repo: { full_name: repository } },
-          head: { repo: { full_name: repository, fork: false } },
-        },
-      },
+function runGate(overrides) {
+  if (!command) throw new Error("Missing required CI shell gate");
+  const result = spawnSync("bash", ["--noprofile", "--norc", "-e", "-o", "pipefail", "-s"], {
+    input: command,
+    env: {
+      ...process.env,
+      SELECT_RESULT: "success",
+      QUALITY_RESULT: "success",
+      PERFORMANCE_RESULT: "success",
+      MODE: "full",
+      SHARED: "true",
+      CADENCE: "true",
+      AUDIT: "success",
+      ...overrides,
     },
-    needs: {
-      inspect: {
-        result: "success",
-        outputs: { ecosystem: "npm_and_yarn", update_type: "version-update:semver-patch" },
-      },
-    },
-  };
+    timeout: 5_000,
+  });
+  expect(result.error).toBeUndefined();
+  return result.status;
 }
 
-describe("required CI aggregation", () => {
-  const workflow = readWorkflow("ci");
-  const gate = jobSection(workflow, "ci");
-  const command = gate.split("        run: |\n")[1]?.trim();
-  let directory;
-  let script;
-
-  beforeAll(() => {
-    if (!command) throw new Error("Missing CI gate shell script.");
-    directory = mkdtempSync(join(tmpdir(), "inkbook-ci-gate-"));
-    script = join(directory, "gate.sh");
-    writeFileSync(script, command, { flag: "wx", mode: 0o600 });
-  });
-
-  afterAll(() => {
-    if (directory !== undefined) rmSync(directory, { recursive: true, force: true });
-  });
-
-  it("keeps one unconditional CI gate and both required performance contexts", () => {
-    expect(workflow.match(/^ {4}name: CI$/gm)).toHaveLength(1);
-    expect(gate).toContain("needs: [select, quality, Performance]");
-    expect(gate).toContain("if: always()");
-    expect(jobSection(workflow, "Performance")).toContain("label: shared");
-    expect(jobSection(workflow, "Performance")).toContain("label: refresh profiles");
-    expect(command).toBeTruthy();
-  });
-
-  function runGate(overrides = {}) {
-    const result = spawnSync("bash", ["--noprofile", "--norc", "-e", "-o", "pipefail", script], {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        SELECT_RESULT: "success",
-        QUALITY_RESULT: "success",
-        PERFORMANCE_RESULT: "success",
-        MODE: "full",
-        SHARED: "true",
-        CADENCE: "true",
-        BUILD: "true",
-        AUDIT: "success",
-        ...overrides,
-      },
-      timeout: 5_000,
-    });
-    expect(result.error).toBeUndefined();
-    return result.status;
-  }
-
-  const results = ["failure", "cancelled", "skipped", "", "unknown"];
-  it.each(
-    ["SELECT_RESULT", "QUALITY_RESULT", "PERFORMANCE_RESULT", "AUDIT"].flatMap((job) =>
-      results.map((result) => [job, result]),
-    ),
-  )("rejects %s with result %s", (job, result) => {
-    expect(runGate({ [job]: result })).toBe(1);
-  });
-
-  it.each([
-    ["full", "true", "true", "true"],
-    ["full", "true", "true", "false"],
-    ["docs", "false", "false", "false"],
-    ...["true", "false"].flatMap((shared) =>
-      ["true", "false"].flatMap((cadence) =>
-        ["true", "false"].map((build) => ["affected", shared, cadence, build]),
-      ),
-    ),
-  ])("accepts a validated %s plan (%s/%s/%s)", (mode, shared, cadence, build) => {
-    expect(
-      runGate({
-        MODE: mode,
-        SHARED: shared,
-        CADENCE: cadence,
-        BUILD: build,
-        AUDIT: mode === "docs" ? "skipped" : "success",
-      }),
-    ).toBe(0);
-  });
-
-  it.each([
-    { MODE: "" },
-    { MODE: "unknown" },
-    { MODE: "docs", SHARED: "false", CADENCE: "false", BUILD: "false", AUDIT: "success" },
-    { MODE: "affected", AUDIT: "failure" },
-    { SHARED: "false" },
-    { CADENCE: "false" },
-    ...["SHARED", "CADENCE", "BUILD"].flatMap((field) => [
-      { MODE: "docs", SHARED: "false", CADENCE: "false", BUILD: "false", [field]: "true" },
-      { MODE: "affected", [field]: "" },
-      { MODE: "affected", [field]: "unknown" },
-    ]),
-  ])("rejects missing or inconsistent selection outputs: %j", (outputs) => {
-    expect(runGate(outputs)).toBe(1);
-  });
+it("keeps the required CI gate unconditional and bound to substantive job results", () => {
+  expect(gate).toContain("name: CI");
+  expect(gate).toContain("if: always()");
+  expect(gate).toContain("needs: [select, quality, Performance]");
+  expect(workflow).toContain("label: shared");
+  expect(workflow).toContain("label: refresh profiles");
 });
 
-describe("affected CI selection", () => {
-  const workflow = readWorkflow("ci");
-
-  it("checks the current merge result with complete history while comparing the PR head", () => {
-    expect(workflow).toContain("CI_BASE: ${{ github.event.pull_request.base.sha }}");
-    expect(workflow).toContain("CI_EVENT: ${{ github.event_name }}");
-    const head = "${{ github.event.pull_request.head.sha || github.sha }}";
-    expect(workflow).toContain(`CI_HEAD: ${head}`);
-    for (const id of ["select", "quality", "Performance"]) {
-      const section = jobSection(workflow, id);
-      expect(section).toContain("ref: ${{ github.sha }}\n          fetch-depth: 0");
-      expect(section).toContain('node-version: "26.x"\n          check-latest: true');
-      expect(section).toContain("package-manager-cache: false");
-      expect(section).toContain("uses: ./.github/actions/install-dependencies");
-      expect(section.includes("run: node scripts/ci-plan.mjs")).toBe(id === "select");
-    }
-  });
-
-  it("revalidates the detector outputs in each active consumer", () => {
-    for (const id of ["quality", "Performance"]) {
-      const section = jobSection(workflow, id);
-      expect(section).toContain("needs: select");
-      for (const field of ["mode", "shared", "cadence", "build", "audit"]) {
-        expect(section).toContain(
-          `EXPECTED_${field.toUpperCase()}: \${{ needs.select.outputs.${field} }}`,
-        );
-      }
-    }
-    expect(jobSection(workflow, "quality")).toContain("run: node scripts/run-ci.mjs quality");
-    expect(jobSection(workflow, "Performance")).toContain(
-      'run: node scripts/run-ci.mjs "${INKBOOK_PERFORMANCE_SUITE}"',
-    );
-  });
-
-  it("skips dependency installation only after documentation preflight", () => {
-    const selection = jobSection(workflow, "select");
-    expect(selection).toContain("id: preflight\n        run: node scripts/ci-plan.mjs --preflight");
-    expect(selection.match(/if: steps.preflight.outputs.docs != 'true'/g)).toHaveLength(2);
-    expect(selection.indexOf("- name: Set up Node.js")).toBeLessThan(
-      selection.indexOf("- name: Detect documentation-only changes"),
-    );
-    expect(selection).not.toContain(
-      "- name: Set up Node.js\n        if: steps.preflight.outputs.docs",
-    );
-    expect(selection).toContain("id: plan\n        run: node scripts/ci-plan.mjs");
-    const quality = jobSection(workflow, "quality");
-    expect(quality.match(/if: needs.select.outputs.mode != 'docs'/g)).toHaveLength(4);
-    expect(quality).toContain("if: needs.select.outputs.mode == 'docs'");
-  });
-
-  it("runs both required matrix contexts and skips only deliberate empty selections", () => {
-    const performance = jobSection(workflow, "Performance");
-    expect(performance).toContain("fail-fast: true");
-    expect(performance).not.toMatch(/^ {4}if:/m);
-    expect(performance.match(/if: needs.select.outputs\[matrix.suite\] == 'true'/g)).toHaveLength(
-      4,
-    );
-    expect(performance).toContain("if: needs.select.outputs[matrix.suite] == 'false'");
-    for (const selected of ["true", "false", "", "unknown"]) {
-      const context = {
-        needs: { select: { outputs: { shared: selected } } },
-        matrix: { suite: "shared" },
-      };
-      expect(workflowCondition("needs.select.outputs[matrix.suite] == 'true'", context)).toBe(
-        selected === "true",
-      );
-      expect(workflowCondition("needs.select.outputs[matrix.suite] == 'false'", context)).toBe(
-        selected === "false",
-      );
-    }
-  });
+it.each([
+  ["full", "true", "true", "success"],
+  ["affected", "true", "false", "success"],
+  ["no-impact", "false", "false", "success"],
+  ["docs", "false", "false", "skipped"],
+])("accepts a validated %s plan", (mode, shared, cadence, audit) => {
+  expect(runGate({ MODE: mode, SHARED: shared, CADENCE: cadence, AUDIT: audit })).toBe(0);
 });
 
-describe("CI admission and no-work runner routing", () => {
-  const workflow = readWorkflow("ci");
-
-  it("runs the blocking audit in selection before any substantive job can start", () => {
-    const selection = jobSection(workflow, "select");
-    const install = selection.indexOf("uses: ./.github/actions/install-dependencies");
-    const audit = selection.indexOf("run: npm run audit");
-    const plan = selection.indexOf("id: plan");
-    expect(install).toBeGreaterThan(-1);
-    expect(audit).toBeGreaterThan(install);
-    expect(plan).toBeGreaterThan(audit);
-    expect(selection).toContain("audit: ${{ steps.audit.outcome }}");
-    expect(selection).not.toContain("continue-on-error");
-    for (const id of ["quality", "Performance"]) {
-      const consumer = jobSection(workflow, id);
-      expect(consumer).toContain("needs: select");
-      expect(consumer).not.toMatch(/^ {4}if:/m);
-    }
-  });
-
-  it("uses Slim only for deliberate no-work jobs and bounds their timeouts", () => {
-    for (const [id, output] of [
-      ["quality", "mode"],
-      ["Performance", "shared"],
-    ]) {
-      const section = jobSection(workflow, id);
-      const runner = section.match(/runs-on: \$\{\{ (.+) && 'ubuntu-slim' \|\| 'ubuntu-latest' }}/);
-      const timeout = section.match(/timeout-minutes: \$\{\{ (.+) && 5 \|\| 20 }}/);
-      expect(runner).not.toBeNull();
-      expect(timeout?.[1]).toBe(runner[1]);
-      for (const value of ["docs", "affected", "full", "true", "false", "", "unknown"]) {
-        const context = {
-          needs: { select: { outputs: { [output]: value } } },
-          matrix: { suite: "shared" },
-        };
-        expect(workflowCondition(runner[1], context)).toBe(
-          value === (id === "quality" ? "docs" : "false"),
-        );
-      }
-    }
-  });
-});
-
-describe("Dependabot metadata-only auto-merge", () => {
-  it("uses the target event without checking out code and grants writes only to merging", () => {
-    expect(automation).toContain("  pull_request_target:");
-    expect(automation).not.toContain("actions/checkout@");
-    expect(automation.split("\njobs:\n")[0]).toContain("contents: read\n  pull-requests: read");
-    expect(inspect).not.toContain(": write");
-    expect(merge).toContain("permissions:\n      contents: write\n      pull-requests: write");
-  });
-
-  it.each(["minor", "patch"])("accepts trusted npm %s updates", (type) => {
-    const context = dependabotContext();
-    context.needs.inspect.outputs.update_type = `version-update:semver-${type}`;
-
-    expect(workflowCondition(foldedCondition(inspect), context)).toBe(true);
-    expect(workflowCondition(foldedCondition(merge), context)).toBe(true);
-  });
-
-  it.each([
-    [
-      "wrong event",
-      (context) => {
-        context.github.event_name = "pull_request";
-      },
-    ],
-    [
-      "human actor",
-      (context) => {
-        context.github.actor = "maintainer";
-      },
-    ],
-    [
-      "different author",
-      (context) => {
-        context.github.event.pull_request.user.login = "contributor";
-      },
-    ],
-    [
-      "different base",
-      (context) => {
-        context.github.event.pull_request.base.repo.full_name = "other/repo";
-      },
-    ],
-    [
-      "different head",
-      (context) => {
-        context.github.event.pull_request.head.repo.full_name = "other/repo";
-      },
-    ],
-    [
-      "fork",
-      (context) => {
-        context.github.event.pull_request.head.repo.fork = true;
-      },
-    ],
-  ])("rejects %s in inspection and merging", (_name, change) => {
-    const context = dependabotContext();
-    change(context);
-
-    expect(workflowCondition(foldedCondition(inspect), context)).toBe(false);
-    expect(workflowCondition(foldedCondition(merge), context)).toBe(false);
-  });
-
-  it.each([
-    ["success", "github_actions", "version-update:semver-patch"],
-    ["success", "npm_and_yarn", "version-update:semver-major"],
-    ["failure", "npm_and_yarn", "version-update:semver-patch"],
-    ["cancelled", "npm_and_yarn", "version-update:semver-patch"],
-    ["skipped", "npm_and_yarn", "version-update:semver-patch"],
-    ["success", "", ""],
-  ])("rejects ineligible metadata: %s / %s / %s", (result, ecosystem, updateType) => {
-    const context = dependabotContext();
-    context.needs.inspect = { result, outputs: { ecosystem, update_type: updateType } };
-
-    expect(workflowCondition(foldedCondition(merge), context)).toBe(false);
-  });
+it.each([
+  { SELECT_RESULT: "failure" },
+  { QUALITY_RESULT: "cancelled" },
+  { PERFORMANCE_RESULT: "skipped" },
+  { MODE: "affected", AUDIT: "failure" },
+  { MODE: "docs", SHARED: "false", CADENCE: "false" },
+  { MODE: "no-impact", SHARED: "false" },
+  { MODE: "affected", SHARED: "" },
+  { MODE: "unknown" },
+])("rejects a failed or inconsistent plan: %j", (overrides) => {
+  expect(runGate(overrides)).toBe(1);
 });

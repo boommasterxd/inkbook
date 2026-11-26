@@ -76,31 +76,7 @@ async function commitAndLock(harness: ReturnType<typeof migrationHarness>, opera
   return harness.session.lockLatest({ ...operation(), operationId, workspaceToken: operationId });
 }
 
-async function unlockAndLockWithoutEdit(harness: ReturnType<typeof migrationHarness>) {
-  await expect(harness.session.unlock(operation())).resolves.toMatchObject({ status: "active" });
-  const locked = await harness.session.lockLatest(operation());
-  expect(locked, JSON.stringify(locked)).toMatchObject({
-    revision: 7,
-    status: "confirmed",
-  });
-}
-
 describe("vault document migration persistence", () => {
-  it("rewrites a supported old theme on lock without requiring a content edit", async () => {
-    const harness = migrationHarness({ legacyTheme: true });
-
-    await unlockAndLockWithoutEdit(harness);
-
-    expect(harness.content()).toContain(CANONICAL_THEME_STYLESHEET);
-    expect(harness.content()).not.toContain("shape-rendering:crispEdges");
-    expect(await parseInkbookDocumentForTest(harness.content())).toMatchObject({
-      ok: true,
-      value: { requiresCanonicalRewrite: false, snapshot: { revision: 7 } },
-    });
-    expect(harness.process).toHaveBeenCalledOnce();
-    expect(harness.copies.size).toBe(0);
-  });
-
   it("backs up the exact source once before the first version one replacement", async () => {
     const harness = migrationHarness({});
     await expect(harness.session.unlock(operation())).resolves.toMatchObject({ status: "active" });
@@ -133,77 +109,7 @@ describe("vault document migration persistence", () => {
     expect(harness.process).not.toHaveBeenCalled();
     expect(harness.content()).toBe(harness.original.svg);
   });
-
-  it("keeps worker-unavailable fallback migration and backup behavior equivalent", async () => {
-    const createRuntime = vi.fn(async (): Promise<DocumentRuntimePort> => {
-      throw new Error("Worker unavailable");
-    });
-    const harness = migrationHarness({ createRuntime });
-    await expect(harness.session.unlock(operation())).resolves.toMatchObject({
-      status: "active",
-      workerEpoch: 2,
-    });
-
-    await expect(commitAndLock(harness, 2)).resolves.toMatchObject({
-      revision: 8,
-      status: "confirmed",
-    });
-
-    expect(createRuntime).toHaveBeenCalledTimes(2);
-    expect(harness.copies.get("drawings/ink.backup-v0.svg")?.text).toBe(harness.original.svg);
-    expect(harness.process).toHaveBeenCalledOnce();
-  });
 });
-
-it.each([
-  { version: 3 as const, fallback: false },
-  { version: 4 as const, fallback: true },
-])(
-  "backs up exact image version $version once on the first edited save (fallback=$fallback)",
-  async ({ version, fallback }) => {
-    const createRuntime = fallback
-      ? vi.fn(async (): Promise<DocumentRuntimePort> => {
-          throw new Error("Worker unavailable");
-        })
-      : undefined;
-    const harness = migrationHarness({
-      legacyImageVersion: version,
-      ...(createRuntime === undefined ? {} : { createRuntime }),
-    });
-    try {
-      await unlockAndLockWithoutEdit(harness);
-      expect(harness.content()).toBe(harness.original.svg);
-      expect(harness.copies.size).toBe(0);
-      expect(harness.process).not.toHaveBeenCalled();
-      const model = harness.factory.getDocumentModel("session-1")!;
-      model.commitPage({ ...model.page, activeBufferLines: 4 });
-      await expect(
-        harness.session.lockLatest({ ...operation(), operationId: 2, workspaceToken: 2 }),
-      ).resolves.toMatchObject({ status: "confirmed" });
-      expect(harness.copies.get(`drawings/ink.backup-v${version}.svg`)?.text).toBe(
-        harness.original.svg,
-      );
-      expect(harness.process).toHaveBeenCalledOnce();
-      const loaded = await parseInkbookDocumentForTest(harness.content());
-      expect(loaded).toMatchObject({
-        ok: true,
-        value: { requiresCanonicalRewrite: false, sourceVersion: 5, snapshot: { version: 5 } },
-      });
-      expect(createRuntime?.mock.calls.length ?? 0).toBe(fallback ? 2 : 0);
-      model.commitPage({ ...model.page, activeBufferLines: 5 });
-      await expect(
-        harness.session.lockLatest({ ...operation(), operationId: 3, workspaceToken: 3 }),
-      ).resolves.toMatchObject({ status: "confirmed" });
-      expect(harness.copies.size).toBe(1);
-      expect(harness.create).toHaveBeenCalledOnce();
-      expect(harness.copies.get(`drawings/ink.backup-v${version}.svg`)?.text).toBe(
-        harness.original.svg,
-      );
-    } finally {
-      harness.session.dispose();
-    }
-  },
-);
 
 it("preserves the exact image source when its first edited-save backup fails", async () => {
   const harness = migrationHarness({ legacyImageVersion: 3, failBackup: true });

@@ -17,7 +17,7 @@ export async function git(root, ...args) {
   return (await execute("git", args, { cwd: root, encoding: "utf8" })).stdout.trim();
 }
 
-export async function write(root, files) {
+async function write(root, files) {
   for (const [filename, content] of Object.entries(files)) {
     await mkdir(path.dirname(path.join(root, filename)), { recursive: true });
     await writeFile(path.join(root, filename), content);

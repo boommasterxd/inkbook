@@ -18,7 +18,7 @@ beforeEach(async () => {
   await symlink(join(root, "node_modules"), join(directory, "node_modules"), "dir");
   await writeFile(
     join(directory, "vitest.config.mjs"),
-    'export default { test: { include: ["test/**/*.test.mjs"], maxWorkers: 1, fileParallelism: false, coverage: { include: ["value.js"], reporter: [] } } };',
+    'export default { test: { include: ["test/**/*.test.mjs"], maxWorkers: 1, fileParallelism: false } };',
   );
   await writeFile(join(directory, "value.js"), "export const value = 1;");
   await writeFile(
@@ -30,7 +30,7 @@ beforeEach(async () => {
     `import { runExclusiveChecks } from ${JSON.stringify(execution)};
 import { createCheckCommandPlan } from ${JSON.stringify(planning)};
 const commands = createCheckCommandPlan("ci:quality", [], "/npm-cli.js")
-  .filter(({ label }) => label === "test:coverage");
+  .filter(({ label }) => label === "test");
 commands.push({ label: "successor", command: process.execPath, args: ["--input-type=module", "-e", 'import { writeFileSync } from "node:fs"; writeFileSync("successor", "ran");'] });
 process.exitCode = await runExclusiveChecks(commands, { cwd: process.cwd(), port: 0 });`,
   );

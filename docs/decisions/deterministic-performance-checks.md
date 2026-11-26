@@ -1,5 +1,7 @@
 # Deterministic Performance Checks
 
+This record describes the original shift from automated timing comparisons to deterministic checks. The [current verification contract](../performance-ci.md) limits permanent performance tests to viewport publication and coalesced pen input and requires direct runtime verification for other affected costs.
+
 ## Decision
 
 Remove real elapsed-time and CPU-time measurement from the automated performance suite, including statistical repetitions, warmups, PR-base comparisons, timing evidence, and tolerance policy. Keep direct work/resource contracts and simulated scheduling in both local and GitHub CI. Retain the existing two hosted performance checks and twenty-minute job safety limits.

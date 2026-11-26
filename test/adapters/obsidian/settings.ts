@@ -10,15 +10,6 @@ export function nativeModalStack(ownerDocument: Document): readonly Modal[] {
   return (modalStacks.get(ownerDocument) ?? []).filter((modal) => modal.containerEl.isConnected);
 }
 
-/** Models the public Modal.close callback invoked by native navigation history. */
-export function simulateNativeModalBack(ownerDocument: Document): boolean {
-  const stack = nativeModalStack(ownerDocument);
-  const modal = stack[stack.length - 1];
-  if (modal === undefined) return false;
-  modal.close();
-  return true;
-}
-
 export class Modal {
   readonly scope = new Scope();
   readonly containerEl: HTMLElement;

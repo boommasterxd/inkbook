@@ -7,8 +7,6 @@ export const canvasStyle = {
   color: "currentColor",
 };
 
-export const shapeStyle = { strokeColor: "#123456", fill: "none", strokeWidth: 4, dash: "solid" };
-
 export function canvasStroke(id = "stroke-a") {
   return {
     id,

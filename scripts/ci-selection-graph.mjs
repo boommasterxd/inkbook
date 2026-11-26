@@ -19,14 +19,6 @@ const dynamicEntries = new Map([
     "../../../rendering/ui/editor-chrome-entry",
   ],
 ]);
-const cacheFixtures = new Map([
-  ["test/unit/scripts/cache-lifecycle/io.cjs", ["github.cjs"]],
-  ["test/unit/scripts/cache-lifecycle/recovery.cjs", ["recovery.cjs"]],
-  [
-    "test/unit/scripts/cache-lifecycle/register.cjs",
-    ["core.cjs", "github.cjs", "planner.cjs", "run.cjs"],
-  ],
-]);
 const wasmModule = "brotli-dec-wasm/web/bg.wasm";
 
 function isNamedIdentifier(ts, node, name) {
@@ -36,25 +28,6 @@ function isNamedIdentifier(ts, node, name) {
 function moduleLiteral(ts, node) {
   if (node && ts.isStringLiteralLike(node)) return node.text;
   throw new Error("Nonliteral module dependency");
-}
-
-function cacheFixtureDependency(ts, filename, argument) {
-  const names = cacheFixtures.get(filename);
-  if (!names || !argument || !ts.isCallExpression(argument)) return null;
-  const [directory, file] = argument.arguments;
-  const method = argument.expression;
-  if (
-    !ts.isPropertyAccessExpression(method) ||
-    !isNamedIdentifier(ts, method.expression, "path") ||
-    method.name.text !== "join" ||
-    argument.arguments.length !== 2 ||
-    !isNamedIdentifier(ts, directory, "directory") ||
-    !ts.isStringLiteralLike(file) ||
-    !names.includes(file.text)
-  )
-    return null;
-  // The test entry always passes scripts/cache-lifecycle as the fixture directory.
-  return path.posix.relative(path.posix.dirname(filename), `scripts/cache-lifecycle/${file.text}`);
 }
 
 function mockDependency(ts, method, argument) {
@@ -83,7 +56,7 @@ function callDependency(ts, node, filename) {
   }
   if (dynamicImport) return moduleLiteral(ts, argument);
   if (isNamedIdentifier(ts, expression, "require")) {
-    return cacheFixtureDependency(ts, filename, argument) ?? moduleLiteral(ts, argument);
+    return moduleLiteral(ts, argument);
   }
   if (mockCall) return mockDependency(ts, expression.name.text, argument);
   return null;
@@ -113,9 +86,6 @@ function isImportMetaUrl(ts, node) {
 
 function mappedFilesystemUrl(ts, filename, node) {
   if (!node || !ts.isTemplateExpression(node)) return false;
-  if (filename === "test/unit/scripts/github-workflows.test.mjs") {
-    return node.head.text === "../../../.github/workflows/";
-  }
   if (filename === "test/unit/persistence/serialization/text-roundtrip.test.ts") {
     // Font asset changes already select every test through the non-code source rule.
     const parts = [

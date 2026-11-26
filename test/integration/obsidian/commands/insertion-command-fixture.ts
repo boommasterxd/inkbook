@@ -1,18 +1,5 @@
 import type { EditorPosition } from "obsidian";
 
-import {
-  registerInkbookCommands,
-  type EditorInsertionCommandPort,
-} from "../../../../src/obsidian/commands";
-
-export function registerInsertion(insertion: EditorInsertionCommandPort) {
-  return registerInkbookCommands(
-    { addCommand: (command) => command },
-    { execute: () => undefined, isAvailable: () => false },
-    insertion,
-  );
-}
-
 export class FakeEditor {
   readonly lines: string[];
   cursorLine: number;

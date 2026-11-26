@@ -6,11 +6,11 @@ import { executePerformanceGate } from "./performance-gate.mjs";
 
 import { PERFORMANCE_TEST_MANIFEST } from "./performance-test-manifest.mjs";
 
-export const projectRoot = fileURLToPath(new URL("..", import.meta.url));
-export const performanceRoot = join(projectRoot, "test", "performance");
+const projectRoot = fileURLToPath(new URL("..", import.meta.url));
+const performanceRoot = join(projectRoot, "test", "performance");
 
-export const SUPPORTED_REFRESH_RATES = Object.freeze([60, 90, 120, 144, 240]);
-export const DEFAULT_REFRESH_RATE = 120;
+const SUPPORTED_REFRESH_RATES = Object.freeze([60, 90, 120, 144, 240]);
+const DEFAULT_REFRESH_RATE = 120;
 
 export function assertFullPerformanceEnvironment(environment = process.env) {
   if (
@@ -32,11 +32,11 @@ export async function collectTestFiles(directory = performanceRoot) {
   return files.sort();
 }
 
-export async function collectPerformanceTestPlan(directory = performanceRoot) {
-  return createPerformanceTestPlan(await collectTestFiles(directory));
+export async function collectPerformanceTestPlan() {
+  return createPerformanceTestPlan(await collectTestFiles(performanceRoot));
 }
 
-export function createPerformanceTestPlan(testFiles) {
+function createPerformanceTestPlan(testFiles) {
   const discovered = new Map(
     testFiles.map((testFile) => [relative(projectRoot, testFile).replaceAll("\\", "/"), testFile]),
   );
@@ -74,12 +74,8 @@ function cadenceRuns(plan) {
   }));
 }
 
-export function selectPerformanceRuns(plan, suite, configuredRefreshRate) {
+export function selectPerformanceRuns(plan, suite) {
   if (suite === "shared") return [invariantRun(plan.invariant)];
-  if (suite === "profile") {
-    const refreshRate = parseRefreshRate(configuredRefreshRate);
-    return [{ label: "cadence-sensitive", refreshRate, testFiles: plan.cadenceSensitive }];
-  }
   if (suite === "cadence") {
     return cadenceRuns(plan);
   }
@@ -102,13 +98,4 @@ export function reportPerformanceViolations(violations) {
     process.stderr.write(`  ${violation.test}\n`);
     process.stderr.write(`  ${violation.message}\n`);
   }
-}
-
-function parseRefreshRate(configuredRefreshRate) {
-  const candidate = Number(configuredRefreshRate);
-  const refreshRate = SUPPORTED_REFRESH_RATES.find((value) => value === candidate);
-  if (refreshRate === undefined) {
-    throw new TypeError(`Unsupported performance refresh rate: ${String(configuredRefreshRate)}`);
-  }
-  return refreshRate;
 }

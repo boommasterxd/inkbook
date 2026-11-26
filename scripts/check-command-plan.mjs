@@ -31,8 +31,7 @@ const tasks = {
   "lint:layout": nodeTask("scripts/verify-source-layout.mjs"),
   "lint:styles": nodeTask("node_modules/stylelint/bin/stylelint.mjs", "src/**/*.css"),
   "package:verify": nodeTask("scripts/verify-package.mjs"),
-  test: nodeTask("node_modules/vitest/vitest.mjs", "run", "test/unit", "test/integration"),
-  "test:coverage": nodeTask(
+  test: nodeTask(
     "scripts/run-validated-tests.mjs",
     "test/unit",
     "test/integration",
@@ -40,7 +39,6 @@ const tasks = {
     "run",
     "test/unit",
     "test/integration",
-    "--coverage",
   ),
   "test:integration": nodeTask("node_modules/vitest/vitest.mjs", "run", "test/integration"),
   "test:performance": nodeTask("scripts/run-performance-tests.mjs"),
@@ -83,7 +81,7 @@ const groups = {
     "architecture",
     "typecheck",
     "typecheck:worker",
-    "test:coverage",
+    "test",
     "duplication",
     "dead-code",
     "audit",

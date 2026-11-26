@@ -10,16 +10,6 @@ export function imageResource(): ImageResourceV3 {
   };
 }
 
-/** Structurally valid resources at the aggregate decoded-pixel limit, without binary decoding. */
-export function maximumPixelResources(): ImageResourceV3[] {
-  return Array.from({ length: 8 }, (_, index) => ({
-    ...imageResource(),
-    id: index.toString(16).padStart(64, "0"),
-    width: 2000,
-    height: 2000,
-  }));
-}
-
 export function imageElement(): ImageElementV3 {
   return {
     id: "00000000-0000-4000-8000-000000000010",

@@ -10,7 +10,6 @@ export const INTERACTION_REFRESH_PROFILE = Object.freeze({
   refreshRate,
   frameDurationMs: 1_000 / refreshRate,
   interruptibleSliceDeadlineMs: (1_000 / refreshRate) * MAIN_THREAD_FRAME_SHARE,
-  sampleCount: 600,
 });
 
 function readRefreshRate(): (typeof SUPPORTED_REFRESH_RATES)[number] {
@@ -22,14 +21,4 @@ function readRefreshRate(): (typeof SUPPORTED_REFRESH_RATES)[number] {
     throw new TypeError(`Unsupported performance refresh rate: ${configured}`);
   }
   return supported;
-}
-
-export function runInteractionFrames(
-  run: (frame: number) => void,
-  count: number = INTERACTION_REFRESH_PROFILE.sampleCount,
-): void {
-  if (!Number.isInteger(count) || count < 0 || count > 0xffff_ffff) {
-    throw new RangeError("Invalid interaction frame count.");
-  }
-  for (let frame = 0; frame < count; frame += 1) run(frame);
 }

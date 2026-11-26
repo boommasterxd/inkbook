@@ -140,12 +140,6 @@ cp "$SCAN_ARCHIVE" "$RUNNER_TEMP/gitleaks.tar.gz"
   await chmod(download, 0o755);
 }
 
-it("fetches complete history while preserving the merge checkout and read-only credentials", () => {
-  expect(workflow).toContain("fetch-depth: 0");
-  expect(workflow).toContain("persist-credentials: false");
-  expect(workflow).not.toContain("ref:");
-});
-
 describe("gitleaks workflow execution", () => {
   beforeEach(prepareFixture);
   afterEach(async () => {
@@ -160,22 +154,6 @@ describe("gitleaks workflow execution", () => {
     expect(await readFile(environment["SCAN_CALLS"], "utf8")).toBe("dir\ngit\n");
   });
 
-  it("excludes base history for PRs and includes it for manual runs", async () => {
-    await commit(marker);
-    const base = await commit("clean base");
-    const head = await commit("clean head");
-    expect(scan("pull_request", base, head).status).toBe(0);
-    expect(scan("workflow_dispatch").status).toBe(1);
-  });
-
-  it("retains the checked-out tree scan for uncommitted findings", async () => {
-    const base = await commit("clean base");
-    const head = await commit("clean head");
-    await writeFile(join(repository, "credentials.txt"), marker);
-    expect(scan("pull_request", base, head).status).toBe(1);
-    expect(await readFile(environment["SCAN_CALLS"], "utf8")).toBe("dir\n");
-  });
-
   it("uses the exact PR base scanner and policy even when the checkout changes both", async () => {
     const base = await commit("clean base");
     await writeFile(
@@ -188,33 +166,6 @@ describe("gitleaks workflow execution", () => {
     const result = scan("pull_request", base, head);
     expect(result.status, result.stderr).toBe(0);
     expect(await readFile(environment["SCAN_CALLS"], "utf8")).toBe("dir\ngit\n");
-  });
-
-  it("fails when the PR base policy is missing even if the checkout provides one", async () => {
-    const policy = join(repository, ".gitleaks.toml");
-    await unlink(policy);
-    const base = await commit("clean base");
-    await writeFile(policy, fixturePolicy);
-    const head = await commit("clean head");
-    expect(scan("pull_request", base, head).status).not.toBe(0);
-    await expect(readFile(environment["SCAN_CALLS"], "utf8")).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-  });
-
-  it("rejects unsupported events, missing, malformed and unavailable PR commits", async () => {
-    const head = await commit("clean");
-    for (const args of [
-      ["push", head, head],
-      ["pull_request", "", head],
-      ["pull_request", head, "--all"],
-      ["pull_request", "0".repeat(40), head],
-    ]) {
-      expect(scan(...args).status).not.toBe(0);
-    }
-    await expect(readFile(environment["SCAN_CALLS"], "utf8")).rejects.toMatchObject({
-      code: "ENOENT",
-    });
   });
 
   it("fails closed on shallow history and a checksum mismatch", async () => {

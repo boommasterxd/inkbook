@@ -27,7 +27,6 @@ jobs:
       mode: ${{ steps.plan.outputs.mode }}
       shared: ${{ steps.plan.outputs.shared }}
       cadence: ${{ steps.plan.outputs.cadence }}
-      build: ${{ steps.plan.outputs.build }}
       audit: ${{ steps.audit.outcome }}
     steps:
       - name: Check out repository
@@ -65,7 +64,6 @@ jobs:
       EXPECTED_MODE: ${{ needs.select.outputs.mode }}
       EXPECTED_SHARED: ${{ needs.select.outputs.shared }}
       EXPECTED_CADENCE: ${{ needs.select.outputs.cadence }}
-      EXPECTED_BUILD: ${{ needs.select.outputs.build }}
     steps:
       - name: Check out repository
         if: needs.select.outputs.mode != 'docs'
@@ -102,17 +100,13 @@ jobs:
         include:
           - label: shared
             suite: shared
-            refresh-rate: "120"
           - label: refresh profiles
             suite: cadence
-            refresh-rate: "120"
     env:
       EXPECTED_AUDIT: ${{ needs.select.outputs.audit }}
       EXPECTED_MODE: ${{ needs.select.outputs.mode }}
       EXPECTED_SHARED: ${{ needs.select.outputs.shared }}
       EXPECTED_CADENCE: ${{ needs.select.outputs.cadence }}
-      EXPECTED_BUILD: ${{ needs.select.outputs.build }}
-      INKBOOK_PERFORMANCE_REFRESH_RATE: ${{ matrix.refresh-rate }}
       INKBOOK_PERFORMANCE_SUITE: ${{ matrix.suite }}
     steps:
       - name: Check out repository
@@ -153,19 +147,19 @@ jobs:
           MODE: ${{ needs.select.outputs.mode }}
           SHARED: ${{ needs.select.outputs.shared }}
           CADENCE: ${{ needs.select.outputs.cadence }}
-          BUILD: ${{ needs.select.outputs.build }}
           AUDIT: ${{ needs.select.outputs.audit }}
         shell: bash
         run: |
           test "$SELECT_RESULT" = success
           test "$QUALITY_RESULT" = success
           test "$PERFORMANCE_RESULT" = success
-          for value in "$SHARED" "$CADENCE" "$BUILD"; do
+          for value in "$SHARED" "$CADENCE"; do
             case "$value" in true|false) ;; *) exit 1 ;; esac
           done
           case "$MODE" in
-            docs) test "$SHARED/$CADENCE/$BUILD/$AUDIT" = false/false/false/skipped ;;
+            docs) test "$SHARED/$CADENCE/$AUDIT" = false/false/skipped ;;
             full) test "$SHARED/$CADENCE/$AUDIT" = true/true/success ;;
+            no-impact) test "$SHARED/$CADENCE/$AUDIT" = false/false/success ;;
             affected) test "$AUDIT" = success ;;
             *) exit 1 ;;
           esac

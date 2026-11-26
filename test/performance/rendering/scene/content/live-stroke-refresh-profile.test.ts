@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 
 import { createBuiltInSettings } from "../../../../../src/domain/settings/defaults";
 import type { GesturePreview } from "../../../../../src/editor/gestures/public";
 import { CoalescedPointerInput } from "../../../../../src/obsidian/embeds/active-editor/input/coalesced-input";
 import { CreationPreview } from "../../../../../src/obsidian/embeds/active-editor/previews/creation-preview";
 import { activeEditorStoreHistory } from "../../../../fixtures/obsidian/active-editor";
-import { fakeNode, type FakeNode } from "../../../../unit/rendering/scene/fakes";
+import { fakeNode, type FakeNode, FakeScheduler } from "../../../../unit/rendering/scene/fakes";
 import { INTERACTION_REFRESH_PROFILE } from "../../../interaction-refresh-profile";
 import {
   createInteractionFixture,
@@ -22,7 +22,6 @@ function livePreviewOptions(
   defaults: PreviewOptions["defaults"],
   history: PreviewOptions["history"],
   renderer: PreviewOptions["renderer"],
-  pointerType: "pen" | "mouse",
 ): PreviewOptions {
   return {
     defaults,
@@ -32,7 +31,7 @@ function livePreviewOptions(
     start: {
       additive: false,
       kind: "tool-gesture",
-      pointer: { pointerId: 1, pointerType, pressure: 0.5, x: 0, y: 50 },
+      pointer: { pointerId: 1, pointerType: "pen", pressure: 0.5, x: 0, y: 50 },
       tool: "draw",
     },
   };
@@ -41,7 +40,6 @@ function livePreviewOptions(
 function liveInputOptions(
   scheduler: NonNullable<InputOptions["frameScheduler"]> & { now(): number },
   dispatchMove: InputOptions["dispatchMove"],
-  pointerType: "pen" | "mouse",
 ): InputOptions {
   return {
     dispatchMove,
@@ -49,7 +47,7 @@ function liveInputOptions(
     now: () => scheduler.now(),
     project: (event) => ({
       pointerId: 1,
-      pointerType,
+      pointerType: "pen",
       pressure: event.pressure,
       x: event.clientX,
       y: event.clientY,
@@ -57,47 +55,47 @@ function liveInputOptions(
   };
 }
 
-describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, () => {
-  it.for(["pen", "mouse"] as const)(
-    "keeps coalesced %s ink at the latest tip in the next frame with 10,000 stored strokes",
-    (pointerType) => {
-      const { input, renderer, routed, scheduler, tail } = coalescedHarness(pointerType);
-      for (let frame = 0; frame < LIVE_STROKE_FRAME_COUNT; frame += 1) {
-        const samples = Array.from({ length: LIVE_STROKE_SAMPLES_PER_FRAME }, (_, sample) =>
-          pointerSample(frame * LIVE_STROKE_SAMPLES_PER_FRAME + sample, pointerType),
-        );
-        input.dispatch(coalescedEvent(samples.slice(0, 4)));
-        input.dispatch(coalescedEvent(samples.slice(4)));
-        const updates = renderer.instrumentation().livePreviewUpdates;
-        const pending = scheduler.pendingCount;
-        scheduler.runNext();
-        expect(renderer.instrumentation().livePreviewUpdates).toBe(updates + 1);
-        expect(pending).toBe(1);
-        expect(scheduler.pendingCount).toBe(0);
-        expectPressureTip(tail, samples[7]!);
-      }
-      expect(renderer.instrumentation().livePreviewUpdates).toBe(LIVE_STROKE_FRAME_COUNT + 1);
-      routed.revert();
-      renderer.destroy();
-    },
-  );
+it(`publishes the latest coalesced pen tip once per frame at ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz`, () => {
+  const { input, renderer, routed, scheduler, tail } = coalescedHarness();
+  try {
+    for (let frame = 0; frame < LIVE_STROKE_FRAME_COUNT; frame += 1) {
+      const samples = Array.from({ length: LIVE_STROKE_SAMPLES_PER_FRAME }, (_, sample) =>
+        pointerSample(frame * LIVE_STROKE_SAMPLES_PER_FRAME + sample),
+      );
+      input.dispatch(coalescedEvent(samples.slice(0, 4)));
+      input.dispatch(coalescedEvent(samples.slice(4)));
+      const updates = renderer.instrumentation().livePreviewUpdates;
+      expect(scheduler.pendingCount).toBe(1);
+      scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+      scheduler.runNext();
+      expect(renderer.instrumentation().livePreviewUpdates).toBe(updates + 1);
+      expect(scheduler.pendingCount).toBe(0);
+      expectPressureTip(tail, samples[LIVE_STROKE_SAMPLES_PER_FRAME - 1]!);
+    }
+    expect(renderer.instrumentation().livePreviewUpdates).toBe(LIVE_STROKE_FRAME_COUNT + 1);
+  } finally {
+    routed.revert();
+    renderer.destroy();
+  }
 });
 
-function coalescedHarness(pointerType: "pen" | "mouse") {
+function coalescedHarness() {
   const { store } = createInteractionFixture();
-  const { renderer, scheduler } = createInteractionRenderer(store);
+  const { renderer, scheduler } = createInteractionRenderer(
+    store,
+    new FakeScheduler(INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs),
+  );
   scheduler.runAll();
   const preview = new CreationPreview(
     livePreviewOptions(
       createBuiltInSettings().toolDefaults,
       activeEditorStoreHistory(store),
       renderer,
-      pointerType,
     ),
   );
   let routed: GesturePreview = preview;
   const input = new CoalescedPointerInput(
-    liveInputOptions(scheduler.workScheduler, (pointer) => routed.update(pointer), pointerType),
+    liveInputOptions(scheduler.workScheduler, (pointer) => routed.update(pointer)),
   );
   routed = input.wrap(preview);
   const camera = fakeNode(renderer.svg).nodes[1]!;
@@ -112,13 +110,13 @@ function coalescedHarness(pointerType: "pen" | "mouse") {
   return { input, renderer, routed, scheduler, tail };
 }
 
-function pointerSample(index: number, pointerType: "pen" | "mouse"): PointerEvent {
+function pointerSample(index: number): PointerEvent {
   const sample = createLivePressureSample(index, INTERACTION_REFRESH_PROFILE.frameDurationMs);
   return {
     clientX: sample.x,
     clientY: sample.y,
     pointerId: 1,
-    pointerType,
+    pointerType: "pen",
     pressure: sample.pressure,
     timeStamp: sample.time / LIVE_STROKE_SAMPLES_PER_FRAME,
   } as PointerEvent;

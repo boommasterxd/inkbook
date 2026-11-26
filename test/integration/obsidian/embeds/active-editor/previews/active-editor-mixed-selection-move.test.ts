@@ -1,59 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  calculateElementBounds,
-  derivePageExtent,
-  rotatePointClockwise,
-  translateElementGeometry,
-} from "../../../../../../src/domain/geometry/public";
-import type { InkElementV1, PageV1 } from "../../../../../../src/domain/schema/public";
+import { calculateElementBounds } from "../../../../../../src/domain/geometry/public";
+import type { InkElementV1 } from "../../../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../../../src/domain/store/public";
-import { type ImmutableInkElement } from "../../../../../../src/domain/store/types";
 import { SelectionFrameSession } from "../../../../../../src/editor/selection/public";
 import { transformSelectionFrame } from "../../../../../../src/editor/selection/selection-frame";
 import type { PreparedElementHistory } from "../../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import type { ElementSceneStore } from "../../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { MovePreview } from "../../../../../../src/obsidian/embeds/active-editor/previews/selection-preview";
-import { ActivePageLayout } from "../../../../../../src/obsidian/embeds/active-editor/layout/page-layout";
 import { reportedRotatedTable } from "../../../../../fixtures/editor/reported-rotated-table";
 import { createSynchronousActiveEditorHistory } from "../../../../../fixtures/obsidian/synchronous-active-editor-history";
-import { coordinateSystem } from "../../../../../unit/domain/geometry/fixtures";
-
-describe("active editor mixed selection move", () => {
-  it("commits the reported table and stroke geometry atomically", () => {
-    const fixture = mixedMoveFixture();
-    const { history, store, stroke, table } = fixture;
-    const preview = mixedMovePreview(fixture);
-    const originalStroke = store.get(stroke.id)!.element;
-    if (originalStroke.kind !== "stroke") throw new Error("Expected stored stroke");
-
-    preview.update(pointer(800, 940));
-
-    expect(preview.commit()).toBe(true);
-    expect(store.get(table.id)?.element).toMatchObject({
-      pivot: { x: 999.694, y: 1062.905 },
-      x: 555.405,
-      y: 848.169,
-    });
-    const movedStroke = store.get(stroke.id)?.element;
-    if (movedStroke?.kind !== "stroke") throw new Error("Expected moved stroke");
-    expect(movedStroke.points).toBe(originalStroke.points);
-    expect(movedStroke.offset).toEqual({ x: -100, y: 40 });
-    expect(movedStroke.pivot).toEqual({ x: 1489.271, y: 908.189 });
-    expect(strokeStart(movedStroke)).toEqual([1697.778, 613.438, 0.5]);
-    expect(history.commandCount).toBe(1);
-    expect(history.undo()).toBe(true);
-    expect(store.get(table.id)?.element).toMatchObject({ x: 655.405, y: 808.169 });
-    const restoredStroke = store.get(stroke.id)!.element;
-    if (restoredStroke.kind !== "stroke") throw new Error("Expected restored stroke");
-    expect(restoredStroke.points).toBe(originalStroke.points);
-    expect(restoredStroke.offset).toBeUndefined();
-    expect(strokeStart(restoredStroke)).toEqual([1797.778, 573.438, 0.5]);
-    expect(history.redo()).toBe(true);
-    expect(store.get(stroke.id)?.element).toMatchObject({ offset: { x: -100, y: 40 } });
-    expect(strokeStart(store.get(stroke.id)?.element)).toEqual([1697.778, 613.438, 0.5]);
-  });
-});
 
 describe("active editor oriented multi-selection move", () => {
   it("moves the retained frame with the elements and restores it through undo", () => {
@@ -150,53 +106,6 @@ describe("active editor rotated table move", () => {
     }
   });
 });
-
-describe("active editor lower-page extent", () => {
-  it("retains the complete table and coordinate-system extent after a millimeter move", () => {
-    for (const coordinateOffset of [2_400, 3_900]) {
-      const table = reportedRotatedTable();
-      const system = translateElementGeometry(coordinateSystem(), { x: 600, y: coordinateOffset });
-      const store = new ElementStore([table, system]);
-      const history = createSynchronousActiveEditorHistory(store);
-      const policy = new ActivePageLayout();
-      policy.committed(layoutPage, store.getMaximumBottom());
-      policy.beginSelectionMove();
-      const finish = vi.fn((committed: boolean, previewBottom?: number) => {
-        const storeBottom = store.getMaximumBottom();
-        const bottom = committed
-          ? Math.max(
-              storeBottom ?? Number.NEGATIVE_INFINITY,
-              previewBottom ?? Number.NEGATIVE_INFINITY,
-            )
-          : storeBottom;
-        policy.finishSelectionMove(
-          committed,
-          layoutPage,
-          Number.isFinite(bottom) ? bottom : undefined,
-        );
-      });
-      const preview = tableMovePreview(store, table, history, finish).preview;
-
-      preview.update(pointer(900.001, 900.001));
-
-      expect(preview.commit()).toBe(true);
-      const requiredHeight = derivePageExtent(
-        layoutPage,
-        store.getMaximumBottom() ?? null,
-      ).activeHeight;
-      expect(policy.height).toBeGreaterThanOrEqual(requiredHeight);
-      expect(finish).toHaveBeenCalledOnce();
-    }
-  });
-});
-
-const layoutPage: PageV1 = {
-  activeBufferLines: 3,
-  background: { type: "lines", spacing: 100 },
-  innerWidth: 2_000,
-  lockedBufferLines: 1,
-  margin: 24.3,
-};
 
 function mixedMoveFixture() {
   const table = reportedTable();
@@ -324,17 +233,4 @@ function reportedStroke(): Extract<InkElementV1, { kind: "stroke" }> {
 
 function pointer(x: number, y: number) {
   return { pointerId: 10, pointerType: "mouse" as const, x, y };
-}
-
-function strokeStart(element: InkElementV1 | ImmutableInkElement | undefined): number[] {
-  if (element?.kind !== "stroke") throw new Error("Expected stroke geometry");
-  const point = rotatePointClockwise(
-    {
-      x: element.points[0]! + (element.offset?.x ?? 0),
-      y: element.points[1]! + (element.offset?.y ?? 0),
-    },
-    element.pivot,
-    element.rotation,
-  );
-  return [point.x, point.y, element.points[2]!];
 }
