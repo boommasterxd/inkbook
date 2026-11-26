@@ -1,14 +1,4 @@
-import type {
-  LineElementV1,
-  PageV1,
-  BoxShapeElementV1,
-  CoordinateSystemElementV1,
-  InkElementV1,
-  StrokeElementV1,
-  TableElementV1,
-  ImageElementV3,
-} from "../../../../src/domain/schema/public";
-import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
+import type { LineElementV1, BoxShapeElementV1 } from "../../../../src/domain/schema/public";
 
 export const IDS = {
   highlight: "00000000-0000-4000-8000-000000000001",
@@ -16,14 +6,6 @@ export const IDS = {
   other: "00000000-0000-4000-8000-000000000003",
   target: "00000000-0000-4000-8000-000000000004",
 } as const;
-
-export const PAGE: PageV1 = {
-  activeBufferLines: 3,
-  background: { type: "lines", spacing: 50 },
-  innerWidth: 2000,
-  lockedBufferLines: 1,
-  margin: 24.3,
-};
 
 const OUTLINE_STYLE = {
   outlineColor: { type: "rgba", value: "#112233FF" },
@@ -65,122 +47,5 @@ export function connectedLine(target: BoxShapeElementV1 = rectangle()): LineElem
     },
     startNode: "none",
     style: OUTLINE_STYLE,
-  };
-}
-
-export function highlighter(): StrokeElementV1 {
-  return {
-    createdAt: 3,
-    id: IDS.highlight,
-    kind: "stroke",
-    pivot: { x: 150, y: 300 },
-    points: [100, 300, 0.5, 200, 300, 0.5],
-    rotation: 0,
-    style: {
-      color: { type: "rgba", value: "#FFEE00AA" },
-      opacity: 0.5,
-      pressureEnabled: false,
-      smoothing: 0.5,
-      width: 8,
-    },
-    tool: "highlighter",
-  };
-}
-
-export function maximumLengthHighlighter(): StrokeElementV1 {
-  return {
-    ...highlighter(),
-    points: Array.from({ length: MAX_STROKE_POINTS * 3 }, (_, index) =>
-      index % 3 === 2 ? 0.5 : 100 + (Math.floor(index / 3) % 100),
-    ),
-  };
-}
-
-export function tableFromRectangle(box: BoxShapeElementV1 = rectangle()): TableElementV1 {
-  return {
-    columnWidth: 100,
-    columns: 2,
-    createdAt: box.createdAt,
-    headerHeight: 30,
-    height: box.height,
-    id: box.id,
-    kind: "table",
-    pivot: box.pivot,
-    rotation: box.rotation,
-    style: {
-      outlineColor: box.style.outlineColor,
-      outlineOpacity: box.style.outlineOpacity,
-      outlineStyle: box.style.outlineStyle,
-      outlineWidth: box.style.outlineWidth,
-    },
-    x: box.x,
-    y: box.y,
-  };
-}
-
-export function mixedElement(index: number): InkElementV1 {
-  const id = `00000000-0000-4000-8000-${(index + 100).toString().padStart(12, "0")}`;
-  if (index % 2 === 0) return rectangle(id, 100 + index * 3, 100 + index);
-  return {
-    ...highlighter(),
-    createdAt: index + 1,
-    id,
-    pivot: { x: 150 + index * 3, y: 300 + index },
-    points: [100 + index * 3, 300 + index, 0.5, 200 + index * 3, 300 + index, 0.5],
-  };
-}
-
-export function coordinateSystem(): CoordinateSystemElementV1 {
-  return {
-    axes: [
-      { x: 500, y: 300 },
-      { x: 300, y: 100 },
-      { x: 200, y: 400 },
-    ],
-    createdAt: 1,
-    dimension: "3d",
-    id: IDS.target,
-    kind: "coordinate-system",
-    origin: { x: 300, y: 300 },
-    pivot: { x: 300, y: 300 },
-    rotation: 0,
-    style: OUTLINE_STYLE,
-  };
-}
-
-export function axisConnectedLine(): LineElementV1 {
-  return {
-    bend: null,
-    createdAt: 2,
-    end: { x: 700, y: 400 },
-    endConnection: null,
-    endNode: "none",
-    id: IDS.line,
-    kind: "line",
-    pivot: { x: 450, y: 400 },
-    rotation: 0,
-    start: { x: 200, y: 400 },
-    startConnection: {
-      anchor: { kind: "coordinate-axis-end", index: 2 },
-      targetId: IDS.target,
-    },
-    startNode: "none",
-    style: OUTLINE_STYLE,
-  };
-}
-
-export function image(id = "00000000-0000-4000-8000-000000000050"): ImageElementV3 {
-  return {
-    id,
-    kind: "image",
-    createdAt: 1,
-    x: 100,
-    y: 100,
-    width: 200,
-    height: 100,
-    rotation: 0,
-    pivot: { x: 200, y: 150 },
-    assetId: "a".repeat(64),
-    crop: { x: 0, y: 0, width: 200, height: 100 },
   };
 }

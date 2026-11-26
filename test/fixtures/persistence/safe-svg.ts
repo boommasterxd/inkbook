@@ -1,34 +1,4 @@
-import type { InkSnapshotV1 } from "../../../src/domain/schema/public";
-import { serializeSvgEnvelope } from "../../../src/persistence/documents/svg-envelope";
-import { StreamingSafeStaticValidator } from "../../../src/persistence/serialization/input/streaming-safe-static";
-
 export const MAXIMUM_PATH_BYTES = 16 * 1024 * 1024;
-
-const snapshot: InkSnapshotV1 = {
-  elements: [],
-  format: "inkbook",
-  page: {
-    activeBufferLines: 3,
-    background: { type: "none" },
-    innerWidth: 2000,
-    lockedBufferLines: 1,
-    margin: 24.3,
-  },
-  revision: 3,
-  version: 1,
-};
-
-export function createMaximumComplexityPath(): string {
-  return `M 0 0${" L 1 1".repeat(399_999)}`.padEnd(MAXIMUM_PATH_BYTES, " ");
-}
-
-export function createMaximumComplexitySvg(): string {
-  return serializeSvgEnvelope(snapshot, 148.6, {
-    background: [],
-    content: [`<path d="${createMaximumComplexityPath()}" fill="none" stroke="#112233FF"/>`],
-    highlights: [],
-  });
-}
 
 export function exhaustValidation<T>(steps: Generator<void, T>) {
   let yields = 0;
@@ -38,12 +8,4 @@ export function exhaustValidation<T>(steps: Generator<void, T>) {
     step = steps.next();
   }
   return { result: step.value, yields };
-}
-
-export async function validateStaticSvgChunks(input: string, chunk: number, version = 1) {
-  const validator = new StreamingSafeStaticValidator(() => undefined, version);
-  for (let start = 0; start < input.length; start += chunk) {
-    if (!(await validator.write(input.slice(start, start + chunk)))) return false;
-  }
-  return validator.finish();
 }

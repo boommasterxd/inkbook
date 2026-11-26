@@ -174,11 +174,6 @@ export const documentB: ActivationTarget = {
   attachmentId: "attachment-b",
   documentId: "drawings/b.svg",
 };
-export const documentC: ActivationTarget = {
-  attachmentGeneration: 3,
-  attachmentId: "attachment-c",
-  documentId: "drawings/c.svg",
-};
 
 export function createHarness() {
   const sessions: FakeSession[] = [];

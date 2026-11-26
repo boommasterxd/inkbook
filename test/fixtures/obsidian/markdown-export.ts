@@ -2,38 +2,10 @@ import { vi } from "vitest";
 import type { MarkdownPostProcessorContext, MarkdownRenderChild } from "obsidian";
 import type { EmbedIntegrationPorts } from "../../../src/obsidian/embeds/presentation/presentation-port";
 import { PresentationLifecycleRegistry } from "../../../src/obsidian/embeds/presentation/presentation-lifecycle-registry";
-import {
-  inspectPreviewSvg,
-  type LoadedPreviewSvg,
-} from "../../../src/obsidian/embeds/preview/safe-preview-svg";
-import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
-import { createAllElementSnapshot } from "../../unit/persistence/serialization/fixtures";
+import { type LoadedPreviewSvg } from "../../../src/obsidian/embeds/preview/safe-preview-svg";
 import { ColorSchemeBroadcaster } from "../../../src/obsidian/theme/color-scheme";
 import { immediateWorkScheduler } from "./immediate-work-scheduler";
 import { createReadingViewPostProcessor } from "../../../src/obsidian/embeds/reading-view";
-
-/** A real target CSS context, independent of the source editor's theme. */
-export function mountExportTargetScheme(
-  root: HTMLElement,
-  scheme: "light" | "dark" | "light dark",
-): void {
-  const stylesheet = document.createElementNS("http://www.w3.org/1999/xhtml", "style");
-  stylesheet.textContent = `.inkbook-export-target-fixture { color-scheme: ${scheme}; }`;
-  root.classList.add("inkbook-export-target-fixture");
-  root.append(stylesheet);
-  document.body.append(root);
-}
-
-/** Complete saved and independently validated geometry shared by export contracts. */
-export async function validatedPreview(): Promise<LoadedPreviewSvg> {
-  const serialized = serializeInkbookDocument(createAllElementSnapshot());
-  if (!serialized.ok) throw new Error(serialized.error.message);
-  const descriptor = await inspectPreviewSvg(serialized.value.svg, {
-    workScheduler: immediateWorkScheduler(),
-  });
-  if (descriptor === null) throw new Error("Expected a validated export fixture.");
-  return descriptor;
-}
 
 /** A recognized document boundary fixture, including ink below the initial viewport. */
 export function exportDescriptor(

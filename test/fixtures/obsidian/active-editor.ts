@@ -1,19 +1,8 @@
 import { vi } from "vitest";
 
 import type { ElementStore } from "../../../src/domain/store/public";
-import type {
-  GestureControllerPorts,
-  GesturePreviewStart,
-} from "../../../src/editor/gestures/public";
-import type {
-  CreationPreviewRenderer,
-  CreationSnapPorts,
-} from "../../../src/obsidian/embeds/active-editor/previews/creation-preview";
-import type { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
+import type { CreationPreviewRenderer } from "../../../src/obsidian/embeds/active-editor/previews/creation-preview";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
-import { PreparedElementHistory } from "../../../src/obsidian/embeds/active-editor/prepared-element-history";
-import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-session/document-model-port";
-import { immediateWorkScheduler } from "./immediate-work-scheduler";
 
 export function activeEditorStoreHistory(store: ElementStore): ActiveEditorHistory {
   return new ActiveEditorHistory({
@@ -23,77 +12,6 @@ export function activeEditorStoreHistory(store: ElementStore): ActiveEditorHisto
     removeElements: (ids) => void store.remove(ids),
     replaceElements: (elements, capture) => void store.replaceMany(elements, capture),
   });
-}
-
-export function sceneCreationSnapPorts(
-  scene: ElementSceneStore,
-  connections: () => boolean,
-): CreationSnapPorts {
-  return {
-    angles: false,
-    connections,
-    pageToScreen: (point) => point,
-    spatial: scene,
-    targets: { get: (id, bounds) => scene.getSnapTarget(id, bounds) },
-    zoom: 1,
-  };
-}
-
-export function invalidatePendingHistory(
-  reason: "selection" | "revision" | "dispose" | "failure",
-  history: { dispose(): void },
-  advanceRevision: () => void,
-): boolean {
-  if (reason === "revision") advanceRevision();
-  if (reason === "dispose") history.dispose();
-  return reason !== "selection";
-}
-
-export function activeEditorPreparedHistory(
-  model: EditableDocumentModel,
-  history: ActiveEditorHistory,
-  scheduler = immediateWorkScheduler(),
-): PreparedElementHistory {
-  return new PreparedElementHistory({
-    history,
-    model,
-    isAttached: () => true,
-    onPendingChanged: () => undefined,
-    motion: { beginPreviewCommit: () => ({ arm: () => true, cancel: () => undefined }) },
-    workScheduler: scheduler,
-  });
-}
-
-export function gestureControllerPorts(
-  beginPreview: (start: GesturePreviewStart) => ReturnType<GestureControllerPorts["beginPreview"]>,
-  overrides: Partial<GestureControllerPorts> = {},
-): GestureControllerPorts {
-  const pointerLifecycle = {
-    cancelLongPress: vi.fn(),
-    capturePointer: vi.fn(),
-    releasePointer: vi.fn(),
-    scheduleLongPress: vi.fn(),
-  };
-  const navigation = {
-    beginPinch: vi.fn(),
-    finishPinch: vi.fn(),
-    panPage: vi.fn(),
-    revertNavigation: vi.fn(),
-    revertPinch: vi.fn(),
-    scrollNote: vi.fn(),
-    updatePinch: vi.fn(),
-  };
-  return {
-    activateTemporaryEraser: vi.fn(),
-    beginPreview,
-    clearSelection: vi.fn(),
-    ...navigation,
-    openContextMenu: vi.fn(),
-    ...pointerLifecycle,
-    restoreTemporaryTool: vi.fn(),
-    selectElement: vi.fn(),
-    ...overrides,
-  };
 }
 
 export function creationPreviewRenderer(
@@ -108,26 +26,5 @@ export function creationPreviewRenderer(
     suppressMotionForNextDelta: () => undefined,
     updateLiveStroke: () => undefined,
     ...overrides,
-  };
-}
-
-export interface RectFixture {
-  readonly height: number;
-  readonly left: number;
-  readonly top: number;
-  readonly width: number;
-}
-
-export function domRect(rect: RectFixture): DOMRect {
-  return {
-    bottom: rect.top + rect.height,
-    height: rect.height,
-    left: rect.left,
-    right: rect.left + rect.width,
-    top: rect.top,
-    width: rect.width,
-    x: rect.left,
-    y: rect.top,
-    toJSON: () => ({}),
   };
 }

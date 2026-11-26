@@ -1,5 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreDependencies": ["moment"],
   "ignoreExportsUsedInFile": true,
   "entry": [
     "src/main.ts!",
@@ -15,14 +16,10 @@
     "test/**/*.{ts,tsx}",
     "scripts/*.mjs",
     "scripts/cache-lifecycle/*.{cjs,d.ts}",
-    "test/unit/scripts/cache-lifecycle*.test.mjs",
-    "test/unit/scripts/cache-lifecycle/*.cjs"
+    "test/unit/scripts/*.mjs"
   ],
   "vitest": {
     "config": ["vitest.config.ts"],
-    "entry": [
-      "test/{unit,integration,performance}/**/*.test.{ts,tsx}",
-      "test/unit/scripts/cache-lifecycle*.test.mjs"
-    ]
+    "entry": ["test/{unit,integration,performance}/**/*.test.{ts,tsx,mjs}"]
   }
 }

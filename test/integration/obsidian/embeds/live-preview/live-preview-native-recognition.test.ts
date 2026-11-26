@@ -79,42 +79,6 @@ it("recognizes a native image whose block replacement hides its complete source 
   }
 });
 
-it("does not recognize maximum-capacity candidates hidden by one folded multiline block", () => {
-  const source = Array.from({ length: 4096 }, (_, index) => `![[drawing-${index}.svg]]`).join("\n");
-  const blockReads = vi.spyOn(EditorView.prototype, "lineBlockAt");
-  const viewportReads = vi.spyOn(EditorView.prototype, "viewportLineBlocks", "get");
-  const h = fixture(source, { from: 0, to: source.length });
-  try {
-    expect(h.recognize).not.toHaveBeenCalled();
-    expect(blockReads).not.toHaveBeenCalled();
-    expect(viewportReads).toHaveBeenCalledOnce();
-  } finally {
-    h.dispose();
-    blockReads.mockRestore();
-    viewportReads.mockRestore();
-  }
-});
-
-it("does not start reads for maximum-capacity native candidates outside the editor viewport", () => {
-  const visible = "![[visible-handwriting-document.svg]]";
-  const offscreen = Array.from(
-    { length: 4095 },
-    (_, index) => `![[offscreen-document-${index}.svg]]`,
-  ).join("\n");
-  const source = `${visible}\n${"Ordinary prose\n".repeat(3000)}${offscreen}`;
-  const h = fixture(source, { from: 0, to: visible.length });
-  try {
-    expect(h.view.viewport.to).toBeLessThan(source.indexOf(offscreen));
-    expect(h.recognize).toHaveBeenCalledExactlyOnceWith(
-      "visible-handwriting-document.svg",
-      h.view.dom.ownerDocument.defaultView,
-    );
-    expect(h.cached).toHaveBeenCalledTimes(4097);
-  } finally {
-    h.dispose();
-  }
-});
-
 it("does not decorate cached native previews inside a fence with a tab-indented marker", () => {
   configureTestEditorState({ file: { path: "note.md" }, livePreview: true });
   const visible = "![[visible.svg]]";

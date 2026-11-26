@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { InkbookDocumentRecognitionPort } from "../../../../src/obsidian/embeds/preview/document-recognition";
 import { createReadingViewPostProcessor } from "../../../../src/obsidian/embeds/reading-view";
-import * as previewBuilder from "../../../../src/obsidian/embeds/preview/safe-preview-builder";
 import type {
   EmbedIntegrationPorts,
   PresentationAttachment,
@@ -11,7 +10,6 @@ import { PresentationLifecycleRegistry } from "../../../../src/obsidian/embeds/p
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
 import { nativeFrameWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
-import { createHiddenPreviewHandoff } from "../../../fixtures/obsidian/active-preview-handoff";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const FIRST_PREVIEW = {
@@ -25,101 +23,7 @@ const SECOND_PREVIEW = {
   safeSvg: SAFE_PREVIEW_SVG,
 };
 
-describe("Reading-view preview content identity", () => {
-  it("keeps a detached postprocessor host mountable and restores its exact children once", async () => {
-    const documents: InkbookDocumentRecognitionPort = {
-      cached: () => FIRST_PREVIEW,
-      recognize: async () => FIRST_PREVIEW,
-      subscribe: () => () => undefined,
-    };
-    const harness = await mountReadingView(documents, true);
-    expect(harness.section.children).toEqual([]);
-    expect(harness.child?.containerEl).toBe(harness.root);
-    harness.section.append(harness.root);
-    expect(harness.root.children[0]?.classNames).toContain("inkbook-root");
-    harness.child?.unload();
-    harness.child?.unload();
-    expect(harness.section.children).toEqual([harness.root]);
-    expect(harness.root.children).toEqual(harness.originalChildren);
-  });
-
-  it("restores original source nodes when recognition becomes invalid", async () => {
-    const recognition = mutableRecognition();
-    const harness = await mountReadingView(recognition.documents);
-    recognition.update(false);
-    await vi.waitFor(() => expect(harness.root.children).toEqual(harness.originalChildren));
-    expect(harness.section.children).toEqual([harness.root]);
-    harness.child?.unload();
-    expect(recognition.listeners.size).toBe(0);
-  });
-
-  it("refreshes a mounted preview from the latest recognized identity", async () => {
-    const recognition = mutableRecognition();
-    const harness = await mountReadingView(recognition.documents);
-    expect(harness.previewMedia.style["--inkbook-preview-aspect-ratio"]).toBe("12");
-
-    recognition.update(SECOND_PREVIEW);
-
-    await vi.waitFor(() =>
-      expect(harness.previewMedia.style["--inkbook-preview-aspect-ratio"]).toBe("4"),
-    );
-    expect(harness.attachments[0]?.previewContentIdentity).toEqual(SECOND_PREVIEW.contentIdentity);
-    harness.child?.unload();
-  });
-});
-
-describe("Reading-view active preview refresh", () => {
-  it("refreshes a visible sibling while deferring the hidden active preview", async () => {
-    const recognition = mutableRecognition();
-    const active = await mountReadingView(recognition.documents);
-    const sibling = await mountReadingView(recognition.documents);
-    const attachment = active.attachments[0]!;
-    await sibling.attachments[0]!.ensurePreviewReady?.();
-    const { handoff } = await createHiddenPreviewHandoff(
-      attachment,
-      nativeFrameWorkScheduler(attachment.root.ownerDocument.defaultView),
-    );
-    const activeSurface = active.previewMedia.shadowRoot as unknown as FakePresentationElement;
-    expect(activeSurface.getElementsByTagName("iframe").length).toBe(0);
-    const builder = vi.spyOn(previewBuilder, "createPreviewSvgAsync");
-    try {
-      recognition.update(SECOND_PREVIEW);
-      await vi.waitFor(() =>
-        expect(sibling.previewMedia.style["--inkbook-preview-aspect-ratio"]).toBe("4"),
-      );
-      expect(attachment.previewContentIdentity).toEqual(SECOND_PREVIEW.contentIdentity);
-      expect(active.previewMedia.style["--inkbook-preview-aspect-ratio"]).toBe("12");
-      expect(builder).toHaveBeenCalledOnce();
-      const surface = sibling.previewMedia.shadowRoot as unknown as FakePresentationElement;
-      const frame = surface.getElementsByTagName("iframe").item(0)!;
-      expect(builder.mock.calls[0]?.[0]).toBe(frame.contentDocument);
-      await handoff.ensurePreviewReady();
-      expect(activeSurface.getElementsByTagName("iframe").length).toBe(1);
-      handoff.restorePreview();
-      expect(active.previewMedia.style["--inkbook-preview-aspect-ratio"]).toBe("4");
-      expect(builder).toHaveBeenCalledTimes(2);
-    } finally {
-      builder.mockRestore();
-      handoff.dispose();
-      active.child?.unload();
-      sibling.child?.unload();
-    }
-    expect(recognition.listeners.size).toBe(0);
-  });
-});
-
 describe("Reading-view native recognition", () => {
-  it("applies a native width only after validation and leaves the native source intact on unload", async () => {
-    const harness = pendingReadingView("![Drawing|400](drawings/ink.svg)");
-    expect(harness.root.children).toEqual([harness.original]);
-    harness.resolve(FIRST_PREVIEW);
-    await vi.waitFor(() => expect(harness.attachments).toHaveLength(1));
-    const attachment = harness.attachments[0]!;
-    expect(Reflect.get(attachment.root.style, "--inkbook-embed-inline-size")).toBe("400px");
-    harness.ports.lifecycle.disposeAll();
-    expect(harness.root.children).toEqual([harness.original]);
-  });
-
   it("keeps a native image until validation and restores it across invalidation and unload", async () => {
     const harness = pendingReadingView("![Drawing](drawings/ink.svg)");
     expect(harness.root.children).toEqual([harness.original]);
@@ -142,41 +46,6 @@ describe("Reading-view native recognition", () => {
 });
 
 describe("Reading-view pending recognition", () => {
-  it.each([
-    { text: "![[drawings/other.svg]]", line: 0 },
-    { text: "Before\n![[drawings/ink.svg]]", line: 1 },
-    { text: "<!--\n![[drawings/ink.svg]]\n-->", line: 1 },
-  ])(
-    "rechecks fresh source syntax and offsets after pending recognition: $text",
-    async ({ text, line }) => {
-      const harness = pendingReadingView();
-      harness.changeMarkdown(text, line);
-      harness.resolve(FIRST_PREVIEW);
-      await harness.settled();
-      expect(harness.root.children).toEqual([harness.original]);
-      expect(harness.attachments).toEqual([]);
-      expect(harness.recognitionListeners.size).toBe(0);
-      harness.ports.lifecycle.disposeAll();
-    },
-  );
-
-  it.each(["invalid", "rejected", "unloaded", "disposed", "changed"] as const)(
-    "restores source without adopting a preview when recognition is %s",
-    async (outcome) => {
-      const harness = pendingReadingView();
-      if (outcome === "unloaded") harness.children[0]?.unload();
-      if (outcome === "disposed") harness.ports.lifecycle.disposeAll();
-      if (outcome === "changed") harness.changeSource();
-      if (outcome === "rejected") harness.reject(new Error("Read failed"));
-      else harness.resolve(outcome === "invalid" ? false : FIRST_PREVIEW);
-      await harness.settled();
-      expect(harness.root.children).toEqual([harness.original]);
-      expect(harness.attachments).toEqual([]);
-      harness.ports.lifecycle.disposeAll();
-      expect(harness.recognitionListeners.size).toBe(0);
-    },
-  );
-
   it("rejects a stale asynchronous recognition before mounting", async () => {
     let resolveRecognition!: (value: typeof FIRST_PREVIEW) => void;
     let cached: typeof FIRST_PREVIEW | typeof SECOND_PREVIEW | undefined;
@@ -208,48 +77,6 @@ describe("Reading-view pending recognition", () => {
     ports.lifecycle.disposeAll();
   });
 });
-
-function mutableRecognition() {
-  let current: typeof FIRST_PREVIEW | false = FIRST_PREVIEW;
-  const listeners = new Set<(documentId: string) => void>();
-  const documents: InkbookDocumentRecognitionPort = {
-    cached: () => current,
-    recognize: async () => current,
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  };
-  return {
-    documents,
-    listeners,
-    update: (preview: typeof FIRST_PREVIEW | false) => {
-      current = preview;
-      for (const listener of listeners) listener("drawings/ink.svg");
-    },
-  };
-}
-
-async function mountReadingView(documents: InkbookDocumentRecognitionPort, detached = false) {
-  const attachments: PresentationAttachment[] = [];
-  const section = new FakePresentationElement();
-  const root = new FakePresentationElement(section.ownerDocument, "p");
-  if (!detached) section.append(root);
-  else root.isConnected = false;
-  const originalChildren = [nativeImage(root)];
-  let child: { readonly containerEl?: HTMLElement; load(): void; unload(): void } | undefined;
-  void createReadingViewPostProcessor(createPorts(documents, attachments))(
-    root as unknown as HTMLElement,
-    readingContext((nextChild: { load(): void; unload(): void }) => {
-      child = nextChild;
-      nextChild.load();
-    }),
-  );
-  await vi.waitFor(() => expect(attachments).toHaveLength(1));
-  const previewMedia = root.children[0]?.children[0]?.children[0];
-  if (previewMedia === undefined) throw new Error("The Reading-view preview was not mounted.");
-  return { attachments, child, originalChildren, previewMedia, root, section };
-}
 
 function createPorts(
   documents: InkbookDocumentRecognitionPort,

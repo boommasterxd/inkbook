@@ -1,16 +1,10 @@
 import type {
   ArrowElementV1,
   BoxShapeElementV1,
-  InkElementV1,
   PageV1,
   TextElementV2,
   FontResourceV2,
 } from "../../../../src/domain/schema/public";
-import {
-  encodeRuntimeSelection,
-  resolveClipboardPayload,
-} from "../../../../src/persistence/clipboard/codec";
-import type { DecodedClipboard } from "../../../../src/persistence/clipboard/types";
 import { createFontResource } from "../../../../src/persistence/fonts/font-resources";
 import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { Platform } from "obsidian";
@@ -54,18 +48,6 @@ export function textElement(source = "Text"): TextElementV2 {
     },
   };
 }
-
-export const fontResource = (
-  weight = 400,
-  style: "normal" | "italic" = "normal",
-): FontResourceV2 => ({
-  id: `inter_${weight}_${style}`,
-  family: "inter",
-  weight,
-  style,
-  mimeType: "font/woff2",
-  data: "AAECAw==",
-});
 
 const validFonts = new Map<string, Promise<FontResourceV2>>();
 
@@ -128,29 +110,6 @@ export const arrow = (targetId = RECTANGLE_ID): ArrowElementV1 => ({
   rotation: 0,
   pivot: { x: 70, y: 70 },
   style: outlineStyle,
-});
-
-export const selectedElements = (): InkElementV1[] => [rectangle(), arrow()];
-
-export function createDecodedClipboardFixture(
-  elements: readonly InkElementV1[] = selectedElements(),
-): DecodedClipboard {
-  const encoded = encodeRuntimeSelection(elements, new Set(elements.map(({ id }) => id)));
-  if (!encoded.ok) throw new Error(encoded.error.message);
-  const decoded = resolveClipboardPayload({ customText: encoded.value.customText });
-  if (!decoded.ok) throw new Error(decoded.error.message);
-  return decoded.value;
-}
-
-export const spatialRectangle = (index: number, width = 1_019): BoxShapeElementV1 => ({
-  ...rectangle(),
-  createdAt: index,
-  height: 15_355,
-  id: `90000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`,
-  pivot: { x: 2 + width / 2, y: 7_679.5 },
-  width,
-  x: 2,
-  y: 2,
 });
 
 export const page = (): PageV1 => ({

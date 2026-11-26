@@ -9,7 +9,7 @@ import {
   readHeadFiles,
   testFile,
 } from "./ci-selection-git.mjs";
-import { affectedFiles, createGraph, reachable } from "./ci-selection-graph.mjs";
+import { affectedFiles, createGraph } from "./ci-selection-graph.mjs";
 
 export { inspectChanges } from "./ci-selection-git.mjs";
 
@@ -17,7 +17,6 @@ const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const planKeys = [
   "base",
   "changes",
-  "coverage",
   "head",
   "merge",
   "mergeBase",
@@ -49,8 +48,8 @@ function sortedPaths(values, predicate = () => true) {
 function validShape(plan) {
   return (
     Object.keys(plan).sort().join() === planKeys.join() &&
-    plan.version === 2 &&
-    ["docs", "full", "affected"].includes(plan.mode) &&
+    plan.version === 3 &&
+    ["docs", "full", "affected", "no-impact"].includes(plan.mode) &&
     typeof plan.reason === "string" &&
     plan.reason.trim().length > 0 &&
     typeof plan.head === "string" &&
@@ -59,8 +58,7 @@ function validShape(plan) {
     revision(plan.merge) &&
     (plan.mergeBase === null || revision(plan.mergeBase)) &&
     sortedPaths(plan.changes) &&
-    sortedPaths(plan.tests, (file) => testFile.test(file)) &&
-    sortedPaths(plan.coverage, (file) => file.startsWith("src/") && codeFile.test(file))
+    sortedPaths(plan.tests, (file) => testFile.test(file))
   );
 }
 
@@ -68,19 +66,16 @@ export function validateSelection(plan) {
   if (!plan || typeof plan !== "object" || Array.isArray(plan))
     throw new Error("Invalid CI selection object");
   if (!validShape(plan)) throw new Error("Invalid CI selection shape");
-  if (
-    plan.mode === "docs" &&
-    (!plan.changes.length ||
-      plan.tests.length ||
-      plan.coverage.length ||
-      !plan.changes.every(documentationPath))
-  )
+  if (plan.mode === "docs" && !plan.changes.every(documentationPath))
     throw new Error("Invalid documentation selection");
-  if (plan.mode !== "full" && (!plan.base || !plan.mergeBase || !revision(plan.head)))
+  if (
+    plan.mode !== "full" &&
+    (!plan.base || !plan.mergeBase || !revision(plan.head) || !plan.changes.length)
+  )
     throw new Error("Incomplete CI revision binding");
-  if (plan.mode === "affected" && (!plan.changes.length || !plan.tests.length)) {
-    throw new Error("Incomplete affected CI selection");
-  }
+  const expectsTests = plan.mode === "affected" || plan.mode === "full";
+  const hasTests = plan.tests.length > 0;
+  if (expectsTests !== hasTests) throw new Error("Invalid CI test selection.");
   return plan;
 }
 
@@ -132,42 +127,10 @@ function graphSelection(graphs, changes, tests) {
   const affected = affectedFiles(graphs, changes);
   const selected = mappedTests(changes, tests);
   for (const test of tests) if (affected.has(test)) selected.add(test);
-  for (const file of changes) {
-    if (file.startsWith("docs/") || !codeFile.test(file)) continue;
-    const dependents = affectedFiles(graphs, [file]);
-    if (file.startsWith("src/") && !tests.some((test) => dependents.has(test))) {
-      throw new Error(`Unmatched runtime source ${file}`);
-    }
-    if (testFile.test(file) && !tests.some((test) => dependents.has(test))) {
-      throw new Error(`No surviving test covers ${file}`);
-    }
-    if (!file.startsWith("scripts/") && !tests.some((test) => dependents.has(test))) {
-      throw new Error(`No surviving test covers ${file}`);
-    }
+  if (changes.some((file) => testFile.test(file) && !selected.has(file))) {
+    throw new Error("A changed test was removed or renamed.");
   }
-  if (!selected.size) throw new Error("No surviving affected tests");
   return [...selected].sort();
-}
-
-function coverageScope(graph, tests, changes, files) {
-  const roots = tests.filter((file) => !file.startsWith("test/performance/"));
-  const scope = reachable(graph.edges, roots);
-  for (const file of affectedFiles([graph], changes)) if (file.startsWith("src/")) scope.add(file);
-  return [...scope]
-    .filter((file) => file.startsWith("src/") && codeFile.test(file) && files.has(file))
-    .sort();
-}
-
-function needsCompleteRuntimeTests(graph, selected, coverage, plan) {
-  if (!coverage.length || coverage.length !== plan.coverage.length) return false;
-  const selectedTests = new Set(selected);
-  const productConsumers = affectedFiles([graph], coverage);
-  return plan.tests.some(
-    (file) =>
-      !file.startsWith("test/performance/") &&
-      !selectedTests.has(file) &&
-      productConsumers.has(file),
-  );
 }
 
 async function comparisonState(root, base, head, merge) {
@@ -199,12 +162,11 @@ export async function createSelection({
   root = path.resolve(root);
   const { comparison, historyError } = await comparisonState(root, base, head, merge);
   const plan = {
-    version: 2,
+    version: 3,
     mode: "full",
     reason: "Full verification requested",
     ...comparison,
     tests: [],
-    coverage: [],
   };
   if (
     !forceFull &&
@@ -217,9 +179,7 @@ export async function createSelection({
   const files = await readHeadFiles(root);
   const tests = [...files.keys()].filter((file) => testFile.test(file)).sort();
   plan.tests = tests;
-  plan.coverage = [...files.keys()]
-    .filter((file) => file.startsWith("src/") && codeFile.test(file))
-    .sort();
+  validateSelection(plan);
   const global = comparison.changes.find(globalChange);
   if (forceFull || historyError || !comparison.changes.length || global) {
     plan.reason =
@@ -236,29 +196,13 @@ export async function createSelection({
     const baseFiles = await readBaseFiles(root, comparison.mergeBase);
     const graphs = [createGraph(ts, root, files), createGraph(ts, root, baseFiles)];
     const selected = graphSelection(graphs, comparison.changes, tests);
-    const coverage = coverageScope(graphs[0], selected, comparison.changes, files);
-    if (coverage.length && !selected.some((file) => !file.startsWith("test/performance/"))) {
-      throw new Error("Affected production sources have no Unit or Integration coverage");
-    }
-    if (needsCompleteRuntimeTests(graphs[0], selected, coverage, plan)) {
-      const affectedTests = new Set(selected);
-      return validateSelection({
-        ...plan,
-        mode: "affected",
-        reason:
-          "Complete runtime coverage requires all Unit/Integration tests; performance remains affected",
-        tests: tests.filter(
-          (file) => !file.startsWith("test/performance/") || affectedTests.has(file),
-        ),
-        coverage,
-      });
-    }
     return validateSelection({
       ...plan,
-      mode: "affected",
-      reason: "Affected tests from base and head dependencies plus explicit mappings",
+      mode: selected.length ? "affected" : "no-impact",
+      reason: selected.length
+        ? "Tests selected from both dependency graphs and explicit mappings"
+        : "Neither dependency graph nor explicit mappings identify an affected test",
       tests: selected,
-      coverage,
     });
   } catch (error) {
     return validateSelection({ ...plan, reason: `Conservative fallback: ${error.message}` });

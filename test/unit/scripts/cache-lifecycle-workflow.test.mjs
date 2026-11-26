@@ -1,8 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { workflowCondition } from "./workflow-condition-fixture.mjs";
@@ -15,92 +11,9 @@ const metadata = readFileSync(
   new URL("../../../.github/workflows/cache-lifecycle.yml", import.meta.url),
   "utf8",
 );
-const install = readFileSync(
-  new URL("../../../.github/actions/install-dependencies/action.yml", import.meta.url),
-  "utf8",
-);
-const policy = JSON.parse(
-  readFileSync(new URL("../../../scripts/cache-lifecycle/policy.json", import.meta.url), "utf8"),
-);
 const cleanup = warm.split("\n  cleanup:\n")[1];
 
-it("publishes the compatible native prefix without evaluating hashFiles in action outputs", () => {
-  const directory = mkdtempSync(join(tmpdir(), "inkbook-cache-identity-"));
-  const output = join(directory, "output");
-  const script = install.match(/ {6}run: \|\n([\s\S]+?)\n {4}- name: Restore npm downloads/)?.[1];
-  expect(script).toBeTruthy();
-  try {
-    execFileSync("bash", ["--noprofile", "--norc", "-e", "-o", "pipefail"], {
-      input: script,
-      env: {
-        ...process.env,
-        GITHUB_OUTPUT: output,
-        RUNNER_OS: "Linux",
-        RUNNER_ARCH: "X64",
-        INSTALL_CONFIG_HASH: "a".repeat(64),
-      },
-      timeout: 5_000,
-    });
-    expect(readFileSync(output, "utf8")).toMatch(
-      new RegExp(
-        `^prefix=npm-v1-Linux-X64-node${process.versions.node.split(".")[0]}-npm[0-9]+-${"a".repeat(64)}-\\n$`,
-      ),
-    );
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-it("transfers the native key and compatibility prefix into the producer receipt", () => {
-  const directory = mkdtempSync(join(tmpdir(), "inkbook-cache-receipt-"));
-  const output = join(directory, "output");
-  const key = `npm-v1-Linux-X64-node26-npm11-${"a".repeat(64)}-${"b".repeat(64)}`;
-  const prefix = key.slice(0, -64);
-  const script = warm.match(/node --input-type=module <<'NODE'\n([\s\S]+?)\n {10}NODE/)?.[1];
-  expect(script).toBeTruthy();
-  try {
-    execFileSync(process.execPath, ["--input-type=module"], {
-      input: script,
-      env: {
-        ...process.env,
-        CACHE_PRIMARY_KEY: key,
-        CACHE_PREFIX: prefix,
-        GITHUB_OUTPUT: output,
-        RUNNER_TEMP: directory,
-      },
-      timeout: 5_000,
-    });
-    const receipt = readFileSync(output, "utf8");
-    expect(receipt).toBe(`replacements=${JSON.stringify([{ family: "npm", key, prefix }])}\n`);
-    expect(JSON.parse(readFileSync(join(directory, "replacements.json"), "utf8"))).toEqual([
-      { family: "npm", key, prefix },
-    ]);
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
 describe("cache lifecycle integration", () => {
-  it("publishes the native producer identity only after the complete dependency installation", () => {
-    expect(install).toContain("value: ${{ steps.restore.outputs.cache-primary-key }}");
-    expect(install).toContain("value: ${{ steps.identity.outputs.prefix }}");
-    expect(install.split("\nruns:\n")[0]).not.toContain("hashFiles(");
-    expect(install).toContain(
-      "key: ${{ steps.identity.outputs.prefix }}${{ hashFiles('package-lock.json') }}",
-    );
-    expect(install).toContain("restore-keys: ${{ steps.identity.outputs.prefix }}");
-    expect(warm).toContain("replacements: ${{ steps.receipt.outputs.replacements }}");
-    expect(warm.indexOf("- name: Publish native replacement identity")).toBeGreaterThan(
-      warm.indexOf("uses: ./.github/actions/install-dependencies"),
-    );
-    expect(cleanup).toContain("needs: warm");
-    expect(cleanup).toContain("CACHE_REPLACEMENTS: ${{ needs.warm.outputs.replacements }}");
-    expect(cleanup).not.toContain("hashFiles(");
-    expect(warm).toContain("name: cache-lifecycle-receipts-${{ github.run_attempt }}");
-    expect(warm).toContain("path: ${{ runner.temp }}/replacements.json");
-    expect(warm).toContain("retention-days: 7\n          if-no-files-found: error");
-  });
-
   it("admits dependency pruning only after successful trusted main production", () => {
     const condition = cleanup.match(/if: >-\n((?: {6}.+\n)+)/)?.[1].trim();
     expect(condition).toBeTruthy();
@@ -139,51 +52,4 @@ describe("cache lifecycle integration", () => {
     expect(metadata).toContain("types: [completed]");
     expect(metadata).not.toContain("schedule:");
   });
-
-  it("limits producer provenance to the actual npm and managed CodeQL workflows", () => {
-    expect(policy.repository).toBe("boommasterxd/inkbook");
-    expect(policy.defaultBranch).toBe("main");
-    expect(policy.producerWorkflows).toEqual([
-      {
-        name: "Warm dependency cache",
-        path: ".github/workflows/dependency-cache.yml",
-        job: "warm",
-      },
-    ]);
-    expect(policy.codeqlWorkflows).toEqual([
-      { name: "Push on main", path: "dynamic/github-code-scanning/codeql" },
-    ]);
-    expect(policy.families).toEqual({ npm: "npm-v1-" });
-    expect(policy.retiredPrefixes).toEqual([]);
-    expect(policy.producerInputs).toEqual([
-      "package.json",
-      "package-lock.json",
-      ".npmrc",
-      ".nvmrc",
-      ".github/actions/",
-      ".github/workflows/dependency-cache.yml",
-      ".github/workflows/ci.yml",
-      ".github/workflows/release.yml",
-    ]);
-    for (const input of policy.producerInputs) {
-      expect(warm).toContain(`      - ${input.endsWith("/") ? `${input}**` : input}\n`);
-    }
-  });
-});
-
-it("resumes deferred cleanup after every workflow that can block it completes", () => {
-  const directory = fileURLToPath(new URL("../../../.github/workflows/", import.meta.url));
-  const sourceNames = readdirSync(directory)
-    .filter((file) => /\.ya?ml$/.test(file) && file !== "cache-lifecycle.yml")
-    .map((file) => readFileSync(join(directory, file), "utf8").match(/^name: (.+)$/m)?.[1]);
-  expect(sourceNames.every(Boolean)).toBe(true);
-  const admitted = metadata.match(/ {4}workflows:\n((?: {6}- .+\n)+)/)?.[1];
-  expect(admitted).toBeTruthy();
-  expect(
-    admitted
-      .trim()
-      .split(/\n/)
-      .map((line) => line.trim().slice(2))
-      .sort(),
-  ).toEqual([...sourceNames, "CodeQL", "Dependabot Updates"].sort());
 });

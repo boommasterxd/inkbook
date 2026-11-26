@@ -130,13 +130,12 @@ After the setup above, `npm run dev` watches the source and writes development b
 | ------------------------ | ------------------------------------------------------------------ |
 | `npm run build`          | Produce the production plugin package.                             |
 | `npm run package:verify` | Check the generated artifacts and version consistency.             |
-| `npm test`               | Run Unit and focused Integration tests.                            |
-| `npm run test:coverage`  | Run those tests with enforced coverage.                            |
-| `npm run benchmark`      | Run deterministic work, resource, and scheduling contracts.        |
+| `npm test`               | Run and validate the complete Unit and Integration suite.          |
+| `npm run benchmark`      | Run the viewport and pen-input performance contracts.              |
 | `npm run docs:check`     | Check documentation links, fences, and the complete index.         |
 | `npm run ci`             | Run the complete local quality and performance gate when required. |
 
-Run checks relevant to your change; the full gate remains available when comprehensive verification is needed. Performance checks observe work and resources, while physical-device responsiveness is assessed separately.
+Run checks relevant to your change and complete the required verification before handoff. Profile affected performance in running Obsidian and compare the same interaction after changes. See [Performance Verification](docs/performance-ci.md).
 
 The code separates pure domain logic, editor interactions, imperative SVG rendering and React chrome, persistence and workers, and Obsidian integration. Start with the [architecture flows](docs/architecture-flows.md) and follow the [contribution guide](CONTRIBUTING.md).
 

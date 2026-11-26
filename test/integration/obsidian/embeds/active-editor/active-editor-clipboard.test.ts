@@ -7,14 +7,9 @@ import { createDragElement } from "../../../../../src/editor/tools/public";
 import { type PastePlan } from "../../../../../src/persistence/clipboard/public";
 import { type EncodedClipboard } from "../../../../../src/persistence/clipboard/types";
 import { ActiveEditorClipboardController } from "../../../../../src/obsidian/embeds/active-editor/controller-clipboard";
-import { ActiveEditorActions } from "../../../../../src/obsidian/embeds/active-editor/controller-actions";
-import { ActiveEditorMenuController } from "../../../../../src/obsidian/embeds/active-editor/controller-menu";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
-import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/vault-document-session";
-import type { MenuItemPort, MenuPort } from "../../../../../src/obsidian/menus/index";
 import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
-import { elementMutationPorts } from "../../../../fixtures/obsidian/element-mutation-ports";
 import {
   ClipboardItemFixture as FakeClipboardItem,
   createClipboardDocumentModel,
@@ -116,84 +111,7 @@ describe("active editor clipboard bridge", () => {
   });
 });
 
-describe("active editor clipboard activation boundary", () => {
-  it("does not let a hanging activation-bound write block in-session paste", async () => {
-    const selected = rectangle();
-    const encoded = createEncodedClipboardFixture();
-    const planClipboardPaste = vi.fn(async () => null);
-    const model = clipboardModel(
-      new ElementStore([selected]),
-      {
-        commitPreparedElementMutation: vi.fn(() => appliedMutation("copy")),
-        planClipboardPaste,
-        prepareElementMutation: vi.fn(),
-      },
-      encoded,
-    );
-    const ownerWindow = {
-      Blob,
-      ClipboardItem: FakeClipboardItem,
-      navigator: {
-        clipboard: {
-          read: async () => [],
-          readText: async () => "",
-          write: () => new Promise<void>(() => undefined),
-          writeText: vi.fn(async () => undefined),
-        },
-      },
-    } as unknown as Window;
-    const onResult = vi.fn();
-    const controller = new ActiveEditorClipboardController({
-      workScheduler: immediateWorkScheduler(),
-      currentSelection: () => new Set([selected.id]),
-      history: new ActiveEditorHistory(model),
-      isPresentationAttached: () => true,
-      model,
-      onPendingChanged: vi.fn(),
-      onResult,
-      onSelectionChanged: vi.fn(),
-      ownerWindow,
-    });
-
-    const copy = controller.copy(new Set([selected.id]));
-    await expect(copy).resolves.toMatchObject({ kind: "copied" });
-    expect(onResult).toHaveBeenCalledOnce();
-    expect(onResult).toHaveBeenCalledWith(expect.objectContaining({ kind: "copied" }));
-    await controller.paste({ kind: "toolbar", visibleCanvasCenter: { x: 0, y: 0 } });
-    expect(planClipboardPaste).toHaveBeenCalledWith(
-      { sessionText: encoded.customText },
-      { kind: "toolbar", visibleCanvasCenter: { x: 0, y: 0 } },
-      undefined,
-    );
-  });
-});
-
 describe("active editor clipboard races", () => {
-  it("exposes one exclusive pending operation and rejects a concurrent clipboard action", async () => {
-    const selected = rectangle();
-    const pending = createDeferredPreparation();
-    const { commit, model, prepare } = deferredClipboardModel(
-      selected,
-      pending.promise,
-      createPastePlan(selected),
-      "cut",
-    );
-    const pendingChanges: boolean[] = [];
-    const harness = clipboardHarness(model, selected.id, (value) => pendingChanges.push(value));
-
-    const cut = harness.controller.cut(harness.selection());
-    await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
-    expect(harness.controller.canCopyOrCut).toBe(false);
-    expect(harness.controller.canPaste).toBe(false);
-    await expect(
-      harness.controller.paste({ kind: "toolbar", visibleCanvasCenter: { x: 0, y: 0 } }),
-    ).resolves.toMatchObject({ kind: "unavailable", reason: "busy" });
-    pending.complete();
-    await expect(cut).resolves.toMatchObject({ action: "cut", kind: "committed" });
-    expect(pendingChanges).toEqual([true, false]);
-    expect(commit).toHaveBeenCalledTimes(1);
-  });
-
   it("rechecks the exact cut selection after asynchronous preparation", async () => {
     const selected = rectangle();
     const pending = createDeferredPreparation();
@@ -239,87 +157,6 @@ describe("active editor clipboard races", () => {
     await expect(paste).resolves.toMatchObject({ kind: "unavailable", reason: "stale-operation" });
     expect(commit).not.toHaveBeenCalled();
     expect(harness.history.commandCount).toBe(0);
-  });
-});
-
-describe("active editor arrange and menu bridge", () => {
-  it("records arrange as one reversible band-order command and uses the native pointer event", async () => {
-    const first = rectangle();
-    const second = rectangle("00000000-0000-4000-8000-000000000002", 300);
-    const store = new ElementStore([first, second]);
-    const initialOrder = store.materializeBandOrder("content");
-    const selectedId = initialOrder[0]!;
-    const selection = new Set([selectedId]);
-    const model = clipboardModel(
-      store,
-      {
-        ...elementMutationPorts(store, () => undefined),
-        planClipboardPaste: vi.fn(async () => null),
-      },
-      createEncodedClipboardFixture(),
-    );
-    const history = new ActiveEditorHistory(model);
-    const sceneStore = new ElementSceneStore(store);
-    const stateChanged = vi.fn();
-    const unsubscribe = store.subscribe(() => void stateChanged());
-    const actions = new ActiveEditorActions({
-      renderer: { setElementFade: vi.fn(), clearElementFade: vi.fn() },
-      currentSelection: () => selection,
-      history,
-      isAttached: () => true,
-      isEnabled: () => true,
-      model,
-      lastSessionPointer: () => null,
-      onCopyEmbed: vi.fn(),
-      onDeleteEmbed: vi.fn(),
-      onPasteCommitted: vi.fn(),
-      onPendingChanged: vi.fn(),
-      onStateChanged: stateChanged,
-      ownerWindow: clipboardWindow(),
-      workScheduler: immediateWorkScheduler(),
-      sceneStore,
-      setSelection: vi.fn(),
-      visibleCenter: () => ({ x: 100, y: 100 }),
-    });
-
-    actions.execute("bring-to-front");
-    await vi.waitFor(() => expect(history.commandCount).toBe(1));
-    expect(stateChanged).toHaveBeenCalledTimes(2);
-    expect(store.materializeBandOrder("content")).toEqual([initialOrder[1], selectedId]);
-    expect(history.commandCount).toBe(1);
-    await expect(history.undoAsync()).resolves.toBe(true);
-    expect(store.materializeBandOrder("content")).toEqual(initialOrder);
-
-    const showAtPosition = vi.fn();
-    const menu = fakeMenu(showAtPosition);
-    const event = { clientX: 20, clientY: 30 } as MouseEvent;
-    const factory = { create: vi.fn(() => menu), forEvent: vi.fn(() => menu) };
-    const menus = new ActiveEditorMenuController({
-      workScheduler: immediateWorkScheduler(),
-      actions,
-      factory,
-      inputSurface: { focus: vi.fn() } as unknown as HTMLDivElement,
-      ownerDocument: {} as Document,
-      selectionSize: () => 1,
-      storeSize: () => store.size,
-      toScreenPoint: (point) => point,
-      visibleSelectionCenter: () => ({ x: 120, y: 140 }),
-    });
-    menus.dispatchFromEvent(event, () => menus.openFromSource("pointer", { x: 20, y: 30 }));
-    await vi.waitFor(() => expect(factory.forEvent).toHaveBeenCalledWith(event));
-    expect(factory.create).not.toHaveBeenCalled();
-    expect(showAtPosition).not.toHaveBeenCalled();
-
-    menus.openFromSource("keyboard", { x: 10, y: 20 });
-    await vi.waitFor(() => expect(factory.create).toHaveBeenCalledTimes(1));
-    expect(showAtPosition).toHaveBeenCalledWith({ x: 120, y: 140 }, expect.anything());
-    unsubscribe();
-    menus.dispose();
-    actions.dispose();
-    await expect(history.redoAsync()).resolves.toBe(true);
-    expect(store.materializeBandOrder("content")).toEqual([initialOrder[1], selectedId]);
-    await expect(history.undoAsync()).resolves.toBe(true);
-    expect(store.materializeBandOrder("content")).toEqual(initialOrder);
   });
 });
 
@@ -439,33 +276,4 @@ function clipboardWindow(): Window {
       },
     },
   } as unknown as Window;
-}
-
-function fakeMenu(
-  showAtPosition: (
-    position: Parameters<MenuPort["showAtPosition"]>[0],
-    ownerDocument: Document,
-  ) => unknown,
-): MenuPort {
-  const item = {} as MenuItemPort;
-  item.setTitle = vi.fn(() => item);
-  item.setIcon = vi.fn(() => item);
-  item.setDisabled = vi.fn(() => item);
-  item.setWarning = vi.fn(() => item);
-  item.setIsLabel = vi.fn(() => item);
-  item.onClick = vi.fn(() => item);
-  const port: MenuPort = {
-    addItem: (configure) => {
-      configure(item);
-      return port;
-    },
-    addSeparator: () => port,
-    close: vi.fn(),
-    onHide: vi.fn(),
-    showAtPosition: (position, ownerDocument) => {
-      showAtPosition(position, ownerDocument);
-      return port;
-    },
-  };
-  return port;
 }

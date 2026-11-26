@@ -45,17 +45,11 @@ try {
     const plan = await createExecutionSelection(options);
     if (plan.mode === "docs") await validateDocumentation(checkProjectRoot);
     else await collectPerformanceTestPlan();
-    const outputs = selectionOutputs(plan, options.forceFull);
-    process.stdout.write(
-      `${plan.reason}\n${plan.tests.length} selected test files; ${plan.coverage.length} coverage inputs.\n`,
-    );
+    const outputs = selectionOutputs(plan);
+    const selection = `${plan.reason}\n\n${plan.tests.length} selected test files.\n`;
+    process.stdout.write(selection);
     await publishOutputs(outputs);
-    await appendRunnerCommand(
-      "GITHUB_STEP_SUMMARY",
-      `Selection: **${plan.mode}**. ${plan.reason}\n\n${plan.tests.length} selected test files. ` +
-        `Coverage: ${plan.mode === "affected" ? "partial, selected runtime dependency closure" : plan.mode}. ` +
-        `Build: ${outputs.build}.\n`,
-    );
+    await appendRunnerCommand("GITHUB_STEP_SUMMARY", `Selection: **${plan.mode}**. ${selection}`);
   }
 } catch (error) {
   process.stderr.write(`${error.message}\n`);

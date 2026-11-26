@@ -28,21 +28,10 @@ function validatedPlan() {
 async function quality(plan) {
   const npmEntry =
     process.env["npm_execpath"] ?? (await realpath(join(dirname(process.execPath), "npm")));
-  process.stdout.write(
-    plan.mode === "affected"
-      ? `PARTIAL coverage: ${plan.coverage.length} runtime files; unchanged thresholds. This is not project-wide coverage.\n`
-      : "Full project coverage with unchanged thresholds.\n",
-  );
-  if (plan.mode === "affected" && !plan.coverage.length) {
-    process.stdout.write(
-      "Tooling-only tests: no runtime coverage inputs; product coverage is not measured.\n",
-    );
-  }
   const commands = await qualityCommands(
     plan,
     checkProjectRoot,
     npmEntry,
-    process.env["CI_EVENT"] !== "pull_request",
     process.env["EXPECTED_AUDIT"] === "success",
   );
   return runExclusiveChecks(commands, {

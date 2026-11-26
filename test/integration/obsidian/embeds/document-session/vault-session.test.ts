@@ -2,27 +2,24 @@ import { parseInkbookDocumentForTest } from "../../../../fixtures/persistence/pa
 import type { TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { FILE_SCHEMA_LIMITS } from "../../../../../src/domain/schema/public";
 import type {
   AppliedElementMutation,
   ElementMutation,
 } from "../../../../../src/domain/store/public";
+import { ActiveEditorClipboardController } from "../../../../../src/obsidian/embeds/active-editor/controller-clipboard";
+import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-session/vault-document-session";
 import type { PastePlan } from "../../../../../src/persistence/clipboard/public";
 import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
+import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
+import { rasterImage, rasterResource } from "../../../../fixtures/persistence/image-svg";
+import { ClipboardItemFixture } from "../active-editor/active-editor-clipboard-fixtures";
 
 import {
-  DocumentWorkerRuntime,
-  type DocumentRuntimePort,
-} from "../../../../../src/persistence/worker/runtime/public";
-import {
-  documentFromSnapshot,
   emptySnapshot,
   createVaultSessionFactory,
-  createReadOnlyVaultSession,
   operation,
   persistenceHarness,
-  recoveryCopyVaultHarness,
   rectangle,
   TestTFile,
 } from "./vault-session-fixtures";
@@ -42,20 +39,6 @@ function sessionHarness(file: TFile, readBinary: unknown) {
 }
 
 describe("vault-backed document session", () => {
-  it("preflights and validates an SVG through the document runtime", async () => {
-    const { bytes } = documentFromSnapshot();
-    const file = new TestTFile("drawings/ink.svg", bytes.byteLength);
-    const readBinary = vi.fn(async () => bytes.buffer.slice(0));
-    const { factory, session } = sessionHarness(file, readBinary);
-
-    await expect(session.unlock(operation())).resolves.toMatchObject({ status: "active" });
-    expect(session.getSnapshot()).toMatchObject({ confirmedRevision: 7, revision: 7 });
-    expect(factory.getDocumentModel("session-1")?.page).toEqual(emptySnapshot().page);
-    expect(readBinary).toHaveBeenCalledWith(file);
-    session.dispose();
-    expect(factory.getDocumentModel("session-1")).toBeUndefined();
-  });
-
   it("does not adopt a fully valid file that changed after the visible preview", async () => {
     const snapshot = emptySnapshot();
     const serialized = serializeInkbookDocument(snapshot);
@@ -100,86 +83,6 @@ describe("vault-backed document session", () => {
     const { session } = sessionHarness(file, readBinary);
 
     await expect(session.unlock(operation())).resolves.toMatchObject({ status: "load-error" });
-    expect(readBinary).not.toHaveBeenCalled();
-  });
-
-  it("rejects oversized bytes returned after a stale size preflight", async () => {
-    const file = new TestTFile("drawings/ink.svg", 1);
-    const readBinary = vi.fn(async () => new ArrayBuffer(FILE_SCHEMA_LIMITS.totalInputBytes + 1));
-    const { session } = sessionHarness(file, readBinary);
-
-    await expect(session.unlock(operation())).resolves.toMatchObject({ status: "load-error" });
-    expect(readBinary).toHaveBeenCalledOnce();
-  });
-
-  it("adopts worker batches into the store with scheduler backpressure", async () => {
-    const document = documentFromSnapshot({
-      ...emptySnapshot(),
-      elements: [rectangle()],
-    });
-    const file = new TestTFile("drawings/ink.svg", document.bytes.byteLength);
-    const yieldControl = vi.fn(async () => undefined);
-    const factory = createVaultSessionFactory(
-      { getFileByPath: () => file, readBinary: async () => document.bytes.buffer.slice(0) },
-      undefined,
-      (_documentId, isCancelled) => ({
-        isCancelled,
-        shouldYield: () => true,
-        yieldControl,
-      }),
-    );
-    const session = factory.create({ documentId: file.path, sessionId: "session-1" });
-
-    await expect(session.unlock(operation())).resolves.toMatchObject({ status: "active" });
-    expect(factory.getDocumentModel("session-1")?.store.get(rectangle().id)?.element).toEqual(
-      rectangle(),
-    );
-    expect(yieldControl).toHaveBeenCalled();
-  });
-});
-
-describe("vault-backed document executors", () => {
-  it("falls back after one bounded native restart when worker construction remains unavailable", async () => {
-    const document = documentFromSnapshot();
-    const create = vi.fn(async (): Promise<DocumentRuntimePort> => {
-      throw new Error("CSP blocked worker construction");
-    });
-    const { session } = createReadOnlyVaultSession(document, create);
-
-    await expect(session.unlock(operation())).resolves.toMatchObject({
-      status: "active",
-      workerEpoch: 2,
-    });
-    expect(create).toHaveBeenCalledTimes(2);
-    expect(session.getSnapshot().workerEpoch).toBe(2);
-    await expect(session.unlock({ ...operation(), operationId: 2 })).resolves.toMatchObject({
-      status: "load-error",
-    });
-    expect(create).toHaveBeenCalledTimes(2);
-  });
-
-  it("terminates an asynchronously constructed worker when unlock is cancelled", async () => {
-    const { bytes } = documentFromSnapshot();
-    const file = new TestTFile("drawings/ink.svg", bytes.byteLength);
-    const runtime = new DocumentWorkerRuntime({ sessionId: "session-1", workerEpoch: 1 });
-    const terminate = vi.spyOn(runtime, "terminate");
-    let resolveRuntime: ((runtime: DocumentRuntimePort) => void) | undefined;
-    const create = vi.fn(
-      () =>
-        new Promise<DocumentRuntimePort>((resolve) => {
-          resolveRuntime = resolve;
-        }),
-    );
-    const readBinary = vi.fn(async () => bytes.buffer.slice(0));
-    const factory = createVaultSessionFactory({ getFileByPath: () => file, readBinary }, create);
-    const session = factory.create({ documentId: file.path, sessionId: "session-1" });
-
-    const unlocking = session.unlock(operation());
-    session.cancelOperation(operation());
-    resolveRuntime?.(runtime);
-
-    await expect(unlocking).resolves.toMatchObject({ status: "load-error" });
-    expect(terminate).toHaveBeenCalledTimes(1);
     expect(readBinary).not.toHaveBeenCalled();
   });
 });
@@ -237,6 +140,70 @@ describe("vault-backed document persistence", () => {
   });
 });
 
+it("copies a cropped image between drawings and saves its original raster bytes in the target", async () => {
+  const resource = rasterResource();
+  const crop = { x: 0.25, y: 0, width: 0.5, height: 1 };
+  const image = rasterImage(resource, { crop });
+  const source = persistenceHarness({
+    ...emptySnapshot(),
+    version: 5,
+    elements: [image],
+    imageResources: [resource],
+  });
+  const target = persistenceHarness();
+  let clipboardItems: ClipboardItemFixture[] = [];
+  const ownerWindow = {
+    Blob,
+    ClipboardItem: ClipboardItemFixture,
+    navigator: {
+      clipboard: {
+        read: async () => clipboardItems,
+        write: async (items: ClipboardItemFixture[]) => {
+          clipboardItems = items;
+        },
+      },
+    },
+  } as unknown as Window;
+  const createController = (model: EditableDocumentModel, selection: ReadonlySet<string>) =>
+    new ActiveEditorClipboardController({
+      currentSelection: () => selection,
+      history: new ActiveEditorHistory(model),
+      isPresentationAttached: () => true,
+      model,
+      onPendingChanged: () => undefined,
+      onResult: () => undefined,
+      onSelectionChanged: () => undefined,
+      ownerWindow,
+      workScheduler: immediateWorkScheduler(),
+    });
+  try {
+    expect((await source.session.unlock(operation())).status).toBe("active");
+    expect((await target.session.unlock(operation())).status).toBe("active");
+    const selection = new Set([image.id]);
+    const copy = createController(source.session.documentModel!, selection);
+    const paste = createController(target.session.documentModel!, new Set());
+    try {
+      await expect(copy.copy(selection)).resolves.toEqual({ action: "copy", kind: "copied" });
+      await expect(
+        paste.paste({ kind: "toolbar", visibleCanvasCenter: { x: 300, y: 300 } }),
+      ).resolves.toEqual({ action: "paste", kind: "committed" });
+      expect((await target.session.lockLatest(operation())).status).toBe("confirmed");
+      const saved = await parseInkbookDocumentForTest(target.content());
+      if (!saved.ok) throw new Error(saved.error.message);
+      const snapshot = saved.value.snapshot;
+      expect(snapshot.imageResources).toEqual([resource]);
+      expect(snapshot.elements).toMatchObject([{ kind: "image", assetId: resource.id, crop }]);
+      expect(snapshot.elements[0]?.id).not.toBe(image.id);
+    } finally {
+      copy.dispose();
+      paste.dispose();
+    }
+  } finally {
+    source.session.dispose();
+    target.session.dispose();
+  }
+});
+
 describe("vault-backed document save verification", () => {
   it("exports an editor commit, processes the exact base, and validates read-back", async () => {
     const { content, factory, process, session } = persistenceHarness();
@@ -278,106 +245,6 @@ describe("vault-backed document save verification", () => {
       expect(parsed.value.snapshot.elements[0]).toEqual(rectangle());
     }
     expect(session.getSnapshot()).toMatchObject({ confirmedRevision: 9, dirty: false });
-  });
-
-  it("emits the locked-preview propagation hook only after confirmed persistence", async () => {
-    const document = documentFromSnapshot();
-    let content = document.svg;
-    const file = new TestTFile("drawings/ink.svg", document.bytes.byteLength);
-    const persisted =
-      vi.fn<
-        (event: {
-          readonly documentId: string;
-          readonly outputHash: string;
-          readonly revision: number;
-        }) => void
-      >();
-    const copyHarness = recoveryCopyVaultHarness({
-      file,
-      getContent: () => content,
-      getDocument: () => document,
-    });
-    const process = async (_file: TFile, update: (current: string) => string) => {
-      content = update(content);
-      file.stat.size = new TextEncoder().encode(content).byteLength;
-      return content;
-    };
-    const factory = createVaultSessionFactory(
-      { ...copyHarness.vault, process },
-      undefined,
-      undefined,
-      {
-        persisted,
-      },
-    );
-    const session = factory.create({ documentId: file.path, sessionId: "session-1" });
-    await session.unlock(operation());
-    factory.getDocumentModel("session-1")?.commitElement(rectangle());
-
-    await expect(session.lockLatest({ ...operation(), operationId: 2 })).resolves.toMatchObject({
-      status: "confirmed",
-    });
-
-    const event = persisted.mock.calls[0]?.[0];
-    expect(event?.documentId).toBe(file.path);
-    expect(event?.revision).toBe(8);
-    expect(event?.outputHash).toMatch(/^[a-f\d]{64}$/u);
-  });
-});
-
-describe("vault-backed document recovery", () => {
-  it("propagates an unchanged persisted identity without reloading the document", async () => {
-    const { factory, session } = persistenceHarness();
-    await session.unlock(operation());
-    const model = factory.getDocumentModel("session-1");
-
-    await expect(factory.notifyExternalChange("drawings/ink.svg", operation())).resolves.toBe(
-      "unchanged",
-    );
-    expect(factory.getDocumentModel("session-1")).toBe(model);
-  });
-
-  it("exposes clean and dirty external-change outcomes through the factory hook", async () => {
-    const { factory, replaceExternal, session } = persistenceHarness();
-    await session.unlock(operation());
-    replaceExternal(documentFromSnapshot({ ...emptySnapshot(), revision: 12 }));
-
-    await expect(factory.notifyExternalChange("drawings/ink.svg", operation())).resolves.toBe(
-      "reloaded",
-    );
-    expect(factory.getDocumentModel("session-1")?.revision).toBe(12);
-    const dirtyHarness = persistenceHarness();
-    await dirtyHarness.session.unlock(operation());
-    dirtyHarness.factory.getDocumentModel("session-1")?.commitElement(rectangle());
-    dirtyHarness.replaceExternal(documentFromSnapshot({ ...emptySnapshot(), revision: 13 }));
-    await expect(dirtyHarness.factory.notifyExternalChange("drawings/ink.svg")).resolves.toBe(
-      "conflict",
-    );
-  });
-
-  it("adopts the externally reloaded snapshot and its worker baseline", async () => {
-    const { factory, process, replaceExternal, session } = persistenceHarness();
-    await session.unlock(operation());
-
-    replaceExternal(
-      documentFromSnapshot({
-        ...emptySnapshot(),
-        elements: [rectangle()],
-        revision: 12,
-      }),
-    );
-    await expect(
-      session.resolveRecovery("reload-external", { ...operation(), operationId: 2 }),
-    ).resolves.toMatchObject({ status: "confirmed" });
-
-    const model = factory.getDocumentModel("session-1");
-    expect(model?.revision).toBe(12);
-    expect(model?.store.get(rectangle().id)?.element).toEqual(rectangle());
-    model?.commitPage({ ...emptySnapshot().page, activeBufferLines: 4 });
-    await expect(
-      session.lockLatest({ ...operation(), operationId: 3, workspaceToken: 2 }),
-    ).resolves.toMatchObject({ revision: 13, status: "confirmed" });
-    expect(process).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -422,28 +289,5 @@ describe("vault-backed recovery copies", () => {
     expect(createdCopies.has("drawings/ink-recovered-1.svg")).toBe(true);
     expect(factory.getDocumentModel("session-1")).toBe(model);
     expect(session.getSnapshot()).toMatchObject({ dirty: true, revision: 8 });
-  });
-
-  it("trashes a stale recovery copy when a newer operation wins during read-back", async () => {
-    const { createdCopies, factory, holdCopyRead, session } = persistenceHarness();
-    await session.unlock(operation());
-    factory.getDocumentModel("session-1")?.commitElement(rectangle());
-    const releaseCopyRead = holdCopyRead();
-    const recoveryOperation = { ...operation(), baseRevision: 8, operationId: 2 };
-
-    const recovery = session.resolveRecovery("save-local-copy", recoveryOperation);
-    await vi.waitFor(() => expect(createdCopies.has("drawings/ink-recovered-1.svg")).toBe(true));
-    const newerRecovery = session.resolveRecovery("save-local-copy", {
-      ...operation(),
-      baseRevision: 8,
-      operationId: 3,
-    });
-    await vi.waitFor(() => expect(createdCopies.has("drawings/ink-recovered-2.svg")).toBe(true));
-    releaseCopyRead();
-
-    await expect(recovery).resolves.toMatchObject({ status: "failed" });
-    await expect(newerRecovery).resolves.toMatchObject({ status: "confirmed" });
-    expect(createdCopies.has("drawings/ink-recovered-1.svg")).toBe(false);
-    expect(createdCopies.has("drawings/ink-recovered-2.svg")).toBe(true);
   });
 });

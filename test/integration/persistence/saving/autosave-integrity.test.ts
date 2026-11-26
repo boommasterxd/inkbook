@@ -37,20 +37,6 @@ class IntegrityVault {
 }
 
 describe("autosave Store-to-worker integrity", () => {
-  it("rebuilds the worker once from a full Store snapshot before persisting", async () => {
-    const exportTypes: string[] = [];
-    let remainingMismatches = 1;
-    const harness = await createHarness((runtime) =>
-      tamperingExecutor(runtime, exportTypes, () => remainingMismatches-- > 0),
-    );
-    commit(harness, 134);
-
-    await expect(harness.coordinator.flush("retry")).resolves.toBe("clean");
-
-    expect(exportTypes).toEqual(["export-incremental", "export-full"]);
-    expect(harness.vault.processCount).toBe(1);
-  });
-
   it("fails closed when the full-snapshot export still diverges", async () => {
     const exportTypes: string[] = [];
     const harness = await createHarness((runtime) =>

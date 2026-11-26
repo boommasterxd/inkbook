@@ -1,9 +1,6 @@
 import type { ImageElementV3, ImageResourceV3 } from "../../../src/domain/schema/public";
 import { sha256Hex } from "../../../src/persistence/serialization/sha256";
-import { serializeSvgEnvelope } from "../../../src/persistence/documents/svg-envelope";
-import { serializeImageMarkup } from "../../../src/persistence/serialization/output/image-markup";
 import { imageElement } from "../domain/images";
-import { createWorkerSnapshot } from "./worker-snapshot";
 
 export function rasterResource(): ImageResourceV3 {
   const data =
@@ -23,19 +20,4 @@ export function rasterImage(
     crop: { x: 0, y: 0, width: resource.width, height: resource.height },
     ...overrides,
   };
-}
-
-export function rasterSvg(rotation = 0): string {
-  const resource = rasterResource();
-  const image = rasterImage(resource, { rotation });
-  return serializeSvgEnvelope(
-    { ...createWorkerSnapshot([image]), version: 3, imageResources: [resource] },
-    1000,
-    {
-      background: [],
-      images: [serializeImageMarkup(image)],
-      highlights: [],
-      content: [],
-    },
-  );
 }

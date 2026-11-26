@@ -1,80 +1,88 @@
-# Deterministic Performance CI
+# Performance Verification
 
 ## Unified Verification Model
 
-Performance CI checks bounded work, resources, and scheduling. It does not measure execution speed. The removal of elapsed-time comparisons is recorded in [the decision](decisions/deterministic-performance-checks.md).
+Use direct measurements in running Obsidian to verify speed and resource usage.
+The two permanent CI contracts observe work and scheduling at production
+boundaries with isolated inputs. Simulated frame deadlines exercise admission
+and ordering. Execution speed, browser style, layout, paint, and device input
+are measured in the real application.
 
-| Question                               | Evidence                                                                                                                                                                      | Limitation                                                                                                                |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Does an operation do unnecessary work? | Observe actual store/index visits, point reads, geometry builds, fragment builds, DOM writes, document reads, and host calls. Assert upper bounds and unchanged-object reuse. | Uninstrumented computation inside the same counted operation can become slower without detection.                         |
-| Are resources bounded?                 | Buffer bytes, cache entries/evictions, owned nodes, retained history, queued tasks, and disposal checks.                                                                      | These counters do not cover every JavaScript allocation. The separate isolated-process heap ceiling is runtime-dependent. |
-| Does scheduling behave correctly?      | Controlled frame timestamps, deadlines, input activity, cancellation, and checkpoint yields.                                                                                  | Simulated milliseconds describe ordering and deadlines, not CPU speed or physical input latency.                          |
-| Does the product meet latency targets? | Physical-device acceptance described in [Quality and Testing](quality-and-testing.md#reference-profiles).                                                                     | A green CI run does not establish p95/p99, throughput, browser layout/paint, or device responsiveness.                    |
+| Required check                   | Core contract                                                                                                                          | Refresh profiles             |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `Performance (shared)`           | Publish all 10,000 strokes from the element store in order, using one spatial query, bounded root writes per frame, and scene cleanup. | 120 Hz                       |
+| `Performance (refresh profiles)` | With 10,000 stored elements, publish the latest coalesced pen tip at most once per frame.                                              | 60, 90, 120, 144, and 240 Hz |
 
-There are no wall-clock or CPU benchmarks, baseline commits, paired comparisons, tolerance percentages, timing warnings, or automatic retries. Production clocks, bounded work instrumentation, and content-free failure warnings remain part of the application; tests control scheduling inputs where needed. Test-runner duration summaries and operational job timeouts are not speed-regression assertions.
+The viewport case places all 10,000 strokes inside the tested viewport and counts
+up to 384 published SVG roots per frame, including fragment children.
+The pen case uses the live input and scene paths and checks the rendered tip
+after the next frame. The
+[performance manifest](../scripts/performance-test-manifest.mjs) assigns each
+discovered contract exactly once. Its runner rejects missing, duplicate, or
+unclassified files.
 
-## Execution
+## Direct Runtime Verification
 
-`npm run benchmark` runs the complete classified resource/scheduling suite once per declared profile. The command name is retained for compatibility. `npm run ci` includes the same suite plus all quality checks. Pull requests select affected tests and performance contracts under [Affected Pull Request Verification](ci-selection.md); uncertain or invalid selection falls back to the complete test and performance suites. Build and package verification follows the production-input classification, except manual and release workflows always run it. Local full checks and GitHub checks fail on failed, skipped, missing, or malformed test results and process errors.
+The implementing agent owns the performance check for each change that affects
+runtime cost or responsiveness.
 
-The exhaustive [manifest](../scripts/performance-test-manifest.mjs) is the source of truth for file/profile coverage. Every discovered performance test must be classified exactly once. The [runner](../scripts/performance-test-runner.mjs) validates this mapping and builds the execution plan. The shared shard runs every invariant file once at 120 Hz. The refresh-profile shard runs every cadence-sensitive file at each of 60, 90, 120, 144, and 240 Hz. The manifest determines the current file and execution counts. Large fixtures remain mandatory; repetitions exist only for meaningful transitions, cache saturation, history retention, or sustained input, not statistical sampling.
-
-Separate profile-independent work contracts from cadence-sensitive cases when a file contains both. Direct cursor updates with no profile-dependent clock or deadline run once; frame-admission and deadline cases retain all five profiles. Construct only the fixture elements a scenario actually uses, while preserving the full representative inputs in capacity contracts.
-
-Bound test-harness completion loops and isolated child processes as well as production work. A stalled geometry step or prewarm must fail with a diagnostic. A performance batch terminates on interruption, a twenty-minute timeout, or more than 32 MiB of combined output. On POSIX, it terminates the owned process group and verifies shutdown within two seconds. On Windows, it signals the direct child. Unconfirmed shutdown fails verification. These limits protect verification resources and do not establish execution-speed budgets.
+1. Reproduce the changed interaction in running Obsidian. Record the fixture,
+   artifact, host mode, viewport, device, and refresh profile. Use the
+   [10,000-stroke fixture and reference profiles](quality-and-testing.md#performance-acceptance-dataset)
+   for large-document costs. For viewport changes, check boundary crossings,
+   offscreen reentry, zoom or resize, and affected focus or selection.
+2. Capture a baseline with the same setup before optimizing. Use Obsidian
+   DevTools or the platform profiler to capture the actual hot path. Choose
+   CPU profiles or performance traces for frame, layout, paint, and input
+   stalls. Take allocation or heap profiles when retention or memory is
+   affected. Use production counters for candidate visits, geometry builds,
+   SVG writes, host I/O, queues, or retained buffers as relevant.
+3. Identify the costly work in the capture and fix in-scope bottlenecks.
+   Preserve the [central scheduler](rendering-and-performance.md#central-work-scheduling),
+   complete document behavior, and cancellation and cleanup. Repeat the same
+   interaction with the same fixture, host mode, viewport, device, and refresh
+   profile. Compare the affected work or timings with the baseline and the
+   applicable [product budgets](quality-and-testing.md#performance-budgets).
+4. Report the observed effect, the verification setup, and remaining
+   instrumentation or physical-device gaps. Keep trace and profile evidence in
+   the working context. Follow the
+   [native release checks](manual-release-checks.md) for hardware acceptance.
 
 ## Local and GitHub Parity
 
-Local `test:coverage`, complete quality and release gates, and hosted quality runs use the same [validated test runner](../scripts/run-validated-tests.mjs). It compares a fresh, temporary Vitest JSON report against the expected Unit and Integration files and rejects skipped or todo assertions, missing or duplicate files, malformed reports, and process failures before later quality phases run. The test step has a twenty-minute safety limit and uses the shared executor's process-group cleanup on timeout or interruption before releasing the outer check guard. Local coverage keeps complete discovery and the existing project-wide thresholds; hosted affected runs retain their selected files and partial coverage scope.
+`npm run benchmark` and `npm run test:performance` run both performance contracts
+at all assigned profiles. `npm run ci` includes the same checks and the complete
+quality gate. `npm test`, the complete quality gate, and hosted quality share the
+[validated test runner](../scripts/run-validated-tests.mjs). It compares a fresh
+Vitest JSON report against its expected Unit and Integration files and rejects
+missing, duplicate, failed, malformed, or unexpectedly skipped results.
 
-The full local commands execute the union of both hosted shards. `npm run ci`, `npm run benchmark`, `npm run test:performance`, and direct `node scripts/run-performance-tests.mjs` reject `INKBOOK_PERFORMANCE_SUITE` values other than `all` and reject any defined `INKBOOK_PERFORMANCE_REFRESH_RATE`, including an empty value. Unset shard overrides before running those complete gates. Explicit `node scripts/run-ci.mjs shared` and `node scripts/run-ci.mjs cadence` remain the selective shard entry points. Pull request CI selects affected manifest files in each shard; a full fallback executes every classified file and profile. A validated affected plan may leave an individual shard empty, and documentation-only changes leave both shards empty; only no-work matching the recomputed plan succeeds. The selection contract defines the graph and uncertainty fallback. Selection does not use source identity to omit contracts.
+The full local commands reject an `INKBOOK_PERFORMANCE_SUITE` value other than
+`all` and any defined `INKBOOK_PERFORMANCE_REFRESH_RATE`, including the empty
+string. Use `node scripts/run-ci.mjs shared` or `node scripts/run-ci.mjs cadence`
+for an active hosted or locally reproduced selection. Follow the
+[selection contract](ci-selection.md) for test selection, no-work results, and
+the full fallback. Manual dispatches and releases run the complete gate.
 
-Active quality and performance jobs use standard `ubuntu-latest` runners, as does release. Documentation-only quality and unaffected performance contexts instead confirm the selection job's successful checks on `ubuntu-slim`, without checkout, dependency installation, or application execution, and have five-minute timeouts. Affected-check selection, final CI aggregation, PR title validation, Dependabot inspection and auto-merge, secret scanning, and gitleaks updates also use `ubuntu-slim`; selection retains its fifteen-minute timeout for planning, installation, and the dependency audit that precedes non-documentation fan-out. Other slim jobs retain their shorter timeouts. Active quality and performance work and release use the latest patch of the reviewed Node.js 26.x LTS baseline; every `setup-node` step uses `node-version: "26.x"` and `check-latest: true`. Locally, `nvm install` resolves the `26` major alias in `.nvmrc`; `nvm use` alone selects an already installed version. Keep the required names `CI`, `Performance (shared)`, `Performance (refresh profiles)`, `gitleaks`, and `Validate PR Title`. Active quality and each active performance shard retain twenty-minute safety limits. Timeouts fail; they are not converted into warnings or treated as evidence of a speed regression.
+Performance batches run serially with isolated test state. The runner limits
+a batch to twenty minutes and 32 MiB of combined output. It terminates its
+owned process group on POSIX, or the direct child on Windows. Missing results,
+unexpected skips, timeouts, and unconfirmed shutdown fail verification.
 
-Pull requests targeting `main` run affected checks; manual dispatches run the complete gate, including build and package verification. Post-merge main pushes do not repeat the tested squash tree. Release tags rerun the complete gate. The complete release job has a twenty-minute timeout covering setup, quality, performance, and publication; a failed or timed-out check prevents publication. No historical anchor, reference promotion, reference checkout, timing artifact, or separate measurement mode exists. Historical performance-selection decisions remain historical records and do not supersede the current [selection contract](ci-selection.md).
+## Maintaining the Core Contracts
 
-For runtime verification, dispatch the complete workflow on the diagnosis branch and record all job durations and total runner minutes. This establishes the observed duration of the full test plan, not a guaranteed upper bound on hosted hardware performance or queueing delay.
+Keep the two permanent contracts focused on these critical outcomes. For a
+changed work bound, observe the actual production operation and verify that a
+targeted increase would break the assertion where practical. Count publication
+and resources directly. Use simulated time for scheduling and retain the five
+cadence profiles for the pen case. Avoid elapsed-time thresholds, percentiles,
+warmups, or repeated measurement in CI.
 
 ## Coverage and Remaining Gaps
 
-| Area                      | Direct work/resource and scheduling evidence                                                                                                                                                                                  |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Store, index, history     | Full 10,000-stroke fixture; bounded local candidate visits with unrelated elements; no full-store scans; unchanged records; atomic publication; reverse-map visits; history retention; cancellation; checkpoint yielding.     |
-| Geometry and input        | Maximum 16,384-point strokes, retained-tail/chunk limits, bounded coordinate reads, indexed hit/erase/snap work, and no redundant decimal formatting on ordinary coordinates.                                                 |
-| Scene and chrome          | Bounded mounts, cache entries/bytes, geometry builds and DOM writes; one frame/update for coalesced input; retained live tail; zero unintended scans; semantic chrome-render suppression; resize frame work limits; disposal. |
-| Obsidian and Live Preview | Bounded line/document/cache accesses, unchanged widgets, cache hits without Vault reads, eviction rereads, owned-surface reuse, and controlled input/frame scheduling.                                                        |
-| Clipboard and save        | Full 5,000-element/500,000-point clipboard capacity, bounded scalar reads and payload bytes, unique remapped IDs, one save write, bounded guarded reads, and output verification.                                             |
-| Serialization and worker  | Lazy pressure-fragment generation, changed-fragment-only rebuilding, order-only reuse, bounded transfer batches and cache bytes, hydration work, cancellation, fallback byte-work limits between yields, and input pauses.    |
-| Memory lifecycle          | Existing isolated-process heap plus array-buffer ceiling, explicit owned-buffer/cache/history bounds, and cleanup. Heap readings depend on the runtime and garbage collector; they are not a deterministic allocation count.  |
-
-The resize pipeline checks all eight existing workloads at every refresh profile. Observed full-path builds and progressive path steps consume a shared simulated scheduling allowance, so their combined work must stop at the profile-derived deadline rather than at separate fixed call counts. The fixture retains the 1,024 content geometry attribute-write ceiling per frame. The write ceiling allows at most 256 preview paths with one canonical path update and three transform updates for feedback, replacement reset, and residual feedback. These are observed production calls and writes, not estimates derived from the test loop. Progressive geometry separates raw-sample simplification, emitted-piece preparation and incremental canonical-window work. A raw step simplifies at most 65 centers and visits at most 64 selected intervals. Pressure-window work checks the owning frame deadline after each actual generator operation, allows one bounded operation of progress in an admitted slice, and continues subsequent operations only while the shared deadline remains. These operations include clipping, contour stitching, arc expansion, simplification and quantization. A suspended job reserves 2,447,728 bytes of conservatively bounded numeric working data; engine-specific object overhead remains unmeasured. Final string assembly remains indivisible. Work tests observe actual boundary-intersection calls, coordinate getters and point-to-segment calculations, including cancellation, rather than merely counting wrapper calls. Retained geometry accounting includes contour coordinates and selectable outward-expansion triangles; the shared store cache additionally accounts for explicit object/array overhead and enforces both entry and byte ceilings. Engine-specific heap overhead and internal arithmetic within individual geometric operations remain outside these counters.
-
-Selection-query scheduling runs at all five refresh profiles against the real candidate and geometry iterator. It observes iterator advances and store reads, while a simulated clock supplies only deadline checkpoints. The contracts cover the profile deadline, the bounded work checkpoints and in-budget continuation defined in [Editor Tools](editor-tools.md#select), guaranteed progress when a checkpoint crosses the deadline, and cancellation without partial publication. The real preview query also selects 10,000 enclosed pressure strokes by rectangle and lasso in at most ten slices under a controlled, unexpired deadline, with exactly one record read per candidate and no pressure-primitive rebuilds; spatial cursor advances and total visits have independent bounds. Concave-lasso exclusion cases require zero painted-primitive construction for wholly excluded stroke bounds. A separate camera-only selection contract observes zero selected-record reads after initial geometry preparation. Separate maximum-lasso geometry cases count actual coordinate reads, and the 10,000-element cursor regression observes bounded index advances, lazy record access, stale-result rejection, and cursor cleanup. These checks do not claim measured release latency.
-
-Large selected-connection regression coverage must observe actual endpoint transforms, canonical scale materialization, path builds, and mounted preview publication during Move and Resize in the standard document. It must cover repeated pointer retargeting, offscreen connection reentry, cancellation, and cleanup under the shared cadence budget. Clipboard-capacity planning coverage must observe ID generation, payload and bounds reads, translation, and spatial-capacity work between central checkpoints, including an already partly spent shared budget and uninterrupted completion while budget remains. Suspended worker plans must reject cancellation, source-revision changes, and failed scheduler admission without publishing a partial result. These are work and scheduling requirements; execution results and physical latency remain separate evidence.
-
-Pressure scalar reuse contracts observe actual endpoint/sweep reads, absolute-value and sign calculations, bounded cache publication, and release after completion, fallback, and cancellation. Complete union results and native distance/angle work remain equal to direct computation. Quantization contracts observe exact distance calls and source-coordinate reads at polyline capacity. Collinear pruning contracts observe coordinate predicates, numeric buffer allocation, actual heap/link accesses, compaction writes, the allocation-free unchanged-contour path, and cancellation. These counters bound production work and ownership; they do not establish physical latency.
-
-Actual scalar-cache reads are bounded by twice the observed intersection tests plus the observed boundary classifications. The absolute-value bound counts actual endpoint-scale accesses for every cached parameter classification, including classifications that share a pair's scalar records.
-
-The fallback pipeline aggregates observed UTF-8 decoding, encoding, and SHA-256 input bytes between actual scheduler yields, including the final slice. Repeated passes count again. The six existing migration, clipboard, export, preflight, and read-back operations retain input-pause checks. Their fixture-specific byte ceilings preserve indivisible encoding/finalization stages; the clipboard ceiling admits its complete canonical flush. Those byte counters alone do not establish per-element schema-validation bounds or count internal JSON/XML parser traversal. Separate snapshot-copy and clipboard-validation contracts observe sample reads between cooperative checkpoints; replacement preparation observes actual heap comparisons between checkpoints. The final atomic commit remains outside those preparation bounds.
-
-Existing schema-validation Unit cases observe indexed element/point reads and property-descriptor access between generator advances. The connected-document case bounds validation and relation passes; the 4,096-entry JSON container case includes four complete preflight descriptor passes before recursive traversal yields after at most 2,048 nodes. Oversized containers must fail without reading entries. These fixture-specific bounds do not make the existing container preflight or relation/cycle checks constant-sized, interruptible work.
-
-The receiver-integrity performance case observes canonicalization, element-array reads, UTF-8 encoding, and hash input across actual checkpoints and the final slice. It retains the standard full document and synchronous result comparison. Metadata slices allow the configured 64 KiB threshold plus one encoding-chunk overshoot. The final bound includes the existing synchronous ordered-ID pass over the complete document; this test does not assert that the final pass yields. Repeated processing counts again; internal arithmetic and allocations inside individual calls remain unobserved.
-
-Counts at a boundary only protect work observed at that boundary. Arithmetic, regular-expression cost, parsing work, or extra allocation inside one call may escape these assertions. Yield counts alone cannot prove the work between yields is bounded; pair them with direct work/size limits where observable. No replacement claim equates deterministic checks with removed latency coverage.
-
-## Adding or Changing Performance Tests
-
-1. Use full representative or documented maximum-capacity fixtures. Preserve adversarial geometry, stale state, cancellation, and ownership cases.
-2. Observe the actual expensive boundary through production instrumentation or a narrow test spy/proxy: query iteration, scalar reads, node writes, fragment generation, host reads/writes, buffer sizes, or pending tasks. Counting a test's own loop does not establish a production work bound.
-3. Assert a justified upper bound, not merely that some work occurred or the final result is correct. Where complexity depends on unrelated data, compare multiple sizes while holding the relevant working set fixed. Explain unobserved internal work.
-4. Use simulated time only for scheduling, debounce, animation progress, input priority, and cancellation. Never substitute fake elapsed milliseconds for a speed measurement. Retain all supported cadence profiles when they change behavior.
-5. Exercise meaningful state transitions: initial/reused/evicted cache entries, both directions of a transform, stale/cancelled transactions, and cleanup. Remove warmups and repetitions used only to collect timing distributions.
-6. Register each file in the manifest, keep local/hosted coverage identical, and run the affected contracts followed by the full gate. Validate new work limits against the actual implementation; where practical, a targeted extra-work mutation should make the relevant assertion fail.
-7. Do not add elapsed-time assertions, percentile helpers, timing reports, baseline comparisons, sleeps to stabilize measurements, per-test speed tolerances, or larger CI timeouts. Report physical speed as unverified by CI.
-
-The accepted policy and its lost speed-regression coverage are recorded in [Deterministic Performance Checks](decisions/deterministic-performance-checks.md). Product latency targets remain in [Quality and Testing](quality-and-testing.md); CI does not execute their timing protocol.
-
-Viewport contracts observe actual DOM root insertion per slice and first-entry progress for cold pressure geometry under an unexpired simulated deadline. Navigation contracts assert that settled connected roots match the indexed mounting envelope, actual removals stay within 64 roots per frame, and actual publication stays within 384 roots per frame. Detached-node retention stays within 1 MiB while canonical contours remain within 25 MiB. Retained detached returns preserve node identity and paint order; eviction permits node recreation from retained contours, with no contour rebuild when the geometry remains cached. Tests observe actual DOM allocation, insertion, removal, and retained ownership rather than equating a contour cache hit with a zero-work revisit. Indexed navigation contracts observe real cell/membership visits, exact record reads, and final slot/rank work; they reject adoption after the last visit exhausts the shared deadline and cover stale generations, retargeting, directional reuse, cancellation, and disposal. Worker contour contracts observe complete progress, bounded receiver backpressure, obsolete suspended-work cancellation, and scratch release. These bounds do not establish physical speed or bound every browser style/layout operation. Selection-center cache tests cover 1,000 mixed-length pressure strokes through culling and return without rebuilding retained centerlines. Canonical metadata cache work tests observe unchanged point reads, changed-element serialization, ownership invalidation, and release; complete file assembly and hashing remain linear work.
+These contracts observe the viewport and live-pen boundaries described above.
+Other work and resource limits remain product requirements. Verify affected
+geometry, caches, workers, and persistence directly using the local procedure.
+A CPU profile, trace, or work counter captures only the operation it observes.
+Physical-device latency remains governed by the reference-device measurement
+protocol even when CI passes.

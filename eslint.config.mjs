@@ -47,7 +47,6 @@ const toolingFiles = [
   "scripts/cache-lifecycle/**/*.cjs",
   "stylelint.config.mjs",
   "test/unit/scripts/**/*.mjs",
-  "test/unit/scripts/cache-lifecycle/**/*.cjs",
   "vitest.config.ts",
 ];
 const nodeOnlyGlobals = Object.fromEntries(
@@ -78,7 +77,7 @@ function restrictImports(paths = [], groups = [], regexes = []) {
 
 export default [
   {
-    ignores: ["coverage/**", "dist/**", "main.js", "node_modules/**"],
+    ignores: ["dist/**", "main.js", "node_modules/**"],
   },
   ...recommendedWithErrors,
   {
@@ -416,41 +415,6 @@ export default [
     },
     rules: {
       "import/no-extraneous-dependencies": "off",
-      "obsidianmd/no-nodejs-modules": "off",
-    },
-  },
-  {
-    // These isolated memory harnesses execute only in Node, never in the plugin.
-    files: [
-      "test/performance/persistence/memory-*.{ts,tsx}",
-      "test/fixtures/persistence/isolated-node-process.ts",
-      "test/unit/persistence/saving/isolated-node-process.test.ts",
-    ],
-    languageOptions: {
-      globals: {
-        ...globals.node,
-      },
-    },
-    rules: {
-      "obsidianmd/no-global-this": "off",
-      "obsidianmd/no-nodejs-modules": "off",
-    },
-  },
-  {
-    // This Node-only fixture creates genuine foreign-realm worker payloads.
-    files: ["test/fixtures/persistence/worker-popout-realm.ts"],
-    rules: {
-      "obsidianmd/no-nodejs-modules": "off",
-    },
-  },
-  {
-    // These Node-only resource contracts observe allocations and native task boundaries.
-    files: [
-      "test/performance/editor/selection-hot-paths.test.ts",
-      "test/performance/persistence/clipboard/clipboard.test.ts",
-      "test/performance/obsidian/menus/owned-menu-performance.test.ts",
-    ],
-    rules: {
       "obsidianmd/no-nodejs-modules": "off",
     },
   },

@@ -6,25 +6,52 @@ Pull request checks run against GitHub's simulated merge result, and the pull re
 
 A nonempty pull request whose changed paths are exclusively Markdown files under `docs/` is documentation-only. This path validates the documentation index, relative links, and Markdown fences, then skips application checks and npm installation while the required checks and final `CI` result still succeed. Root documentation changes such as `AGENTS.md` and `README.md` do not qualify for this fast path.
 
-The regular quality gate starts with the same documentation validation for every affected or full run, including mixed code/documentation changes and root `README.md` or `AGENTS.md` changes. Invalid documentation fails before application checks. Local `npm run ci:quality`, `npm run ci`, and release quality gates include this check; `npm run docs:check` runs it independently.
+The regular quality gate starts with the same documentation validation on every non-documentation run, including mixed code/documentation changes and root `README.md` or `AGENTS.md` changes. Invalid documentation fails before application checks. Local `npm run ci:quality`, `npm run ci`, and release quality gates include this check; `npm run docs:check` runs it independently.
 
-Other pull requests run the checks affected by their changes on the simulated merge result. The selector uses the transitive TypeScript AST import graph, including type-only edges, to connect runtime files and tests across the base and merge-result snapshots. Changed tests select themselves. Changes to shared test fixtures or helpers select their dependent tests. A reliable production-input classification determines whether build and package checks are needed.
+Every other pull request runs quality, dependency audit, production build, and package verification on the simulated merge result. The selector uses transitive TypeScript import graphs, including type-only edges, to choose tests from the merge-base and simulated-merge snapshots. Changed tests select themselves. Changes to shared test fixtures or helpers select their dependent tests.
 
 ## Selection and fallback
 
-Selection plans use format version 2 and retain four separate commit identities: `base` is the actual pull request base tip, `head` is the pull request head, `mergeBase` is the origin of the complete changed-path diff, and `merge` is the checked-out commit. Before selection, the checkout must contain both requested base and head commits. When `CI_MERGE` is supplied, the checkout must also match that exact commit; hosted CI binds it to `github.sha`. An identity mismatch fails instead of falling back to tests against an unrelated tree. Selection publishes workflow outputs without writing a plan file. Each active application runner computes its own plan once in memory and compares `EXPECTED_MODE`, `EXPECTED_SHARED`, `EXPECTED_CADENCE`, and `EXPECTED_BUILD` with the selection job's outputs before executing work.
+Selection binds four commit identities. `base` is the pull request base tip,
+`head` is the pull request head, `mergeBase` is the origin of the complete
+changed-path diff, and `merge` is the checked-out commit. Local selection needs
+both requested commits. When `CI_MERGE` is supplied, it must match the exact
+checkout. GitHub passes `github.sha` for that check. A revision mismatch fails.
+The planner publishes workflow outputs without a selection plan file. Each active
+consumer recomputes the plan once and validates `EXPECTED_MODE`,
+`EXPECTED_SHARED`, and `EXPECTED_CADENCE` against the selection job's outputs.
 
-Selection is conservative. A full quality and performance run is required when the merge base, history, or paths cannot be validated; classification is invalid; dynamic loading or another relationship cannot be resolved; changed runtime source has no matching tests; or a source boundary cannot be mapped reliably. Changes to central CI selection and execution scripts, command plans, the performance harness, or its manifest select the complete test suite and both performance shards, including their supporting selection, output, batch, and process-execution modules. Ordinary mapped tooling changes retain affected selection. Explicit mappings cover embedded worker, chrome, plugin, math, and import-gallery entry points and code loaded through URLs by the spawned memory runner. Recognized bundled font and license imports must resolve in each snapshot and enter the graph as non-code leaves. The pinned package's embedded WASM import must resolve in the installed package. Typed Vitest mocks and known cache-fixture paths retain their dependency edges. CSS and other non-code source changes still select all tests conservatively. Workflow file readers map to script tests. Other filesystem boundaries require explicit mappings. There are currently no remote HTTP boundaries; a future one requires an explicit mapping. Missing or uncertain mappings use the full run.
+- `docs` requires a validated, nonempty change set of Markdown paths under `docs/`.
+- `affected` requires a complete comparison and at least one selected test across
+  Unit, Integration, and the two performance contracts.
+- `no-impact` requires a verified nonempty diff, complete base and merge-result
+  dependency graphs, and no affected test after explicit mappings. Static quality,
+  production audit, build, and package checks still run.
+- `full` runs every critical test and performance profile. Use it for manual
+  dispatch, removed tests, missing comparison history, empty comparisons,
+  unresolved dependencies, and unknown or global changes. Changes to the central
+  CI planner, command plan, test validation, performance harness, or manifest
+  also select the full suite. Releases run the complete local commands.
 
-If selected tests reach the complete runtime coverage scope while omitting Unit or Integration tests that consume that runtime, selection expands to all Unit and Integration tests while retaining only the performance contracts affected by the original base-and-head dependency graphs and explicit mappings. The plan stays `affected`, preserves the complete runtime coverage denominator and unchanged thresholds, and keeps production-input build classification. This expansion does not introduce uncertain dependencies: unresolved graphs, global changes and other unsafe classifications still select the complete quality and performance gate. A complete runtime scope alone does not require expansion when all product-consuming Unit and Integration tests are already selected; omitted tooling-only tests do not require it.
+Embedded worker, chrome, plugin, math, and import-gallery entry points use explicit
+mappings. Recognized bundled font and license assets must resolve in both
+snapshots and enter the graph as non-code leaves. The embedded WASM import must
+resolve in the installed package. CSS and other non-code source changes
+conservatively select all tests. Filesystem and dynamic loading boundaries need
+explicit mappings. Uncertain relationships take the full fallback.
 
-Test and test-support changes run the directly changed tests plus affected dependents. Production and build-input changes add production build and package verification. Test, tooling, workflow, and documentation changes alone do not trigger a production build when classification is complete. A full test fallback can still omit build and package checks when the change is reliably known to be non-production. Missing history, unknown or production inputs, manual dispatches, and releases require the complete build and package checks. Existing npm download caching remains enabled; CI does not cache `node_modules`.
+For non-documentation runs, selection installs dependencies and runs
+`npm audit --omit=dev --audit-level=high` before quality and performance fan-out.
+High or critical production findings and audit execution errors fail selection.
+The hosted quality runner omits its duplicate audit only if
+`EXPECTED_AUDIT=success` accompanies all matching selection outputs. Local
+quality checks retain the audit. The final gate requires the documented
+`skipped` audit outcome on the documentation-only path.
 
-For non-documentation runs, selection installs dependencies and runs `npm audit --omit=dev --audit-level=high` before the quality and performance jobs can start. High/critical production findings and audit execution errors fail selection and prevent that fan-out. Development dependencies remain installed for builds and tests. The hosted quality runner omits its duplicate audit only when `EXPECTED_AUDIT=success` accompanies all four matching expected selection outputs. Any other supplied audit status or incomplete proof fails. Local quality runs without that proof retain the same production-only audit, and complete local `npm run ci` remains unfiltered. Documentation-only selection skips installation and audit; the final gate requires the corresponding `skipped` audit outcome.
-
-Every active quality run also executes native `npm ls --all`, including when selection has already verified the production audit. Invalid or missing required dependencies and incompatible peer relationships fail this check; installation success or peer warnings alone do not prove a valid installed graph. The same check runs in complete local quality and release gates.
-
-The project has no E2E or Playwright suite. Pull request selection adds no browser, container, or external-service test infrastructure. Existing accessibility checks remain within the selected Unit and Integration coverage.
+Every active quality run executes `npm ls --all`. Invalid or missing required
+dependencies and incompatible peers fail. The same check runs in complete local
+quality and release gates. CI uses isolated Unit and focused Integration tests
+without browser, container, or external-service setup.
 
 ## Required secret scan
 
@@ -36,7 +63,7 @@ Manual dispatch uses the selected revision's scanner pin and rules and scans the
 
 CI selection, quality, both performance shards, and releases use the same [dependency installation action](../.github/actions/install-dependencies/action.yml). Automatic `setup-node` caching is disabled. Only the npm content store at `~/.npm/_cacache` is transferred; credentials, npm logs, installed modules, and build output are excluded. Its versioned key binds runner OS/architecture, Node and npm major versions, `.npmrc`, and `package-lock.json`. A fallback can reuse another lockfile's downloads only within the same platform, tool, and install-configuration boundary. Runtime patch updates and unrelated source changes do not split the store.
 
-Every consumer runs `npm ci --include=dev --prefer-offline --no-audit` with the same npm cache directory, regardless of restoration. Missing packages can still download normally. Cache transfers are best effort; installation and required checks remain blocking. The separate production audit remains required before CI fan-out. Documentation-only and intentional no-work paths do not restore or install packages.
+Every consumer runs `npm ci --include=dev --prefer-offline --no-audit` with the same npm cache directory, regardless of restoration. Missing packages can still download normally. Cache transfers are best effort; installation and required checks remain blocking. The separate production audit remains required before CI fan-out. Documentation-only jobs and no-work performance jobs skip package restore and installation.
 
 The [cache warmup](../.github/workflows/dependency-cache.yml) is the sole cache writer. It accepts only the verified default branch `main`, installs the complete root lockfile including development dependencies, and saves the content store after a successful install. Main-branch pushes affecting dependency manifests, runtime selectors, or cache/setup workflows refresh the store; ordinary source changes do not. There is no periodic refresh or duplicate quality/test/build pipeline. Consumers never save PR or tag caches into the shared store. Install hooks must remain reviewed and public packages must remain safe for fork PRs to read.
 
@@ -67,26 +94,31 @@ authorized warmup establishes a replacement. Its tiny
 for seven days and bounded to 64 KiB/20 identities. PR artifacts are never used.
 Cleanup installs no dependencies and repeats no quality pipeline. Existing required gates,
 cache retention/storage limits and the measurable 95% restore target remain independent.
-Native regression checks cover replacement proof, protected caches, PR/run races,
-CodeQL attempts where applicable, bounded metadata and recovery after concurrent runs.
 
-## Coverage semantics
+## Test execution
 
-Selected tests run with V8 coverage. The existing thresholds remain 85% for lines, statements, and functions and 80% for branches. Coverage includes the selected tests' forward runtime dependency closure and runtime modules transitively affected by changed source, including affected modules without a selected direct test. This result is explicitly **partial coverage** and does not represent whole-project coverage. Tooling-only tests with no reachable product source do not claim product coverage.
+The [validated test runner](../scripts/run-validated-tests.mjs) checks a fresh
+Vitest report for the exact expected Unit and Integration files. Missing,
+duplicate, malformed, failed, and unexpectedly skipped results fail the check.
+The quality phase can have no Unit or Integration test selected when an affected
+plan selects only a performance contract. The other quality checks still run.
 
-When selection falls back to the full run, coverage includes the complete `src/` tree and enforces the project-wide thresholds. The full local `npm run ci`, manual workflow dispatch, and release workflow continue to run the complete quality and performance gates.
+The [performance manifest](../scripts/performance-test-manifest.mjs) assigns
+bounded 10,000-stroke viewport publication to the shared check at 120 Hz, and
+coalesced pen input to the refresh-profile check at 60, 90, 120, 144, and 240 Hz.
+Select the affected contracts from the same graph. A full fallback runs both
+complete checks. An inactive performance check returns success on Slim only when
+selection validates that no contract applies.
 
-## Performance shards
-
-The [exhaustive performance manifest](../scripts/performance-test-manifest.mjs) remains the source of truth. The shared shard selects affected invariant work/resource files and runs them at 120 Hz. The cadence shard selects affected scheduling files and runs every selected file at 60, 90, 120, 144, and 240 Hz. A full fallback runs the complete manifest in both shards. A validated affected plan may have no files for an individual shard, which returns a successful no-work result for that shard; documentation-only changes have no work in either shard. Empty or skipped work is valid only when it matches the recomputed selection. An empty or invalid overall plan and unexpected skips fail closed.
-
-Missing, malformed, stale, tampered, failed, cancelled, or unexpectedly skipped selection or execution results fail closed. The final required `CI` check succeeds only when selection and quality complete successfully and both performance contexts either complete their selected contracts or report no-work that matches the recomputed plan.
+The final required `CI` check requires successful selection and quality and the
+correct result from both performance jobs for the current plan. Missing,
+malformed, stale, failed, cancelled, or unexpectedly skipped output fails.
+`npm test` and `npm run ci` retain complete local execution independent of PR
+context and `CI=true`.
 
 ## Runner outputs and workflow fixtures
 
 The planner publishes optional `GITHUB_OUTPUT` and `GITHUB_STEP_SUMMARY` data only to existing, owned, regular single-link files directly under the canonical `RUNNER_TEMP/_runner_file_commands` directory, using the runner's `set_output_` and `step_summary_` prefixes. It rejects external paths, redirected command directories, symlinks, hardlinks and file-identity changes before appending through the opened handle. `RUNNER_TEMP` is trusted runner configuration; this does not isolate a compromised runner. With both output variables absent, local planning needs no runner directory and continues to print its outputs to stdout.
-
-Workflow regressions execute repository-owned shell from exclusive temporary script files with bounded child processes and owned cleanup. They do not pass workflow contents as shell command strings. Condition tests interpret only the required string/boolean comparisons, logical operators and own context-property access through a bounded TypeScript AST fixture. Unsupported syntax fails instead of executing JavaScript. These fixtures verify the actual workflow policies; they are not a sandbox for hostile repository code or a complete GitHub expression implementation.
 
 ## Local reproduction
 
@@ -100,7 +132,7 @@ To reproduce a pull request plan locally, check out the simulated merge result c
 CI_BASE=<base-sha> CI_HEAD=<head-sha> CI_EVENT=pull_request node scripts/ci-plan.mjs
 ```
 
-For an affected or full plan, run the quality runner. Run a performance runner only when the corresponding printed output is `true`; an intentional empty shard has no runner invocation. A documentation-only plan has no application runners. Each runner computes and validates its plan once from the checkout; it neither reads nor writes `.ci-selection.json` and needs no separate consumer planning command. Leave `EXPECTED_AUDIT` unset for local reproduction so the quality runner performs its own audit. Existing npm commands keep their full local behavior; `npm run ci`, `npm run ci:quality`, and `npm run benchmark` are not changed by pull request selection.
+For an affected, no-impact, or full plan, run the quality runner. Run a performance runner only when the corresponding printed output is `true`; an intentional empty shard has no runner invocation. A documentation-only plan has no application runners. Each runner computes and validates its plan once from the checkout; it neither reads nor writes `.ci-selection.json` and needs no separate consumer planning command. Leave `EXPECTED_AUDIT` unset for local reproduction so the quality runner performs its own audit. Existing npm commands keep their full local behavior; `npm run ci`, `npm run ci:quality`, and `npm run benchmark` are not changed by pull request selection.
 
 ```sh
 CI_BASE=<base-sha> CI_HEAD=<head-sha> CI_EVENT=pull_request node scripts/run-ci.mjs quality
