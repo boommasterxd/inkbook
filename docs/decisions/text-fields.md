@@ -12,7 +12,7 @@ A single runtime `foreignObject` remains inside the retained text group, preserv
 
 - Full local font faces preserve standalone rendering without a network or source-vault dependency; they increase file size and remain subject to existing file limits and explicit font caps.
 - Range offsets retain editable source semantics. Portable layout remains a derived presentation artifact that must be recomputed after relevant source, width, font, or style changes.
-- Version 0/1 loading remains available. Version 2 requires an updated reader on every editing device; no-text canonical exports remain version 1.
+- Version 0/1 loading remains available. Every editing device needs a reader that supports the version the document uses. Text can require version 2 or later. [Version selection](../file-format.md#versioning-and-migration) defines the current format for text, images and element locks.
 - Existing central scheduling, cancellation, culling, atomic publication, and bounded session ownership apply to text work.
 - Active editing adds one clipped browsing context and document-local font definitions. They reuse the canonical resources and remain runtime-only; their browser memory and paint cost require native acceptance evidence.
 - Deterministic tests establish observed work and correctness. Manual native-host, external-viewer, accessibility, and physical-device acceptance remain separate evidence.

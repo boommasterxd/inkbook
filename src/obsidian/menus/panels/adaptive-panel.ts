@@ -11,7 +11,7 @@ import type { FocusTargetPort } from "../menu-ports";
 import type { PhoneSheetHostPort } from "./phone-sheet-host";
 import { PhoneSheetSwipeController } from "./phone-sheet-swipe";
 import { animateWideMenuEntry, animateWideMenuExit } from "../feedback/wide-menu-motion";
-import { observeMenuMotionPreference, playMenuMotion } from "../feedback/menu-motion";
+import { observeMenuMotionPreference } from "../feedback/menu-motion";
 import { registerMenuFeedback } from "../feedback/menu-feedback";
 
 import { AdaptivePanelLayout } from "./adaptive-panel-layout";
@@ -90,18 +90,6 @@ export class AdaptivePanelSession extends Component {
     this.#phoneHost = Platform.isPhone
       ? (options.phoneHost ?? options.createPhoneSheetHost?.())
       : undefined;
-    const durationMs =
-      options.durationMs ??
-      effectiveTransitionDuration(this.#motionAnchor, options.ownerWindow, "adaptiveMenu");
-    const entryDurationMs =
-      options.entryDurationMs ??
-      (Platform.isPhone
-        ? durationMs
-        : effectiveTransitionDuration(
-            this.#motionAnchor,
-            options.ownerWindow,
-            "nativeModalEnterExit",
-          ));
     this.#layer =
       this.#phoneHost?.containerEl ??
       menuDomWindow(options.ownerDocument, "adaptive panel").createDiv();
@@ -119,11 +107,6 @@ export class AdaptivePanelSession extends Component {
     this.register(bindPanelLocale(this.#surface, options, this.#localeUpdates));
     this.#surface.setAttribute("role", "dialog");
     this.#surface.tabIndex = -1;
-    this.#layer.style.setProperty("--inkbook-adaptive-panel-duration", `${String(durationMs)}ms`);
-    this.#surface.style.setProperty(
-      "--inkbook-adaptive-panel-entry-duration",
-      `${String(entryDurationMs)}ms`,
-    );
     this.#placement = new AdaptivePanelPlacement({
       anchor: options.anchor,
       layer: this.#layer,
@@ -164,6 +147,7 @@ export class AdaptivePanelSession extends Component {
             this.#entryStop = undefined;
             this.#pages?.finishMotion();
           },
+          onSettled: () => this.#finishEntry(),
           backdrop: this.#backdrop,
           close: () => this.close(),
           durationMs: () => this.#panelDuration(),
@@ -340,8 +324,6 @@ export class AdaptivePanelSession extends Component {
         if (this.#surface.dataset.presence === "entering") {
           this.#entryStop?.();
           this.#entryStop = undefined;
-          playMenuMotion(this.#surface, { opacity: "1", scale: "1", translate: "0 0" }, 0);
-          playMenuMotion(this.#backdrop, { opacity: "1" }, 0);
           this.#finishEntry();
         }
       }),

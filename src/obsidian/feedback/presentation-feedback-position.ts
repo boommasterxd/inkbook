@@ -26,6 +26,12 @@ export interface PresentationFeedbackPositionLifecycle {
 
 export type PresentationFeedbackVerticalAnchor = "bottom" | "center";
 
+interface PresentationFeedbackPositionOptions {
+  readonly viewportHost?: HTMLElement;
+  readonly backdrop?: HTMLElement;
+  readonly onVisibilityChanged?: (visible: boolean) => void;
+}
+
 export function resolvePresentationFeedbackPosition(
   presentation: FeedbackRect,
   boundary: VisibleOwnerBoundary,
@@ -49,8 +55,7 @@ export function createPresentationFeedbackPositionLifecycle(
   presentation: HTMLElement,
   verticalAnchor: PresentationFeedbackVerticalAnchor = "bottom",
   workScheduler?: WorkScheduler,
-  viewportHost?: HTMLElement,
-  backdrop?: HTMLElement,
+  { viewportHost, backdrop, onVisibilityChanged }: PresentationFeedbackPositionOptions = {},
 ): PresentationFeedbackPositionLifecycle {
   if (viewportHost !== undefined && verticalAnchor !== "center")
     throw new Error("Viewport feedback requires a center anchor.");
@@ -63,6 +68,7 @@ export function createPresentationFeedbackPositionLifecycle(
   let measured = false;
   let frame: number | undefined;
   let surfaceActive = true;
+  let visible = false;
   let canvas: ReturnType<typeof bindFeedbackCanvas> | undefined;
   const reposition = (): void => {
     if (!active) return;
@@ -91,6 +97,10 @@ export function createPresentationFeedbackPositionLifecycle(
       verticalAnchor,
       viewportHost !== undefined,
     );
+    if (visible !== position.visible) {
+      visible = position.visible;
+      onVisibilityChanged?.(visible);
+    }
   };
   const schedule = (): void => {
     if (!active || frame !== undefined) return;

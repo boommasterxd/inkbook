@@ -1,7 +1,9 @@
 import { type EditorView, WidgetType } from "@codemirror/view";
 
-import type { InkbookDocumentRecognition } from "../preview/document-recognition";
-import { createInkbookLockedPreview } from "../preview/locked-preview";
+import {
+  createInkbookLockedPreview,
+  type InkbookLockedPreviewGeometry,
+} from "../preview/locked-preview";
 import {
   observeEmbedDescriptionLanguage,
   updateEmbedDescription,
@@ -11,7 +13,6 @@ import { LivePreviewWidgetHeight } from "./live-preview-widget-height";
 import { LivePreviewZoomScrollBinding } from "./live-preview-zoom-scroll";
 import { PresentationController } from "../presentation/presentation-controller";
 import type { EmbedIntegrationPorts } from "../presentation/presentation-port";
-import { samePreviewContentIdentity } from "../preview/safe-preview-svg";
 import type { PresentationEntranceState } from "../presentation/presentation-entrance";
 import type { ResolvedInkbookDocument } from "../presentation/presentation-port";
 
@@ -31,7 +32,7 @@ const mountedControllers = new WeakMap<
 >();
 
 interface RecognizedVisibleEmbed extends VisibleEmbed {
-  readonly preview: Exclude<InkbookDocumentRecognition, false>;
+  readonly preview: InkbookLockedPreviewGeometry;
 }
 
 export class InkbookLivePreviewWidget extends WidgetType {
@@ -68,10 +69,16 @@ export class InkbookLivePreviewWidget extends WidgetType {
       this.#embed.to === other.#embed.to &&
       this.#embed.description === other.#embed.description &&
       this.#embed.width === other.#embed.width &&
-      samePreviewContentIdentity(
-        this.#embed.preview.contentIdentity,
-        other.#embed.preview.contentIdentity,
-      )
+      this.#samePreviewGeometry(other)
+    );
+  }
+
+  #samePreviewGeometry(other: InkbookLivePreviewWidget): boolean {
+    const preview = this.#embed.preview;
+    const next = other.#embed.preview;
+    // Keep the lightweight identity stable across wrappers. A fresh validation can also retry a failed mount.
+    return (
+      preview.aspectRatio === next.aspectRatio && preview.contentIdentity === next.contentIdentity
     );
   }
 
@@ -92,8 +99,9 @@ export class InkbookLivePreviewWidget extends WidgetType {
     if (!mounted.controller.updateLivePreviewRange(this.#embed.from, this.#embed.to)) return false;
     updateEmbedDescription(dom, undefined, this.#embed.description, this.#ports.localization?.t);
     this.#applyWidth(dom);
-    mounted.controller.updatePreview(this.#embed.preview);
     mountedControllers.set(dom, { controller: mounted.controller, widget: this });
+    if (!this.#samePreviewGeometry(mounted.widget))
+      mounted.controller.updatePreview(this.#embed.preview);
     return true;
   }
 
@@ -136,6 +144,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
       root,
       this.#ports.workScheduler(root.ownerDocument.defaultView),
     );
+    const initialFrom = this.#embed.from;
     const controller = new PresentationController(
       {
         attachmentId,
@@ -156,6 +165,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
       {
         ...(this.#entranceState === undefined ? {} : { entranceState: this.#entranceState }),
         contentIdentity: this.#embed.preview.contentIdentity,
+        getMountedIdentity: preview.getMountedIdentity,
         element: preview.element,
         refresh: preview.refresh,
         releaseHiddenSurface: preview.releaseHiddenSurface,
@@ -165,8 +175,9 @@ export class InkbookLivePreviewWidget extends WidgetType {
         removeMarkdown: (range, expectedSource, mutate) =>
           removeLivePreviewMarkdown(view, range, expectedSource, mutate),
         measureRemovalSpacing: (range) => {
-          const widget = mountedControllers.get(root)?.widget ?? this;
-          const block = view.lineBlockAt(widget.#embed.from);
+          const mounted = mountedControllers.get(root);
+          const from = mounted === undefined ? initialFrom : mounted.widget.#embed.from;
+          const block = view.lineBlockAt(from);
           const first = view.lineBlockAt(range.from);
           const last = view.lineBlockAt(Math.max(range.from, range.to - 1));
           return { before: block.top - first.top, after: last.bottom - block.bottom };
@@ -189,11 +200,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
       controller.activate();
     };
     button.addEventListener("click", activate);
-    const releaseLanguage = observeEmbedDescriptionLanguage(
-      root,
-      () => (mountedControllers.get(root)?.widget ?? this).#embed.description,
-      this.#ports.localization,
-    );
+    const releaseLanguage = this.#observeLanguage(root);
     const dispose = (): void => {
       releaseLanguage?.();
       releaseHeight();
@@ -209,6 +216,17 @@ export class InkbookLivePreviewWidget extends WidgetType {
 
   override destroy(dom: HTMLElement): void {
     this.#ports.lifecycle.dispose(dom);
+  }
+
+  #observeLanguage(root: HTMLElement): (() => void) | undefined {
+    return observeEmbedDescriptionLanguage(
+      root,
+      () => {
+        const mounted = mountedControllers.get(root);
+        return mounted && mounted.widget.#embed.description;
+      },
+      this.#ports.localization,
+    );
   }
 
   #applyWidth(root: HTMLElement): void {

@@ -45,8 +45,7 @@ export function createControllerTextSession(
       owner: options.container,
       localization: options.localization,
     }),
-    tableCellLabel:
-      options.localization?.t("editor.action.edit-table-cell") ?? "Edit empty table cell",
+    ...(options.localization === undefined ? {} : { localization: options.localization }),
     ...(options.textFonts === undefined ? {} : { library: options.textFonts }),
     onSelection: bindings.setSelection,
     onStateChanged: bindings.onStateChanged,

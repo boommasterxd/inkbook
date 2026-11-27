@@ -38,9 +38,12 @@ async function fixture() {
     "scripts/performance-test-manifest.mjs":
       'export const PERFORMANCE_TEST_MANIFEST = { invariant: ["test/performance/invariant.test.ts"], cadenceSensitive: ["test/performance/cadence.test.ts"] };',
     "docs/example.md": "# Example\n",
-    "AGENTS.md":
-      "# Instructions\n\n## Documentation Index\n\n| Document | Purpose |\n| --- | --- |\n| [Example](docs/example.md) | Example |\n",
+    "docs/README.md":
+      "# Documentation\n\n## Documentation Index\n\n| Document | Purpose |\n| --- | --- |\n| [`docs/README.md`](README.md) | Lists documentation. |\n| [`docs/example.md`](example.md) | Explains the example. |\n",
+    "AGENTS.md": "# Instructions\n",
     "README.md": "[Example](docs/example.md)\n",
+    "CONTRIBUTING.md": "# Contributing\n",
+    "SECURITY.md": "# Security Policy\n",
     "test/unit/example.test.ts": "export {};",
     "test/performance/invariant.test.ts": "export {};",
     "test/performance/cadence.test.ts": "export {};",
@@ -98,11 +101,11 @@ it("executes the full path for a manual run even when only documentation changed
 
 it("fails before publishing a docs-only plan with an invalid link", async () => {
   const context = await fixture();
-  await commit(context.root, { "docs/example.md": "[Missing](missing.md)\n" });
+  await commit(context.root, { "docs/example.md": '<a href="README.md#missing">Missing</a>\n' });
 
   await expect(run(context)).rejects.toMatchObject({
     code: 1,
-    stderr: expect.stringContaining("Broken relative Markdown link"),
+    stderr: expect.stringContaining("Broken relative documentation link"),
   });
   expect(await readFile(context.output, "utf8")).toBe("existing=retained\n");
 });

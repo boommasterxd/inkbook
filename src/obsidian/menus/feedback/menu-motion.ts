@@ -1,9 +1,10 @@
 import { animateOwnedElements, type ElementMotionTarget } from "../../runtime/element-motion";
 
-import { EASING_TOKENS } from "../../../rendering/motion/transitions";
+import { STANDARD_EASING } from "../../../rendering/motion/transitions";
 import { effectiveTransitionDuration } from "../../runtime/effective-motion";
 
 type Keyframes = ElementMotionTarget["keyframes"];
+type MenuEasing = NonNullable<Parameters<typeof animateOwnedElements>[1]["ease"]>;
 
 /** A cancellable, lifecycle-owned animation with a completion that cannot fire after cancellation. */
 export function playMenuMotion(
@@ -11,7 +12,7 @@ export function playMenuMotion(
   keyframes: Keyframes,
   durationMs: number,
   onComplete?: () => void,
-  easing: string = EASING_TOKENS.standard,
+  easing: MenuEasing = STANDARD_EASING,
 ): () => void {
   return playMenuMotionGroup([{ element, keyframes }], durationMs, onComplete, easing);
 }
@@ -21,7 +22,7 @@ export function playMenuMotionGroup(
   targets: readonly ElementMotionTarget[],
   durationMs: number,
   onComplete?: () => void,
-  easing: string = EASING_TOKENS.standard,
+  easing: MenuEasing = STANDARD_EASING,
 ): () => void {
   if (durationMs === 0) {
     for (const { element, keyframes } of targets)
@@ -36,7 +37,7 @@ export function playMenuMotionGroup(
   let canceled = false;
   const animation = animateOwnedElements(targets, {
     duration: durationMs / 1000,
-    ease: easing as NonNullable<Parameters<typeof animateOwnedElements>[1]["ease"]>,
+    ease: easing,
     onComplete: () => {
       if (!canceled) onComplete?.();
     },
@@ -46,6 +47,38 @@ export function playMenuMotionGroup(
   return () => {
     canceled = true;
     animation.cancel();
+  };
+}
+
+/** An entrance returns its animated properties to the stylesheet at rest. */
+export function playMenuEntrance(
+  targets: readonly ElementMotionTarget[],
+  durationMs: number,
+  onComplete?: () => void,
+): () => void {
+  if (durationMs === 0) {
+    onComplete?.();
+    return () => undefined;
+  }
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    for (const { element, keyframes } of targets)
+      for (const name of Object.keys(keyframes)) element.style.removeProperty(toCssProperty(name));
+  };
+  const stop = playMenuMotionGroup(
+    targets,
+    durationMs,
+    () => {
+      release();
+      onComplete?.();
+    },
+    "easeOut",
+  );
+  return () => {
+    stop();
+    release();
   };
 }
 

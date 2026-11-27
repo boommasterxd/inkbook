@@ -1,5 +1,5 @@
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
-import { playMenuMotion } from "../feedback/menu-motion";
+import { playMenuMotionGroup } from "../feedback/menu-motion";
 
 const DIRECTION_THRESHOLD_PX = 6;
 const DISMISS_DISTANCE_RATIO = 0.5;
@@ -10,7 +10,7 @@ interface PhoneSheetSwipeOptions {
   readonly backdrop: HTMLElement;
   readonly close: () => void;
   readonly onDragStart?: () => void;
-  readonly onDragCancel?: () => void;
+  readonly onSettled?: () => void;
   readonly durationMs: number | (() => number);
   readonly ownerWindow: Window;
   readonly scroll: HTMLElement;
@@ -37,7 +37,7 @@ export class PhoneSheetSwipeController {
   #pendingDragDistance: number | undefined;
   #pendingDragHeight: number | undefined;
   readonly #options: PhoneSheetSwipeOptions;
-  #resetStop: (() => void)[] = [];
+  #resetStop: (() => void) | undefined;
   #suppressClick = false;
 
   public constructor(options: PhoneSheetSwipeOptions) {
@@ -53,7 +53,7 @@ export class PhoneSheetSwipeController {
   }
 
   public finishMotion(): void {
-    if (this.#options.surface.dataset.swipeState === "settling") this.#resetPresentation();
+    if (this.#options.surface.dataset.swipeState === "settling") this.#finishSettle();
   }
 
   public handleClick = (event: Event): void => {
@@ -248,13 +248,12 @@ export class PhoneSheetSwipeController {
   }
 
   #settle(): void {
-    this.#options.onDragCancel?.();
     const durationMs =
       typeof this.#options.durationMs === "number"
         ? this.#options.durationMs
         : this.#options.durationMs();
     if (durationMs === 0) {
-      this.#resetPresentation();
+      this.#finishSettle();
       return;
     }
     this.#flushPendingDrag();
@@ -262,15 +261,19 @@ export class PhoneSheetSwipeController {
     this.#options.backdrop.dataset.swipeState = "settling";
     const surfacePosition = this.#options.surface.style.translate || "0 0";
     const backdropOpacity = this.#options.backdrop.style.opacity || "1";
-    this.#resetStop.push(
-      playMenuMotion(
-        this.#options.surface,
-        { translate: [surfacePosition, "0 0"] },
-        durationMs,
-        () => this.#resetPresentation(),
-      ),
-      playMenuMotion(this.#options.backdrop, { opacity: [backdropOpacity, "1"] }, durationMs),
+    this.#resetStop = playMenuMotionGroup(
+      [
+        { element: this.#options.surface, keyframes: { translate: [surfacePosition, "0 0"] } },
+        { element: this.#options.backdrop, keyframes: { opacity: [backdropOpacity, "1"] } },
+      ],
+      durationMs,
+      () => this.#finishSettle(),
     );
+  }
+
+  #finishSettle(): void {
+    this.#resetPresentation();
+    this.#options.onSettled?.();
   }
 
   #suppressFollowingClick(target: Element): void {
@@ -285,8 +288,8 @@ export class PhoneSheetSwipeController {
   }
 
   #cancelResetWork(): void {
-    this.#resetStop.forEach((stop) => stop());
-    this.#resetStop = [];
+    this.#resetStop?.();
+    this.#resetStop = undefined;
   }
 
   #cancelDragFrame(): void {

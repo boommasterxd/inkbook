@@ -34,11 +34,13 @@ export class PresentationOperationFeedback {
   #host: HTMLElement | undefined;
   #unbindStyle: (() => void) | undefined;
   #positioning: PresentationFeedbackPositionLifecycle | undefined;
+  #visible = false;
   #spin: ReturnType<typeof animateOwnedElement> | undefined;
   #indicatorEntrance: ReturnType<typeof animateOwnedElement> | undefined;
   #kind: PresentationOperationKind | undefined;
   #shownAt: number | undefined;
   #settlingOpening = false;
+  readonly #onDocumentVisibility = (): void => this.#syncSpin();
   readonly #motionQuery: MediaQueryList | undefined;
   readonly #motionChanged = (): void => {
     if (
@@ -164,6 +166,7 @@ export class PresentationOperationFeedback {
     icon.setAttribute("aria-hidden", "true");
     setIcon(icon, "loader-circle");
     this.#indicator = indicator;
+    this.#root.ownerDocument.addEventListener("visibilitychange", this.#onDocumentVisibility);
     const host = this.#ensureHost();
     host.appendChild(indicator);
     const backdrop = this.#backdrop.show();
@@ -172,8 +175,14 @@ export class PresentationOperationFeedback {
       this.#root,
       "center",
       this.#workScheduler,
-      host,
-      backdrop,
+      {
+        viewportHost: host,
+        backdrop,
+        onVisibilityChanged: (visible) => {
+          this.#visible = visible;
+          this.#syncSpin();
+        },
+      },
     );
     if (kind === "opening") {
       this.#shownAt = this.#now();
@@ -248,18 +257,20 @@ export class PresentationOperationFeedback {
   #syncSpin(): void {
     const icon = this.#indicator?.firstElementChild as HTMLElement | null | undefined;
     if (icon == null) return;
-    const allowed = effectiveTransitionDuration(icon, this.#ownerWindow, "styleChange") > 0;
-    if (!allowed) {
+    const motionAllowed = effectiveTransitionDuration(icon, this.#ownerWindow, "styleChange") > 0;
+    if (!motionAllowed) {
       this.#indicatorEntrance?.cancel();
       this.#indicatorEntrance = undefined;
       this.#indicator?.style.removeProperty("opacity");
     }
-    if (!allowed && this.#spin !== undefined) {
+    if (!motionAllowed || !this.#visible || icon.ownerDocument.hidden) {
+      if (this.#spin === undefined) return;
       this.#spin.cancel();
       this.#spin = undefined;
       icon.style.removeProperty("rotate");
+      return;
     }
-    if (!allowed || this.#spin !== undefined || typeof icon.animate !== "function") return;
+    if (this.#spin !== undefined || typeof icon.animate !== "function") return;
     this.#spin = animateOwnedElement(
       icon,
       { rotate: ["0deg", "360deg"] },
@@ -277,6 +288,9 @@ export class PresentationOperationFeedback {
     this.#kind = undefined;
     this.#shownAt = undefined;
     this.#settlingOpening = false;
+    this.#visible = false;
+    if (this.#indicator !== undefined)
+      this.#root.ownerDocument.removeEventListener("visibilitychange", this.#onDocumentVisibility);
     const unbindStyle = this.#unbindStyle;
     this.#unbindStyle = undefined;
     const positioning = this.#positioning;

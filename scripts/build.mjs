@@ -8,7 +8,11 @@ import { minify } from "terser";
 import { wrapPluginRuntime } from "./embedded-runtime-module.mjs";
 
 const production = !process.argv.includes("--watch");
-const licenseBanner = `/*!\n${(await readFile("LICENSE", "utf8")).trim()}\n*/`;
+const [license, thirdPartyNotices] = await Promise.all([
+  readFile("LICENSE", "utf8"),
+  readFile("THIRD-PARTY-NOTICES.txt", "utf8"),
+]);
+const licenseBanner = `/*!\n${license.trim()}\n\n${thirdPartyNotices.trim()}\n*/`;
 const workerEntry = resolve("src/persistence/worker/runtime/document-worker-entry.ts");
 const workerSourceModule = resolve("src/persistence/worker/runtime/worker-source.ts");
 const editorChromeEntry = resolve("src/rendering/ui/editor-chrome-entry.ts");

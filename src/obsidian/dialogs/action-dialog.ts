@@ -117,7 +117,6 @@ class InkbookActionDialog<T extends string> extends InkbookModal {
       unsubscribe();
       releaseLanguage();
     };
-    cancel.focus();
     if (this.#options.signal?.aborted === true) this.closeImmediately();
   }
 

@@ -1,4 +1,4 @@
-import { playMenuMotionGroup } from "../feedback/menu-motion";
+import { playMenuEntrance, playMenuMotionGroup } from "../feedback/menu-motion";
 
 /** Mount the shared phone backdrop and sheet in the same entrance group. */
 export function animatePhoneSheetEntry(
@@ -7,14 +7,13 @@ export function animatePhoneSheetEntry(
   durationMs: number,
   onComplete: () => void,
 ): () => void {
-  return playMenuMotionGroup(
+  return playMenuEntrance(
     [
       { element: surface, keyframes: { translate: ["0 100%", "0 0"] } },
       { element: backdrop, keyframes: { opacity: [0, 1] } },
     ],
     durationMs,
     onComplete,
-    "ease-out",
   );
 }
 
@@ -38,6 +37,6 @@ export function animatePhoneSheetExit(
     ],
     durationMs,
     onComplete,
-    "ease-in",
+    "easeIn",
   );
 }

@@ -227,11 +227,10 @@ work with their owning session or presentation.
 
 ## Verification
 
-Deterministic regressions observe real primitive visits, point reads, index work,
-DOM publication, frame progression, cache eviction, and cancellation. Initial
-mount, viewport changes, selection, transforms, history, and persistence retain
-their existing correctness cases. See the
-[verification model](../performance-ci.md#unified-verification-model).
+When changing these paths, observe real primitive visits, point reads, index work,
+DOM publication, frame progression, cache eviction, and cancellation as relevant.
+Verify affected initial mount, viewport changes, selection, transforms, history and
+persistence under the [current verification model](../performance-ci.md#unified-verification-model).
 
 Real Obsidian profiling remains necessary for browser DOM, style, paint, and
 interaction latency. Passing work bounds does not establish the physical-device

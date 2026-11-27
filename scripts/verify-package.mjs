@@ -69,21 +69,29 @@ function normalizeLicense(text) {
     .trim();
 }
 
-const license = normalizeLicense(await readFile("LICENSE", "utf8"));
+const [license, thirdPartyNotices] = await Promise.all([
+  readFile("LICENSE", "utf8"),
+  readFile("THIRD-PARTY-NOTICES.txt", "utf8"),
+]);
+const normalizedNotices = normalizeLicense(thirdPartyNotices);
 for (const dependency of ["react", "react-dom", "scheduler"]) {
   const dependencyLicense = normalizeLicense(
     await readFile(`node_modules/${dependency}/LICENSE`, "utf8"),
   );
-  if (!license.includes(dependencyLicense)) {
-    throw new Error(`LICENSE must contain the complete ${dependency} license notice.`);
+  if (!normalizedNotices.includes(dependencyLicense)) {
+    throw new Error(
+      `THIRD-PARTY-NOTICES.txt must contain the complete ${dependency} license notice.`,
+    );
   }
 }
 for (const dependency of ["motion", "framer-motion", "motion-dom", "motion-utils"]) {
   const dependencyLicense = normalizeLicense(
     await readFile(`node_modules/${dependency}/LICENSE.md`, "utf8"),
   );
-  if (!license.includes(dependencyLicense)) {
-    throw new Error(`LICENSE must contain the complete ${dependency} license notice.`);
+  if (!normalizedNotices.includes(dependencyLicense)) {
+    throw new Error(
+      `THIRD-PARTY-NOTICES.txt must contain the complete ${dependency} license notice.`,
+    );
   }
 }
 for (const [dependency, file] of [
@@ -95,12 +103,14 @@ for (const [dependency, file] of [
   ["Caveat", "src/persistence/fonts/assets/caveat-OFL.txt"],
   ["JetBrains Mono", "src/persistence/fonts/assets/jetbrains-mono-OFL.txt"],
 ]) {
-  if (!license.includes(normalizeLicense(await readFile(file, "utf8")))) {
-    throw new Error(`LICENSE must contain the complete ${dependency} license notice.`);
+  if (!normalizedNotices.includes(normalizeLicense(await readFile(file, "utf8")))) {
+    throw new Error(
+      `THIRD-PARTY-NOTICES.txt must contain the complete ${dependency} license notice.`,
+    );
   }
 }
-if (!outputMain.startsWith(`/*!\n${license}\n*/\n`)) {
-  throw new Error("dist/main.js must retain the complete LICENSE banner.");
+if (!outputMain.startsWith(`/*!\n${license.trim()}\n\n${thirdPartyNotices.trim()}\n*/\n`)) {
+  throw new Error("dist/main.js must retain the complete license and third-party notices banner.");
 }
 
 if (

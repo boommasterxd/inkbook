@@ -11,7 +11,7 @@ import { AdaptivePanelSession, type AdaptivePanelCloseMode } from "./panels/adap
 import type { MenuFactoryPort, MenuItemPort, MenuPort, MenuPosition } from "./menu-ports";
 import type { PhoneSheetHostPort } from "./panels/phone-sheet-host";
 import { animateWideMenuEntry, animateWideMenuExit } from "./feedback/wide-menu-motion";
-import { observeMenuMotionPreference, playMenuMotion } from "./feedback/menu-motion";
+import { observeMenuMotionPreference } from "./feedback/menu-motion";
 import { registerMenuFeedback } from "./feedback/menu-feedback";
 import { configureMenuTooltips, menuDomWindow, setMenuSurfaceLabel } from "./menu-dom";
 import { readMenuViewport } from "./panels/menu-viewport";
@@ -107,11 +107,14 @@ class OwnedMenu extends Component implements MenuPort {
     this.#surface.inert = true;
     this.#surface.setAttribute("aria-hidden", "true");
     this.#surface.dataset.state = "closing";
+    const stopEntry = this.#entryStop;
+    this.#entryStop = undefined;
     this.#exitStop = animateWideMenuExit(
       this.#surface,
       this.#ownerWindow,
       this.#popupDuration(),
       () => this.#finish(),
+      stopEntry,
     );
   }
 
@@ -183,6 +186,7 @@ class OwnedMenu extends Component implements MenuPort {
 
   #showPhone(ownerDocument: Document, ownerWindow: Window): void {
     const content = this.#createContent(ownerDocument);
+    const [initialFocus] = this.#buttons;
     const fragment = menuDomWindow(ownerDocument, "owned menu").createFragment();
     fragment.append(content);
     this.#panel = new AdaptivePanelSession({
@@ -196,6 +200,7 @@ class OwnedMenu extends Component implements MenuPort {
       dismissOnAnchorPointer: this.#kind === "context",
       canvasInputSurface: this.#anchor,
       createContent: () => fragment,
+      ...(initialFocus === undefined ? {} : { initialFocus }),
       ...(this.#options.createPhoneSheetHost === undefined
         ? {}
         : { createPhoneSheetHost: this.#options.createPhoneSheetHost }),
@@ -233,12 +238,11 @@ class OwnedMenu extends Component implements MenuPort {
     surface.append(this.#createContent(ownerDocument));
     this.#ownerWindow = ownerWindow;
     const duration = effectiveTransitionDuration(this.#anchor, ownerWindow, "nativeModalEnterExit");
-    surface.style.setProperty("--inkbook-owned-menu-duration", `${String(duration)}ms`);
     ownerDocument.body.append(surface);
     this.register(() => surface.remove());
     this.register(registerMenuFeedback(surface, this.#anchor, ownerWindow));
     this.#entryStop = animateWideMenuEntry(surface, duration);
-    this.#observeReducedMotion(surface, ownerWindow);
+    this.#observeReducedMotion(ownerWindow);
     const viewport = readMenuViewport(ownerWindow);
     surface.style.setProperty("max-block-size", `${String(Math.max(0, viewport.height - 10))}px`);
     const width = surface.offsetWidth;
@@ -337,7 +341,7 @@ class OwnedMenu extends Component implements MenuPort {
     for (const callback of this.#callbacks) callback();
   }
 
-  #observeReducedMotion(surface: HTMLElement, ownerWindow: Window): void {
+  #observeReducedMotion(ownerWindow: Window): void {
     this.register(
       observeMenuMotionPreference(this.#anchor, ownerWindow, () => {
         if (this.#closing) {
@@ -346,7 +350,6 @@ class OwnedMenu extends Component implements MenuPort {
         }
         this.#entryStop?.();
         this.#entryStop = undefined;
-        playMenuMotion(surface, { opacity: "1", scale: "1" }, 0);
       }),
     );
   }

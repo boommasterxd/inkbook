@@ -78,9 +78,9 @@ selection palette on the SVG root or modify a stylesheet.
 
 ## Verification boundary
 
-Deterministic tests observe actual SVG writes and ownership, geometry publication,
+When changing these paths, observe actual SVG writes and ownership, geometry publication,
 snapshot admission, ordering, cancellation, overlapping gestures, viewport reentry
-and cleanup under the injected scheduler. They do not establish execution speed.
+and cleanup under the injected scheduler. Follow [direct runtime verification](../performance-ci.md#direct-runtime-verification).
 Native Obsidian verification compares complete persisted documents as well as
 input feedback, release, pan, zoom, scrolling and intermediate visible geometry.
 Callback timing, browser layout/paint and physical presentation remain distinct

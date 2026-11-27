@@ -1,7 +1,7 @@
 import { readMenuViewport } from "./panels/menu-viewport";
 import { animateWideMenuEntry } from "./feedback/wide-menu-motion";
 import { effectiveTransitionDuration } from "../runtime/effective-motion";
-import { observeMenuMotionPreference, playMenuMotion } from "./feedback/menu-motion";
+import { observeMenuMotionPreference } from "./feedback/menu-motion";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 /** One floating listbox shares its owning panel's layer without changing panel layout. */
@@ -67,7 +67,6 @@ export class FontChoicePopup {
       this.#releaseMotion = observeMenuMotionPreference(this.#anchor, ownerWindow, () => {
         this.#stopEntry?.();
         this.#stopEntry = undefined;
-        playMenuMotion(this.#list, { opacity: "1", scale: "1" }, 0);
       });
     }
   }

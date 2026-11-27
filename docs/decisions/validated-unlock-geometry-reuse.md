@@ -34,6 +34,6 @@ An own-export hit trusts the successful canonical serializer. It removes indepen
 
 ## Verification Boundaries
 
-Regression coverage must distinguish model unlock from visible scene contour preparation, accept safe divergent presentation only for unlock, and reject unsafe suffixes, invalid metadata, exceeded limits, and cancellation. Strict verification must reject the same divergent presentation even after successful unlock. Work/resource coverage retains the full representative document and checks batching, visible scene preparation, retained resources, proof replacement, and strict fallback.
+Regression coverage must distinguish model unlock from visible scene contour preparation, accept safe divergent presentation only for unlock, and reject unsafe suffixes, invalid metadata, exceeded limits, and cancellation. Strict verification must reject the same divergent presentation even after successful unlock. For affected work and resource limits, use the full representative document and check batching, visible scene preparation, retained resources, proof replacement, and strict fallback through [direct runtime verification](../performance-ci.md#direct-runtime-verification).
 
 These contracts do not establish a latency guarantee or parity with another plugin. Schema and safe-presentation scans, full-file hashing, visible pressure geometry, DOM attachment, and browser painting still have real costs. Physical-device latency remains a separate acceptance requirement.

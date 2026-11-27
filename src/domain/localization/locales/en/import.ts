@@ -46,7 +46,7 @@ export const inkImport = {
   "import.scanLimitDescription":
     "Scan limit reached. Only the listed files will be imported; scan again afterward.",
   "import.storage":
-    "Local conversion · copies and recovery backups use extra vault and sync storage.",
+    "Inkbook stores backups of the original files and full copies of all affected notes in inkbook-imports. Your vault sync may include these files.",
   "import.files": "Handwriting files",
   "import.historyEmpty": "No saved imports.",
   "import.historySaved": "Saved imports",

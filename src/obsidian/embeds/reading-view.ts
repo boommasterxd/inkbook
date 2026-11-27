@@ -76,7 +76,6 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
   readonly #root: HTMLDivElement;
   readonly #lifecycle: EmbedIntegrationPorts["lifecycle"];
   readonly #ports: EmbedIntegrationPorts;
-  #previewIdentity: Exclude<InkbookDocumentRecognition, false>["contentIdentity"];
   #recognitionGeneration = 0;
   #releaseRecognition: (() => void) | undefined;
   #releaseLifecycle: (() => void) | undefined;
@@ -110,7 +109,6 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     this.#nativeChildren = nativeChildren;
     this.#lifecycle = ports.lifecycle;
     this.#ports = ports;
-    this.#previewIdentity = previewDescriptor.contentIdentity;
     this.#root = root;
     this.register(
       ports.localization?.subscribe(() => {
@@ -138,6 +136,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
       ports.scheme,
       {
         contentIdentity: previewDescriptor.contentIdentity,
+        getMountedIdentity: preview.getMountedIdentity,
         element: preview.element,
         refresh: preview.refresh,
         releaseHiddenSurface: preview.releaseHiddenSurface,
@@ -206,8 +205,6 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     ) {
       return;
     }
-    if (samePreviewContentIdentity(this.#previewIdentity, recognized.contentIdentity)) return;
-    this.#previewIdentity = recognized.contentIdentity;
     this.#controller.updatePreview(recognized);
   }
 }

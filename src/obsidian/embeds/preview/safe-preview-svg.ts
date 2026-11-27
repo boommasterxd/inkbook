@@ -4,6 +4,34 @@ import type { PersistedDocumentIdentity } from "../../../editor/session/session-
 import { inspectTrustedSvgOutput } from "../../../persistence/scheduling/trusted-svg-output";
 import type { SafeStaticProof } from "../../../persistence/serialization/input/safe-static-proof";
 
+const MAXIMUM_ROOT_TAG_CHARACTERS = 4096;
+
+function canonicalRootTag(content: string): string | undefined {
+  const prefix = content.slice(0, MAXIMUM_ROOT_TAG_CHARACTERS).trimStart();
+  if (!prefix.startsWith("<svg")) return undefined;
+  const closing = prefix.indexOf(">");
+  if (closing < 0) return undefined;
+  const tag = prefix.slice(0, closing + 1);
+  return /\sdata-inkbook-format=(?:"inkbook"|'inkbook')(?=\s|>)/u.test(tag) ? tag : undefined;
+}
+
+export const hasCanonicalInkbookRootMarker = (content: string): boolean =>
+  canonicalRootTag(content) !== undefined;
+
+export function recognizeCanonicalInkbookRoot(
+  content: string,
+): false | { readonly aspectRatio: number } {
+  const rootTag = canonicalRootTag(content);
+  if (rootTag === undefined) return false;
+  const viewBox =
+    /\sviewBox=(?:"0 0 2048\.6 ([0-9]+(?:\.[0-9]+)?)"|'0 0 2048\.6 ([0-9]+(?:\.[0-9]+)?)')(?=\s|>)/u.exec(
+      rootTag,
+    );
+  const height = Number(viewBox?.[1] ?? viewBox?.[2]);
+  if (!Number.isFinite(height) || height <= 0) return false;
+  return { aspectRatio: 2048.6 / height };
+}
+
 export interface LoadedPreviewSvg {
   readonly aspectRatio: number;
   readonly contentIdentity: PreviewContentIdentity;

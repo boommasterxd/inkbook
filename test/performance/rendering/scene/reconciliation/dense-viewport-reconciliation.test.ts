@@ -32,6 +32,16 @@ it("publishes 10,000 strokes in bounded SVG batches and releases the scene", () 
     }
     expect(publishedRoots).toBe(10_000);
     expect(renderer.mountedIds("content")).toEqual(ids);
+    const publishedCenters = content.nodes.map((node) => {
+      // Each test stroke is one dot with a radius below one unit on a ten-unit grid.
+      const start = /^M(\d+(?:\.\d+)?) (\d+(?:\.\d+)?)/u.exec(node.attributes.get("d") ?? "");
+      if (start === null) throw new Error("Expected a published dot path.");
+      return {
+        x: Math.round(Number(start[1]) / 10) * 10,
+        y: Math.round(Number(start[2]) / 10) * 10,
+      };
+    });
+    expect(publishedCenters).toEqual(ids.map((id) => store.get(id)?.element.pivot));
     expect(renderer.instrumentation()).toMatchObject({
       domEntrants: 10_000,
       geometryBuilds: 10_000,

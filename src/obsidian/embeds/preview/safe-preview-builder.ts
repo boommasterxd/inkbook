@@ -4,6 +4,7 @@ import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { configurePreviewSvg } from "./safe-preview-svg";
 import { findStaticSvgTokenSteps } from "../../../persistence/export/static-svg-scanner";
 import { decodeMetadataTextSteps } from "../../../persistence/documents/safe-svg-metadata";
+import type { PreviewTextAlternative } from "./preview-text-alternative";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
@@ -12,6 +13,7 @@ interface PreviewBuildOptions {
   readonly isCancelled: () => boolean;
   readonly workScheduler: WorkScheduler;
   readonly configureElement?: (element: Element) => void;
+  readonly textAlternative?: PreviewTextAlternative;
 }
 
 /** Only accepts a completely validated safe-envelope SVG, without importing unvalidated markup. */
@@ -21,7 +23,7 @@ export async function createPreviewSvgAsync(
   options: PreviewBuildOptions,
 ): Promise<SVGSVGElement | undefined> {
   const exhausted = (): boolean => options.workScheduler.shouldYield();
-  const steps = buildPreviewSteps(ownerDocument, safeSvg, exhausted, options.configureElement);
+  const steps = buildPreviewSteps(ownerDocument, safeSvg, exhausted, options);
   let initial = true;
   while (true) {
     const pending = options.checkpoint(initial);
@@ -94,13 +96,13 @@ function* buildPreviewSteps(
   ownerDocument: Document,
   safeSvg: string,
   exhausted: () => boolean,
-  configureElement?: (element: Element) => void,
+  options: PreviewBuildOptions,
 ): Generator<void, SVGSVGElement> {
   const parents: Element[] = [];
   const scopeImages = createImageReferenceScope();
   const configure = (element: Element) => {
     scopeImages(element);
-    configureElement?.(element);
+    options.configureElement?.(element);
   };
   let root: SVGSVGElement | undefined;
   let cursor = 0;
@@ -110,6 +112,7 @@ function* buildPreviewSteps(
       const decoded = yield* decodeMetadataTextSteps(safeSvg.slice(cursor, start));
       if (decoded === null) throw new Error("The validated Inkbook preview has invalid text.");
       parents[parents.length - 1]!.textContent = decoded.text;
+      options.textAlternative?.append(parents, decoded.text);
     }
     const end = yield* findToken(safeSvg, ">", start, exhausted);
     const markup = safeSvg.slice(start, end + 1);

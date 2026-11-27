@@ -1,4 +1,4 @@
-import type { Translator } from "../../../domain/localization";
+import type { Localization, Translator } from "../../../domain/localization";
 import type { ChangeDesc } from "@codemirror/state";
 import type { TextElementV2 } from "../../../domain/schema/public";
 import type { Bounds } from "../../../domain/geometry/public";
@@ -29,7 +29,7 @@ export interface ActiveTextSessionOptions {
   readonly scheduler: WorkScheduler;
   readonly defaults: () => TextDefaultsV2;
   readonly library?: TextFontLibraryPort;
-  readonly tableCellLabel?: string;
+  readonly localization?: Localization;
   readonly tableUi?: TextTableUiPort;
   readonly onSelection: (selection: ReadonlySet<string>) => void;
   readonly onStateChanged: () => void;
@@ -348,7 +348,7 @@ export class ActiveTextSession {
     const editor = TextEditor.createTextSessionEditor({
       surface,
       element,
-      ...(this.#options.tableCellLabel ? { tableCellLabel: this.#options.tableCellLabel } : {}),
+      localization: this.#options.localization,
       ...(this.#options.tableUi ? { tableUi: this.#options.tableUi } : {}),
       scheduler: this.#options.scheduler,
       preparation: this.#prepare(),

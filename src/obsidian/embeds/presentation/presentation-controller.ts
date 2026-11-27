@@ -40,6 +40,7 @@ type PresentationMeasurement =
 export interface PresentationPreviewLifecycle {
   readonly releaseHiddenSurface?: () => void;
   readonly contentIdentity?: PreviewContentIdentity;
+  readonly getMountedIdentity?: () => PreviewContentIdentity | undefined;
   readonly element: HTMLElement;
   readonly entranceState?: PresentationEntranceState;
   readonly refresh?: () => void;
@@ -59,12 +60,8 @@ export interface PresentationPreviewLifecycle {
   readonly setSource?: (source: string) => Promise<PreviewContentIdentity | undefined>;
 }
 
-type MutablePresentationAttachment = Omit<
-  PresentationAttachment,
-  "embedReference" | "previewContentIdentity"
-> & {
+type MutablePresentationAttachment = Omit<PresentationAttachment, "embedReference"> & {
   embedReference: PresentationAttachment["embedReference"];
-  previewContentIdentity?: PreviewContentIdentity;
 };
 
 function leasesFor(document: Document): ScrollbarLeaseRegistry<HTMLElement> {
@@ -126,12 +123,10 @@ export class PresentationController {
     this.#entrance = this.#createEntrance(attachment.root, previewLifecycle);
     let lifecycle: PresentationScrollLifecycle<HTMLElement, PresentationMeasurement> | undefined;
     this.#scrollRangeReserve = new PresentationScrollRangeReserve(() => lifecycle?.owner ?? null);
+    const initialIdentity = previewLifecycle?.contentIdentity;
     const resolvedAttachment: MutablePresentationAttachment = {
       ...attachment,
       ...this.#initialPresentationOptions(previewLifecycle),
-      ...(previewLifecycle?.contentIdentity === undefined
-        ? {}
-        : { previewContentIdentity: previewLifecycle.contentIdentity }),
       ...(previewLifecycle === undefined
         ? {}
         : {
@@ -143,10 +138,7 @@ export class PresentationController {
               ? {}
               : {
                   setPreviewSource: async (source: string) => {
-                    const identity = await previewLifecycle.setSource?.(source);
-                    if (identity !== undefined) {
-                      resolvedAttachment.previewContentIdentity = identity;
-                    }
+                    await previewLifecycle.setSource?.(source);
                   },
                 }),
           }),
@@ -154,6 +146,12 @@ export class PresentationController {
       scrollRangeReserve: this.#scrollRangeReserve,
       scrollOwner: () => lifecycle?.owner ?? null,
     };
+    if (initialIdentity !== undefined) {
+      Object.defineProperty(resolvedAttachment, "previewContentIdentity", {
+        enumerable: true,
+        get: () => previewLifecycle?.getMountedIdentity?.() ?? initialIdentity,
+      });
+    }
     this.#attachment = resolvedAttachment;
     this.#scroll = lifecycle = new PresentationScrollLifecycle<
       HTMLElement,
@@ -280,7 +278,6 @@ export class PresentationController {
 
   updatePreview(descriptor: InkbookLockedPreviewDescriptor): void {
     this.#previewLifecycle?.setDescriptor?.(descriptor);
-    this.#attachment.previewContentIdentity = descriptor.contentIdentity;
   }
 
   updateLivePreviewRange(from: number, to: number): boolean {

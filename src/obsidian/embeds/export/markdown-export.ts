@@ -19,7 +19,7 @@ import { StaticExportPagination } from "./print-pagination";
 import { ExportGeometrySession } from "./export-geometry-session";
 import type { StaticExportFragment } from "../../../persistence/export/static-export-fragments";
 import type { LoadedPreviewSvg } from "../preview/safe-preview-svg";
-import { hasCanonicalInkbookRootMarker } from "../preview/document-recognition";
+import { hasCanonicalInkbookRootMarker } from "../preview/safe-preview-svg";
 import type { NativePdfOptions } from "./native-pdf-options";
 
 function exportDescription(description: string | undefined, localization?: Localization): string {
