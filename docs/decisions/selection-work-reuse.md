@@ -56,8 +56,6 @@ and changed ranks. Complete immutable band/history snapshots and native browser
 SVG operations can remain linear or indivisible. This decision does not promise
 constant-time transforms or physical-device latency.
 
-Deterministic tests must observe actual sample reads, graph/index visits,
-validation, geometry preparation, DOM writes, cancellation, reuse, and cleanup.
-Real Obsidian traces remain necessary to assess browser work and interaction
-latency; timing captures are diagnostic artifacts outside normative documentation
-and do not replace the automated work/resource contracts.
+When these paths change, observe actual sample reads, graph and index visits,
+validation, geometry preparation, DOM writes, cancellation, reuse and cleanup.
+Assess browser work and interaction latency with [direct runtime verification](../performance-ci.md#direct-runtime-verification).

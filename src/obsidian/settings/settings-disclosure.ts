@@ -7,10 +7,13 @@ import { observeEffectiveMotion, type ObserveMotion } from "../runtime/effective
 import { hover } from "motion";
 import {
   isReducedMotion,
+  MOTION_TOKENS,
   STANDARD_EASING,
   type MotionPreference,
 } from "../../rendering/motion/transitions";
 import { animateOwnedElement } from "../runtime/element-motion";
+
+const DISCLOSURE_DURATION_SECONDS = MOTION_TOKENS.fast / 1000;
 
 export interface SettingsDisclosure {
   readonly content: HTMLElement;
@@ -115,7 +118,10 @@ function bindDisclosureMotion(
     backgroundAnimation = animateOwnedElement(
       trigger,
       { backgroundColor: highlight ? "var(--background-modifier-hover)" : "rgba(0, 0, 0, 0)" },
-      { duration: reducedMotion() ? 0 : 0.12, ease: STANDARD_EASING },
+      {
+        duration: reducedMotion() ? 0 : DISCLOSURE_DURATION_SECONDS,
+        ease: STANDARD_EASING,
+      },
     );
   };
   const onHoverStart = (): (() => void) => {
@@ -146,7 +152,7 @@ function bindDisclosureMotion(
       chevron,
       { rotate: expanded ? "90deg" : "0deg" },
       {
-        duration: 0.12,
+        duration: DISCLOSURE_DURATION_SECONDS,
         ease: STANDARD_EASING,
       },
     );

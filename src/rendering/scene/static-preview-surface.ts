@@ -5,14 +5,17 @@ import { STATIC_PREVIEW_STYLES } from "./static-preview-styles";
 export class StaticPreviewSurface {
   readonly #frame: HTMLIFrameElement;
   readonly #frameStyle: HTMLStyleElement;
-  readonly #waiters = new Set<(error?: Error) => void>();
+  readonly #waiters = new Set<(result: Document | Error) => void>();
   #document: Document | undefined;
   #documentStyle: HTMLStyleElement | undefined;
   #scheme: "light" | "dark" = "light";
   #svg: SVGSVGElement | undefined;
   #disposed = false;
 
-  public constructor(container: HTMLElement) {
+  public constructor(
+    container: HTMLElement,
+    private readonly onDocumentReady: (surface: StaticPreviewSurface, document: Document) => void,
+  ) {
     const { frame, style } = createSceneFrame(container.ownerDocument);
     this.#frame = frame;
     this.#frameStyle = style;
@@ -42,18 +45,21 @@ export class StaticPreviewSurface {
     if (document === undefined) return;
     if (document !== this.#document) this.#configure(document);
     this.#applyScheme(document);
+    this.onDocumentReady(this, document);
     const svg = this.#svg;
     if (svg === undefined) return;
     if (svg.ownerDocument !== document) document.adoptNode(svg);
     if (svg.parentNode !== document.body) document.body.replaceChildren(svg);
-    for (const finish of this.#waiters) finish();
+    for (const finish of this.#waiters) finish(document);
   }
 
-  public setSvg(svg: SVGSVGElement): void {
-    if (this.#disposed) return;
+  public mountSvg(svg: SVGSVGElement, document: Document): boolean {
+    if (this.drawingDocument !== document) return false;
+    if (svg.ownerDocument !== document) document.adoptNode(svg);
     if (svg !== this.#svg) this.#svg?.remove();
+    document.body.replaceChildren(svg);
     this.#svg = svg;
-    this.refresh();
+    return true;
   }
 
   public setColorScheme(scheme: "light" | "dark"): void {
@@ -62,17 +68,18 @@ export class StaticPreviewSurface {
     this.refresh();
   }
 
-  public async ensureMounted(signal?: AbortSignal): Promise<void> {
+  public async ensureMounted(signal?: AbortSignal): Promise<Document> {
     signal?.throwIfAborted();
     this.refresh();
     if (this.#disposed) throw new Error("The Inkbook preview surface is disposed.");
-    if (this.#svg?.parentNode === this.drawingDocument?.body && this.#svg !== undefined) return;
-    return new Promise<void>((resolve, reject) => {
-      const finish = (error?: Error): void => {
+    const document = this.drawingDocument;
+    if (document !== undefined && this.#svg?.parentNode === document.body) return document;
+    return new Promise<Document>((resolve, reject) => {
+      const finish = (result: Document | Error): void => {
         this.#waiters.delete(finish);
         signal?.removeEventListener("abort", onAbort);
-        if (error === undefined) resolve();
-        else reject(error);
+        if (result instanceof Error) reject(result);
+        else resolve(result);
       };
       const onAbort = (): void => {
         const reason: unknown = signal?.reason;

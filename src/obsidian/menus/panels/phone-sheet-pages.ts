@@ -60,7 +60,8 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
   }
   public push(page: PhoneSheetPage): void {
     if (this.#closed) return;
-    if (this.#options.surface.dataset.presence === "entering") {
+    const { presence, swipeState } = this.#options.surface.dataset;
+    if (presence === "entering" || swipeState !== undefined) {
       this.#pending?.dispose?.();
       this.#pending = page;
       return;
@@ -248,7 +249,7 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
             completed += 1;
             if (completed === children.length) this.#resetPageMotion();
           },
-          "ease-out",
+          "easeOut",
         ),
       );
     }

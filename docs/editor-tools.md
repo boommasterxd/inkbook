@@ -203,7 +203,7 @@ The persisted shared lock field and version boundary are defined in [File Format
 
 ## Eraser
 
-The eraser always removes complete unlocked elements. It does not support pixel-level or partial erasing; locked elements are skipped under [Element Locks](#element-locks).
+The eraser removes complete unlocked annotations. It skips [locked elements](#element-locks) and [images](images.md#element-geometry-and-crop). To remove an unlocked image, select it and choose Delete.
 
 This means:
 

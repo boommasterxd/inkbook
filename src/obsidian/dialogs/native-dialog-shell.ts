@@ -43,10 +43,11 @@ export class NativeDialogShell extends Modal {
 
   public override open(): void {
     super.open();
+    if (!this.modalEl.isConnected || this.modalEl.inert) return;
     const active = this.modalEl.ownerDocument.activeElement;
-    if (this.modalEl.isConnected && !this.modalEl.inert && !this.modalEl.contains(active)) {
-      this.titleEl.focus({ preventScroll: true });
-    }
+    const initial = this.contentEl.querySelector<HTMLElement>("[autofocus]:not(:disabled)");
+    if (initial && !initial.closest("[hidden], [inert]")) initial.focus({ preventScroll: true });
+    else if (!this.modalEl.contains(active)) this.titleEl.focus({ preventScroll: true });
   }
 
   public override onOpen(): void {

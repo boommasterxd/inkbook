@@ -14,12 +14,6 @@
   --background-modifier-form-field-hover: var(--background-primary-alt);
 }
 
-.inkbook-settings-tool-group,
-.inkbook-snapping-group {
-  --inkbook-motion-fast: 120ms;
-  --inkbook-motion-easing: cubic-bezier(0.2, 0, 0, 1);
-}
-
 .inkbook-setting-control-row.mod-toggle > .inkbook-setting-controls,
 .inkbook-setting-control-row > .inkbook-setting-controls:has(> .dropdown) {
   align-self: center;
@@ -88,7 +82,6 @@
 }
 
 .inkbook-settings-motion-content {
-  interpolate-size: allow-keywords;
   overflow: hidden;
 }
 

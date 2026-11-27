@@ -86,7 +86,7 @@ interface ShapeStyleV1 extends OutlineStyleV1 {
 Validation rules:
 
 - All numbers MUST be finite.
-- `locked` is an optional boolean shared by all element kinds. Absence and `false` mean unlocked; canonical output omits both. A `true` value requires snapshot version 4. The interaction rules are defined in [Element Locks](editor-tools.md#element-locks).
+- `locked` is an optional boolean shared by all element kinds. Absence and `false` mean unlocked. Canonical output omits both. A `true` value requires snapshot version 4 or later. See [version selection](#versioning-and-migration) and the [element lock behavior](editor-tools.md#element-locks).
 - Snapshot revision is a non-negative safe integer.
 - Opacity and pressure are in the inclusive range `0..1`. Version 1 stroke smoothing is exactly `0.5`.
 - Canonical geometry and rotation are rounded on command commit to at most three decimal places. Pressure and opacity in the editable JSON snapshot are rounded to at most four decimal places. Generated SVG opacity attributes retain at most four decimal places; every other numeric SVG attribute retains at most three, as defined by the [standalone SVG envelope](svg-envelope.md#strict-static-markup-allowlist). Negative zero is stored and serialized as zero. Anchor resolution uses canonical geometry before connected endpoints are committed.

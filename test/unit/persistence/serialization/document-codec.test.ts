@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
+import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/model/document-model";
 import { createAllElementSnapshot, createSnapshot } from "./fixtures";
 
 describe("Inkbook document parsing", () => {
@@ -48,12 +49,24 @@ describe("Inkbook document migration", () => {
 });
 
 describe("Inkbook document parsing failures", () => {
-  it("rejects safe derived-path drift instead of opening altered static geometry", async () => {
+  it("opens safe derived-path drift from the snapshot without accepting it as verified output", async () => {
     const serialized = serializeInkbookDocument(createAllElementSnapshot());
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
     const drifted = serialized.value.svg.replace("M100 150L300 150", "M101 150L301 150");
     expect(drifted).not.toBe(serialized.value.svg);
+
+    const model = new DocumentModelRuntime();
+    const unlocked = await model.unlock(drifted);
+    expect(unlocked.snapshot.elements.find(({ kind }) => kind === "line")).toEqual(
+      serialized.value.snapshot.elements.find(({ kind }) => kind === "line"),
+    );
+    expect(unlocked.requiresCanonicalRewrite).toBe(false);
+    expect(await model.verifyOutput(drifted)).toBeNull();
+    expect(await model.verifyOutput(serialized.value.svg)).toEqual({
+      outputHash: serialized.value.hash,
+      revision: serialized.value.snapshot.revision,
+    });
 
     const parsed = await parseInkbookDocumentForTest(drifted);
 
@@ -79,12 +92,14 @@ describe("Inkbook document parsing failures", () => {
       ok: false,
       error: { code: "invalid-json" },
     });
-    expect(
-      await parseInkbookDocumentForTest(serialized.value.svg.replace("</svg>", "<script/></svg>")),
-    ).toMatchObject({
+    const unsupported = serialized.value.svg.replace("</svg>", "<desc>Extra text</desc></svg>");
+    expect(await parseInkbookDocumentForTest(unsupported)).toMatchObject({
       ok: false,
       error: { code: "invalid-svg" },
     });
+    const model = new DocumentModelRuntime();
+    await expect(model.unlock(unsupported)).rejects.toMatchObject({ code: "invalid-svg" });
+    expect(model.modelRevision).toBeNull();
   });
 });
 

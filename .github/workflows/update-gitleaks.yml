@@ -2,7 +2,7 @@ name: Update gitleaks
 
 on:
   schedule:
-    - cron: "0 6 1 * *"
+    - cron: "17 6 1 * *"
   workflow_dispatch:
 
 # Serialize scheduled and manual updates.

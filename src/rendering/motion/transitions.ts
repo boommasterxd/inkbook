@@ -17,13 +17,6 @@ export const MOTION_TOKENS = Object.freeze({
 export const STANDARD_EASING = [0.2, 0, 0, 1] as const;
 export const ERASE_EASING = [0.645, 0.045, 0.355, 1] as const;
 export const TOOLBAR_CONTEXT_STAGGER_MS = 50;
-const standardEasing = `cubic-bezier(${STANDARD_EASING.join(", ")})`;
-
-export const EASING_TOKENS = Object.freeze({
-  erase: `cubic-bezier(${ERASE_EASING.join(", ")})`,
-  standard: standardEasing,
-  emphasized: standardEasing,
-} as const);
 
 export const TRANSITION_DURATIONS = Object.freeze({
   adaptiveMenu: MOTION_TOKENS.surface,
@@ -39,7 +32,6 @@ export const TRANSITION_DURATIONS = Object.freeze({
   styleChange: MOTION_TOKENS.fast,
   lockedToActiveHeight: MOTION_TOKENS.layout,
   activeToLockedHeight: MOTION_TOKENS.layout,
-  lockEditorCrossfade: MOTION_TOKENS.fast,
   automaticPageGrowth: MOTION_TOKENS.standard,
   overflowEdgeGradient: MOTION_TOKENS.fast,
   conditionalToolbarControl: MOTION_TOKENS.surface,

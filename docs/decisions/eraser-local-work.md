@@ -26,6 +26,6 @@ Canonical unit-interval membership tests the existing decimal grid arithmeticall
 
 ## Verification
 
-Deterministic tests observe actual sample reads, section bounds and parent work, cache buffers, band descriptors, sample copying, spatial lookups and comparisons, bucket deletion, SVG allocation, and fixed-root adoption. Cases include maximum strokes, the complete 10,000-stroke fixture, repeated misses, public mutable aliases, replacement identities, cancellation, stale generations, Undo/Redo, and disposal. Decimal membership tests include the complete accepted grid and its adjacent IEEE-754 values.
+When the eraser path changes, observe actual sample reads, section bounds and parent work, cache buffers, band descriptors, sample copying, spatial lookups and comparisons, bucket deletion, SVG allocation, and fixed-root adoption. Include affected maximum strokes, the complete 10,000-stroke fixture, repeated misses, public mutable aliases, replacement identities, cancellation, stale generations, Undo/Redo, and disposal. Changes to decimal membership need verification across the complete accepted grid and its adjacent IEEE-754 values.
 
-CI measures bounded work and scheduling under [Performance CI](../performance-ci.md); it does not establish execution speed. Browser traces, before/after timing artifacts, native input behavior and physical-device latency remain separate acceptance evidence under [Quality and Testing](../quality-and-testing.md).
+Use [direct runtime verification](../performance-ci.md#direct-runtime-verification) for eraser work and [device acceptance](../quality-and-testing.md) for native input and physical-device latency.

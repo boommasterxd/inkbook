@@ -47,7 +47,7 @@ export const inkImport = {
   "import.scanLimitDescription":
     "Suchlimit erreicht. Nur die aufgeführten Dateien werden importiert. Suche anschließend erneut.",
   "import.storage":
-    "Lokale Umwandlung · Kopien und Wiederherstellungskopien benötigen zusätzlichen Vault- und Synchronisierungsspeicher.",
+    "Inkbook legt in inkbook-imports Sicherungen der Originaldateien und vollständige Kopien aller betroffenen Notizen ab. Diese Dateien können mit deinem Vault synchronisiert werden.",
   "import.files": "Handschriftdateien",
   "import.historyEmpty": "Keine gespeicherten Importe.",
   "import.historySaved": "Gespeicherte Importe",

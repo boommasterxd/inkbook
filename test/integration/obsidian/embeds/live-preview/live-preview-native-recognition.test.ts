@@ -2,12 +2,16 @@
 
 import { EditorState, StateField } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
-import { editorInfoField, editorLivePreviewField } from "obsidian";
+import { editorInfoField, editorLivePreviewField, TFile, type Vault } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { createLivePreviewExtension } from "../../../../../src/obsidian/embeds/live-preview/live-preview";
 import type { EmbedIntegrationPorts } from "../../../../../src/obsidian/embeds/presentation/presentation-port";
+import { ObsidianInkbookDocumentRecognition } from "../../../../../src/obsidian/embeds/preview/document-recognition";
+import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
 import { configureTestEditorState } from "../../../../adapters/obsidian/plugin";
+import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
+import { createWorkerSnapshot } from "../../../../fixtures/persistence/worker-snapshot";
 
 const syntax = vi.hoisted(() => ({ iterate: () => undefined }));
 vi.mock("@codemirror/language", async (importOriginal) => ({
@@ -102,4 +106,58 @@ it("does not decorate cached native previews inside a fence with a tab-indented 
     },
   );
   expect(replacements).toEqual([{ from: source.indexOf(visible), to: source.length }]);
+});
+
+it("rejects a superseded preview read without disturbing the current validated revision", async () => {
+  const first = serializeInkbookDocument(createWorkerSnapshot([], 1));
+  const next = serializeInkbookDocument(createWorkerSnapshot([], 2));
+  if (!first.ok || !next.ok) throw new Error("The preview fixtures could not be serialized.");
+  const TestFile = TFile as unknown as new (path: string, size: number) => TFile;
+  const file = new TestFile("drawing.svg", next.value.totalBytes);
+  const cachedRead = vi
+    .fn()
+    .mockResolvedValueOnce(first.value.svg)
+    .mockResolvedValue(next.value.svg);
+  const vault = { getFileByPath: () => file, cachedRead } as unknown as Vault;
+  const documents = new ObsidianInkbookDocumentRecognition(vault, {
+    workScheduler: () => immediateWorkScheduler(),
+  });
+  const firstIdentity = { revision: 1, outputHash: first.value.hash };
+  const nextIdentity = { revision: 2, outputHash: next.value.hash };
+  const unsubscribe = documents.subscribe(() => {
+    // Invalidate after the read resolves but before the preview adopts it.
+    unsubscribe();
+    documents.invalidate(file.path);
+  }, file.path);
+
+  try {
+    await expect(documents.loadPreviewSource(file.path, firstIdentity)).rejects.toThrow(
+      "changed while loading",
+    );
+    documents.deferRefresh(file.path);
+    expect(documents.cached(file.path)).toBeUndefined();
+    await expect(documents.loadPreviewSource(file.path, firstIdentity)).rejects.toThrow(
+      "being refreshed",
+    );
+    expect(await documents.recognize(file.path)).toBe(false);
+    expect(cachedRead).toHaveBeenCalledTimes(1);
+    documents.invalidate(file.path);
+    const current = await documents.loadPreviewSource(file.path, nextIdentity);
+    const proof = documents.safeStaticProof(file.path);
+    expect(proof).toBeDefined();
+    await expect(documents.loadPreviewSource(file.path, firstIdentity)).rejects.toThrow(
+      "changed while loading",
+    );
+    expect(current.safeSvg).toBe(next.value.svg);
+    expect(documents.cached(file.path)).toBe(current);
+    expect(documents.safeStaticProof(file.path)).toBe(proof);
+    documents.deferRefresh(file.path);
+    expect(documents.cached(file.path)).toBeUndefined();
+    expect(await documents.recognize(file.path)).toBe(false);
+    expect(documents.safeStaticProof(file.path)).toBeUndefined();
+    expect(cachedRead).toHaveBeenCalledTimes(2);
+  } finally {
+    unsubscribe();
+    documents.dispose();
+  }
 });

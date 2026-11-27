@@ -28,9 +28,13 @@ runtime cost or responsiveness.
 
 1. Reproduce the changed interaction in running Obsidian. Record the fixture,
    artifact, host mode, viewport, device, and refresh profile. Use the
-   [10,000-stroke fixture and reference profiles](quality-and-testing.md#performance-acceptance-dataset)
-   for large-document costs. For viewport changes, check boundary crossings,
-   offscreen reentry, zoom or resize, and affected focus or selection.
+   [generated manual fixtures](quality-and-testing.md#generate-the-manual-datasets) for
+   release and large-document measurements. The standard fixture covers mixed document
+   costs, the dense fixture supplies expected visible order and hit targets, and the
+   optional stress fixture exercises load and rejection limits. Use the
+   [reference profiles](quality-and-testing.md#reference-profiles) for acceptance.
+   For viewport changes, check boundary crossings, offscreen reentry, zoom or resize,
+   and affected focus or selection.
 2. Capture a baseline with the same setup before optimizing. Use Obsidian
    DevTools or the platform profiler to capture the actual hot path. Choose
    CPU profiles or performance traces for frame, layout, paint, and input

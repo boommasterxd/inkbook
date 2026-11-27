@@ -82,7 +82,7 @@ export class TextPreviewGeometry {
       originalRange: options.originalRange,
       mathLayout: () => element().layout,
       renderTable: editor.renderTable,
-      tableCellLabel: editor.tableCellLabel,
+      localization: editor.localization,
       tablePreviewLabel: editor.tableUi?.labels.preview ?? editor.tablePreviewLabel,
       tableEditing: options.tableEditing,
       onError: editor.onError,

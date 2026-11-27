@@ -2,8 +2,9 @@
   /* The shared sheet owns translate motion; native Modal also writes inline transform motion. */
   transform: none !important;
   transition-property: none !important;
-  border-radius: var(--touch-radius-s) var(--touch-radius-s) 0 0;
-  overflow: hidden;
+
+  /* The projected inner surface clips its content at the animated size. */
+  overflow: visible;
 }
 
 .inkbook-font-library-container[data-inkbook-modal-platform="phone"]

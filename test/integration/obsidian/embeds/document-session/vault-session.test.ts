@@ -205,7 +205,7 @@ it("copies a cropped image between drawings and saves its original raster bytes 
 });
 
 describe("vault-backed document save verification", () => {
-  it("exports an editor commit, processes the exact base, and validates read-back", async () => {
+  it("saves the latest commit and reopens the confirmed revision in a new session", async () => {
     const { content, factory, process, session } = persistenceHarness();
     await session.unlock(operation());
 
@@ -238,14 +238,73 @@ describe("vault-backed document save verification", () => {
 
     expect(process).toHaveBeenCalledOnce();
     const parsed = await parseInkbookDocumentForTest(content());
-    expect(parsed.ok).toBe(true);
-    if (parsed.ok) {
-      expect(parsed.value.snapshot.revision).toBe(9);
-      expect(parsed.value.snapshot.elements).toHaveLength(2);
-      expect(parsed.value.snapshot.elements[0]).toEqual(rectangle());
-    }
+    if (!parsed.ok) throw new Error(parsed.error.message);
+    expect(parsed.value.snapshot.revision).toBe(9);
+    expect(parsed.value.snapshot.elements).toEqual([rectangle(), ...paste.elements]);
     expect(session.getSnapshot()).toMatchObject({ confirmedRevision: 9, dirty: false });
+    session.dispose();
+
+    const nextOperation = { ...operation(), sessionId: "session-2", baseRevision: 9 };
+    const reopened = factory.create(nextOperation);
+    try {
+      await expect(reopened.unlock(nextOperation)).resolves.toMatchObject({ status: "active" });
+      const loaded = reopened.documentModel;
+      if (loaded === undefined) throw new Error("Expected a reopened document model.");
+      expect(loaded.revision).toBe(9);
+      expect(
+        loaded.store.materializeSnapshot({ page: loaded.page, revision: loaded.revision }),
+      ).toEqual(parsed.value.snapshot);
+    } finally {
+      reopened.dispose();
+    }
   });
+});
+
+it("keeps a failed input preparation dirty and persists the edit on a successful lock retry", async () => {
+  const { content, process, session } = persistenceHarness();
+  await expect(session.unlock(operation())).resolves.toMatchObject({ status: "active" });
+  const model = session.documentModel;
+  if (model?.registerExportPreparation === undefined)
+    throw new Error("Expected a document with pending input support.");
+  const original = content();
+  let releasePreparation!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    releasePreparation = resolve;
+  });
+  let preparationFailed = true;
+  const unregister = model.registerExportPreparation(async () => {
+    await pending;
+    if (preparationFailed) throw new Error("Input preparation failed.");
+    model.commitElement(rectangle());
+  });
+
+  try {
+    const failedLock = expect(
+      session.lockLatest({ ...operation(), operationId: 2 }),
+    ).rejects.toThrow("Input preparation failed.");
+    expect(session.getSnapshot()).toMatchObject({ dirty: true, confirmedRevision: 7 });
+    expect(process).not.toHaveBeenCalled();
+    releasePreparation();
+    await failedLock;
+    expect(content()).toBe(original);
+    expect(process).not.toHaveBeenCalled();
+    expect(session.getSnapshot()).toMatchObject({ dirty: true, confirmedRevision: 7 });
+
+    preparationFailed = false;
+    await expect(session.lockLatest({ ...operation(), operationId: 3 })).resolves.toMatchObject({
+      revision: 8,
+      status: "confirmed",
+    });
+    expect(process).toHaveBeenCalledOnce();
+    expect(await parseInkbookDocumentForTest(content())).toMatchObject({
+      ok: true,
+      value: { snapshot: { elements: [rectangle()], revision: 8 } },
+    });
+  } finally {
+    releasePreparation();
+    unregister();
+    session.dispose();
+  }
 });
 
 describe("vault-backed recovery copies", () => {

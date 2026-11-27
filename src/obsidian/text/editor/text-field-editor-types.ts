@@ -1,5 +1,6 @@
 import type { EditorView } from "@codemirror/view";
 import type { ChangeDesc, Text } from "@codemirror/state";
+import type { Localization } from "../../../domain/localization";
 import type { TextElementV2, TextLayoutV2, TextStyleV2 } from "../../../domain/schema/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { TextTableUiPort } from "./text-table-controls";
@@ -41,7 +42,7 @@ export interface TextFieldEditorOptions {
     signal: AbortSignal,
     context: TextTableRenderContext,
   ) => Promise<TextTableRenderResult>;
-  readonly tableCellLabel?: string;
+  readonly localization?: Localization;
   readonly tablePreviewLabel?: string;
   readonly tableUi?: TextTableUiPort;
   readonly onChange: (state: TextSourceState, changes?: ChangeDesc) => void;
@@ -126,7 +127,7 @@ export interface TextMathWidgetPorts {
   readonly scheduler?: WorkScheduler;
   readonly render: TextFieldEditorOptions["renderMath"];
   readonly renderTable?: TextFieldEditorOptions["renderTable"];
-  readonly tableCellLabel?: string | undefined;
+  readonly localization?: Localization | undefined;
   readonly tablePreviewLabel?: string | undefined;
   readonly tableEditing?: TextTableEditingPort | undefined;
   readonly onError: TextFieldEditorOptions["onError"];

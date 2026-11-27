@@ -34,12 +34,6 @@
 .inkbook-root {
   --inkbook-page-surface: #f6f6f6;
   --inkbook-text: #222;
-  --inkbook-motion-fast: 120ms;
-  --inkbook-motion-toolbar: 220ms;
-  --inkbook-motion-standard: 180ms;
-  --inkbook-motion-layout: 240ms;
-  --inkbook-motion-easing: cubic-bezier(0.2, 0, 0, 1);
-  --inkbook-motion-layout-easing: ease-out;
   --inkbook-shell-radius: 10px;
   --inkbook-surface-shadow: 0 4px 14px rgb(0 0 0 / 14%), 0 1px 2px rgb(0 0 0 / 18%);
   --inkbook-toolbar-overlay-block-size: 68px;
@@ -128,13 +122,6 @@
 .inkbook-root[data-inkbook-state="active"],
 .inkbook-root[data-inkbook-state="locking"] {
   z-index: var(--layer-popover);
-}
-
-.inkbook-root[data-inkbook-motion="reduced"] {
-  --inkbook-motion-fast: 0ms;
-  --inkbook-motion-toolbar: 0ms;
-  --inkbook-motion-standard: 0ms;
-  --inkbook-motion-layout: 0ms;
 }
 
 .inkbook-root .inkbook-preview-handoff {
@@ -302,6 +289,22 @@
 
 .inkbook-root .inkbook-locked-preview:focus {
   outline: none;
+}
+
+.inkbook-root > .inkbook-locked-preview-text {
+  block-size: 1px;
+  clip-path: inset(50%);
+  contain: strict;
+  inline-size: 1px;
+  inset: 0 auto auto 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  white-space: pre;
+}
+
+.inkbook-root:not(:has(> .inkbook-locked-preview:not([hidden]))) > .inkbook-locked-preview-text {
+  display: none;
 }
 
 .inkbook-root .inkbook-locked-preview-android {

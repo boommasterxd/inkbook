@@ -103,6 +103,7 @@
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] {
+  overflow: clip;
   pointer-events: auto;
 }
 

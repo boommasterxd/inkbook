@@ -104,8 +104,10 @@ export class ImportHistory {
     const request = new AbortController();
     this.#request = request;
     this.#results.setAttribute("aria-busy", "true");
-    this.#status.textContent = this.#options.localization.t("import.historyLoading");
-    this.#status.removeAttribute("data-inkbook-history-error");
+    this.#motion.updateContent(() => {
+      this.#status.textContent = this.#options.localization.t("import.historyLoading");
+      this.#status.removeAttribute("data-inkbook-history-error");
+    });
     this.#results
       .querySelector(".inkbook-import-history-retry")
       ?.setAttribute("aria-disabled", "true");
@@ -127,6 +129,15 @@ export class ImportHistory {
         ".inkbook-import-history-retry",
       );
       this.#mutate(() => {
+        this.#status.textContent =
+          history.length === 0
+            ? ""
+            : this.#options.localization.t(
+                this.#options.localization.plural(history.length) === "one"
+                  ? "import.historyCountOne"
+                  : "import.historyCountOther",
+                { count: this.#options.localization.number(history.length) },
+              );
         this.#results.replaceChildren();
         this.#retry = undefined;
         renderImportHistory(this.#results, history, this.#open, {
@@ -142,15 +153,6 @@ export class ImportHistory {
         }
         if (retryFocused === true) this.#disclosure.trigger.focus({ preventScroll: true });
       });
-      this.#status.textContent =
-        history.length === 0
-          ? ""
-          : this.#options.localization.t(
-              this.#options.localization.plural(history.length) === "one"
-                ? "import.historyCountOne"
-                : "import.historyCountOther",
-              { count: this.#options.localization.number(history.length) },
-            );
     } catch {
       if (this.#current(request)) this.#failure();
     } finally {
@@ -185,13 +187,19 @@ export class ImportHistory {
 
   #failure(journal?: InkImportJournal): void {
     if (this.#disposed || !this.#expanded) return;
-    this.#status.textContent = this.#options.localization.t(
-      journal === undefined ? "import.historyFailure" : "import.historyOpenFailure",
-    );
-    this.#status.setAttribute("data-inkbook-history-error", "true");
+    const showError = (): void => {
+      this.#status.textContent = this.#options.localization.t(
+        journal === undefined ? "import.historyFailure" : "import.historyOpenFailure",
+      );
+      this.#status.setAttribute("data-inkbook-history-error", "true");
+    };
     this.#retry = journal === undefined ? () => void this.#load() : () => this.#open(journal);
-    if (this.#results.querySelector(".inkbook-import-history-retry") !== null) return;
+    if (this.#results.querySelector(".inkbook-import-history-retry") !== null) {
+      this.#motion.updateContent(showError);
+      return;
+    }
     this.#mutate(() => {
+      showError();
       const retry = this.#results.createEl("button", {
         cls: "inkbook-import-history-retry",
         text: this.#options.localization.t("import.retry"),

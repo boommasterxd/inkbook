@@ -4,6 +4,35 @@ This checklist supplements the [quality and release acceptance contract](quality
 
 README and other product screenshots use the dedicated QA vault with Obsidian's **Readable line length** disabled, so the note and its embeds use the available width. Keep that QA preference for subsequent captures; restore unrelated host preferences after verification.
 
+## Manual Obsidian Display Verification
+
+Apply the [local verification workflow](../AGENTS.md#testing-and-acceptance) to real UI checks as well. During implementation, use focused reproductions in the affected mode and interaction. Once the UI is stable, complete the required modes and scenarios once. Record artifact hashes, platform, fixture, interaction, and result so later changes invalidate only the evidence they actually affect.
+
+Confirm vault identity, plugin readiness, and fixture syntax before interaction checks. Distinguish test-setup failures from product failures. Correct profile initialization, plugin enablement, fixture syntax, selectors, or assertions and resume the failed scenario; retain passed scenarios unless the same fault invalidates them. Reuse a working isolated profile, display, and shared setup across required modes. Restart or recapture only for a concrete verification need, then perform the required cleanup once when the verification session ends.
+
+1. Create a private QA directory containing a fresh Obsidian profile and a synthetic vault. Follow the [installation procedure](../README.md#install) to copy `main.js`, `manifest.json` and `styles.css` from the exact production `dist/` into `.obsidian/plugins/inkbook/` inside the QA vault. Compare the copies' SHA-256 values with `dist/`.
+2. Use the locally installed Obsidian Flatpak on an isolated X11 display with at least a 1920 by 1200, 24-bit framebuffer. Set `qa_dir` to the private directory's absolute path. Use a free local debugging port. Limit Flatpak filesystem access to the QA directory and pass its profile explicitly.
+
+   ```bash
+   xvfb-run -a -s "-screen 0 1920x1200x24" \
+     flatpak run --nofilesystem=host:reset --filesystem="$qa_dir" \
+     --nosocket=wayland --nosocket=ssh-auth md.obsidian.Obsidian \
+     --disable-gpu --remote-debugging-port=9222 --user-data-dir="$qa_dir/profile"
+   ```
+
+   On first launch, open only the synthetic vault through the vault chooser and enable Inkbook. Create a note, insert a drawing from the command palette and save a few representative elements for ordinary checks. Use separate synthetic attachments for import. For performance acceptance, [generate the manual datasets](quality-and-testing.md#generate-the-manual-datasets) and copy each required Markdown note and its matching SVG into the same folder of the synthetic vault. Open the note and confirm Inkbook recognizes the native embed before starting the scenario. Keep the manifest and dense expectations with the working evidence. Reuse this display and profile for the rest of the session.
+
+3. Electron may restore a small window despite the framebuffer size. Before evaluating layout, use `xdotool` on the X display selected by `xvfb-run` to resize and position Obsidian to at least 1600 by 1000 pixels. Verify through the DevTools protocol that `window.innerWidth >= 1500` and `window.innerHeight >= 900`.
+4. Drive the real Obsidian page through the DevTools protocol. Wait for the relevant locked or active Inkbook state, capture uncaught errors and unhandled rejections, exercise the requested interaction, and take a screenshot for visual inspection. Keep the working instance for the remaining required modes; perform final cleanup in step 10.
+5. For every UI layout, styling, or interaction change that can affect shared platform code, verify all three real-Obsidian presentation modes: desktop, tablet, and phone. A single-mode verification is sufficient only when the changed selectors and runtime branch are proven exclusive to that mode. State that scope explicitly; shared components, tokens, or control flow always require all three modes.
+6. Verify desktop mode after calling `Emulation.clearDeviceMetricsOverride`, removing the platform flag with `localStorage.removeItem("EmulateMobile")`, reloading Obsidian, and resizing the real window as described above. Confirm that the body is neither `is-mobile` nor `is-phone`. Never accept a default 640 by 480 capture as desktop evidence for toolbar, adaptive-panel, embed-width, sticky-position, or transition behavior.
+7. Verify tablet mode with Obsidian's own mobile emulation by calling `localStorage.setItem("EmulateMobile", "1")`, reloading, and retaining a wide viewport. Confirm through the DevTools protocol that the body is `is-mobile` and `is-tablet`, but not `is-phone`; do not simulate tablet behavior by manually adding CSS classes.
+8. Verify phone mode by keeping `localStorage.EmulateMobile` enabled and applying a Chrome DevTools `Emulation.setDeviceMetricsOverride` with `mobile: true` and a narrow phone viewport, normally 360 by 800 CSS pixels. Reload when the platform flag changes and confirm that the body is both `is-mobile` and `is-phone`; do not simulate phone behavior by manually adding CSS classes.
+9. In every required mode, record the viewport and platform classes, exercise the same affected interaction, inspect computed geometry and relevant host theme tokens, capture a screenshot, and assert that the uncaught-error and unhandled-rejection collections remain empty. For software-keyboard behavior, reduce the emulated phone viewport height while the panel is open and verify that the surface remains inside `visualViewport`.
+10. Restore the QA vault's original theme and emulation settings, clear the device-metrics override, and close the temporary Obsidian and X11 processes after verification. These simulations cover Obsidian's responsive desktop, tablet, and phone branches; behavior that depends on physical Android hardware or the operating-system input stack still requires an explicitly reported hardware check.
+
+## Release Scenarios
+
 Manual checks are not smoke or end-to-end test suites. They are focused acceptance measurements for behavior that cannot be represented faithfully in the automated harness:
 
 - pen latency and palm rejection on one supported stylus device; on affected Linux pen hardware, record the Obsidian/Electron version and Wayland or X11/XWayland backend and verify native crosshair selection separately from SVG icon and ring feedback. CSS cursor selection may not control a separately managed tablet-tool cursor. Xvfb and synthetic pen events do not establish physical S Pen behavior

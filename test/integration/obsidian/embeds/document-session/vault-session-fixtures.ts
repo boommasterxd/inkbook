@@ -117,6 +117,7 @@ export function recoveryCopyVaultHarness(options: {
   readonly readCopy?: (copy: { file: TFile; text: string }) => string;
 }) {
   const createdCopies = new Map<string, { file: TFile; text: string }>();
+  const readSource = () => options.getContent?.() ?? options.getDocument().svg;
   let copyRead = Promise.resolve();
   const vault = {
     create: async (path: string, text: string) => {
@@ -130,11 +131,11 @@ export function recoveryCopyVaultHarness(options: {
     getFolderByPath: () => null,
     read: async (target: TFile) => {
       const copy = createdCopies.get(target.path);
-      if (copy === undefined) return options.getContent?.() ?? options.getDocument().svg;
+      if (copy === undefined) return readSource();
       await copyRead;
       return options.readCopy?.(copy) ?? copy.text;
     },
-    readBinary: async () => options.getDocument().bytes.buffer.slice(0),
+    readBinary: async () => new TextEncoder().encode(readSource()).buffer,
     trash: async (target: TFile) => {
       createdCopies.delete(target.path);
     },

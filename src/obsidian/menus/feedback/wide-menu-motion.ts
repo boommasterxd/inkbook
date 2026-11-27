@@ -1,4 +1,4 @@
-import { playMenuMotion } from "./menu-motion";
+import { playMenuEntrance, playMenuMotion } from "./menu-motion";
 
 /** Start an exit from the currently rendered frame, including an interrupted entrance. */
 export function animateWideMenuExit(
@@ -18,7 +18,7 @@ export function animateWideMenuExit(
     },
     durationMs,
     onComplete,
-    "ease-out",
+    "easeOut",
   );
 }
 
@@ -27,11 +27,9 @@ export function animateWideMenuEntry(
   durationMs: number,
   onComplete?: () => void,
 ): () => void {
-  return playMenuMotion(
-    surface,
-    { opacity: ["0", "1"], scale: ["0.96", "1"] },
+  return playMenuEntrance(
+    [{ element: surface, keyframes: { opacity: ["0", "1"], scale: ["0.96", "1"] } }],
     durationMs,
     onComplete,
-    "ease-out",
   );
 }

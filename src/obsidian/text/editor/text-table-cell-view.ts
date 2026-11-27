@@ -41,6 +41,7 @@ export class TextTableCellView {
   readonly #scroll: TextEditorScroll;
   public readonly view: EditorView;
   readonly #options: TextTableCellViewOptions;
+  readonly #releaseLabel: () => void;
   #presentation: TextTableCellPresentation;
   #internal = false;
   #updating = false;
@@ -56,6 +57,9 @@ export class TextTableCellView {
   public constructor(options: TextTableCellViewOptions) {
     this.#options = options;
     const editor = options.editor;
+    const label = options.host.ownerDocument.createElement("span");
+    label.id = `inkbook-table-cell-label-${crypto.randomUUID()}`;
+    label.hidden = true;
     this.#scroll = new TextEditorScroll({
       ...(editor.onScrollIntoView ? { onScrollIntoView: editor.onScrollIntoView } : {}),
       ...(editor.onScrollInterrupt ? { onScrollInterrupt: editor.onScrollInterrupt } : {}),
@@ -80,7 +84,7 @@ export class TextTableCellView {
           this.#scroll.extension,
           isolateTextEditorEvents(),
           EditorView.contentAttributes.of({
-            "aria-label": options.editor.tableCellLabel ?? options.editor.label ?? "Table cell",
+            "aria-labelledby": label.id,
             "aria-multiline": "true",
             spellcheck: "true",
           }),
@@ -103,6 +107,19 @@ export class TextTableCellView {
           for (const transaction of transactions) options.onTransaction(transaction);
       },
     });
+    options.host.append(label);
+    const refreshLabel = () => {
+      const { localization } = editor;
+      label.textContent =
+        localization?.t("editor.action.edit-table-cell") ?? editor.label ?? "Table cell";
+      if (localization !== undefined) label.lang = localization.language;
+    };
+    refreshLabel();
+    const unsubscribe = editor.localization?.subscribe(refreshLabel);
+    this.#releaseLabel = () => {
+      unsubscribe?.();
+      label.remove();
+    };
     this.#scroll.attach(this.view);
     this.view.dom.addEventListener(TEXT_PREVIEW_VIEWPORT_EVENT, this.#viewport);
     this.view.dom.ownerDocument.addEventListener("selectionchange", this.#selectionChange, true);
@@ -411,5 +428,6 @@ export class TextTableCellView {
     this.view.dom.ownerDocument.removeEventListener("selectionchange", this.#selectionChange, true);
     this.#scroll.dispose();
     this.view.destroy();
+    this.#releaseLabel();
   }
 }

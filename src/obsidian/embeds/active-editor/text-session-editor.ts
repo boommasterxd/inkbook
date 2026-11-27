@@ -1,4 +1,5 @@
 import type { Bounds } from "../../../domain/geometry/public";
+import type { Localization } from "../../../domain/localization";
 import {
   canonicalizeGeometryNumber,
   canonicalizeUnitIntervalNumber,
@@ -29,7 +30,7 @@ interface TextSessionEditorOptions extends Pick<
   "onChange" | "onInputPending" | "onError" | "onScrollInterrupt"
 > {
   readonly element: TextElementV2;
-  readonly tableCellLabel?: string;
+  readonly localization?: Localization | undefined;
   readonly tableUi?: TextTableUiPort;
   readonly surface: TextEditingSurface;
   readonly scheduler: WorkScheduler;
@@ -97,7 +98,7 @@ export function createTextSessionEditor(options: TextSessionEditorOptions) {
       container: surface.container,
       surfaceCoordinates: surface.coordinates,
       element,
-      ...(options.tableCellLabel ? { tableCellLabel: options.tableCellLabel } : {}),
+      ...(options.localization === undefined ? {} : { localization: options.localization }),
       ...(options.tableUi ? { tableUi: options.tableUi } : {}),
       scheduler: options.scheduler,
       onChange: options.onChange,

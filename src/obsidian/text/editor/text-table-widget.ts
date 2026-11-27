@@ -165,7 +165,7 @@ export class TextTableWidget extends TextPreviewWidget {
       source: this.source,
       block: this.block,
       width: this.width,
-      label: this.ports.tableCellLabel ?? "Edit table cell",
+      label: this.ports.localization?.t("editor.action.edit-table-cell") ?? "Edit table cell",
       focusedRow: () => this.ports.tableEditing?.focusedRow(state.node),
       settled: () => undefined,
       onError: this.ports.onError,
@@ -267,7 +267,7 @@ export class TextTableWidget extends TextPreviewWidget {
         document,
         block: this.block,
         source: this.source,
-        label: this.ports.tableCellLabel ?? "Edit table cell",
+        label: this.ports.localization?.t("editor.action.edit-table-cell") ?? "Edit table cell",
       },
       range,
     );

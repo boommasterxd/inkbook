@@ -20,4 +20,4 @@ Use `npm run ci` when complete local quality and performance verification is req
 - Profile affected performance in Obsidian during implementation and verify improvements with the same fixture and platform. Follow [Performance Verification](docs/performance-ci.md).
 - Keep technical content, code, identifiers, configuration, tests, commits, pull requests, and reports in English.
 
-See [AGENTS.md](AGENTS.md) for the complete project rules and documentation index.
+See [AGENTS.md](AGENTS.md) for project rules and the [documentation index](docs/README.md#documentation-index) for the detailed guides.

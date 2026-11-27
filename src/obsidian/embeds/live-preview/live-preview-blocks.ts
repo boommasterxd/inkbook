@@ -154,7 +154,14 @@ function decorate(
   const entrance = entrances.stateFor(embed.from, embed.to, embed.resolved.documentId);
   return Decoration.replace({
     block: true,
-    widget: new InkbookLivePreviewWidget({ ...embed, preview }, ports, entrance),
+    widget: new InkbookLivePreviewWidget(
+      {
+        ...embed,
+        preview: { aspectRatio: preview.aspectRatio, contentIdentity: preview.contentIdentity },
+      },
+      ports,
+      entrance,
+    ),
   });
 }
 

@@ -128,8 +128,8 @@ The policy can coordinate admitted JavaScript work but cannot guarantee a
 physical frame duration or make full-document atomic operations cheap. Browser
 style/layout and indivisible geometry remain separate performance concerns.
 
-Deterministic tests cover competing consumers, nested asynchronous waits, live
-budget changes, idle restart, cancellation, window separation, hidden progress,
-and resource cleanup. Cadence-sensitive admission contracts retain all five
-supported refresh profiles. Physical-device latency still requires the manual
-verification defined in [Quality and Testing](../quality-and-testing.md).
+Verify affected competing consumers, nested asynchronous waits, live budget changes,
+idle restart, cancellation, window separation, hidden progress, and resource
+cleanup through [direct runtime checks](../performance-ci.md#direct-runtime-verification).
+The coalesced pen contract retains all five refresh profiles. Physical-device
+latency follows [Quality and Testing](../quality-and-testing.md).

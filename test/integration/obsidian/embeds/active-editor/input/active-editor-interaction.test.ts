@@ -8,11 +8,13 @@ import { createInputState, reduceInput } from "../../../../../../src/editor/inpu
 import { EraserPreview } from "../../../../../../src/obsidian/embeds/active-editor/previews/eraser-preview";
 import { ActiveEditorHistory } from "../../../../../../src/obsidian/embeds/active-editor/history";
 import type { PreparedElementHistory } from "../../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
+import { CreationPreview } from "../../../../../../src/obsidian/embeds/active-editor/previews/creation-preview";
 import { ElementSceneStore } from "../../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { LassoPreview } from "../../../../../../src/obsidian/embeds/active-editor/previews/selection-preview";
 import type { EditableDocumentModel } from "../../../../../../src/obsidian/embeds/document-session/vault-document-session";
 import { encodeRuntimeSelection } from "../../../../../../src/persistence/clipboard/codec";
 import { createDragElement } from "../../../../../../src/editor/tools/public";
+import { creationPreviewRenderer } from "../../../../../fixtures/obsidian/active-editor";
 import { elementMutationPorts } from "../../../../../fixtures/obsidian/element-mutation-ports";
 import { ManualFrameScheduler } from "../../../../../fixtures/obsidian/manual-frame-scheduler";
 import { workSchedulerFromFrames } from "../../../../../fixtures/obsidian/work-scheduler";
@@ -78,6 +80,31 @@ function model(): EditableDocumentModel {
   };
   return document;
 }
+
+it("commits the dragged rectangle as one reversible edit", () => {
+  const document = model();
+  const history = new ActiveEditorHistory(document);
+  const identity = { createdAt: 1, id: "00000000-0000-4000-8000-000000000021" };
+  const pointer = { pointerId: 9, pointerType: "mouse" as const, x: 100, y: 100 };
+  const preview = new CreationPreview({
+    defaults: createBuiltInSettings().toolDefaults,
+    history,
+    identity,
+    renderer: creationPreviewRenderer(),
+    start: { additive: false, kind: "tool-gesture", pointer, tool: "rectangle" },
+  });
+
+  preview.update({ ...pointer, x: 280, y: 240 });
+  expect(preview.commit()).toBe(true);
+  const rectangle = document.store.get(identity.id)?.element;
+  expect(rectangle).toMatchObject({ kind: "rectangle", x: 100, y: 100, width: 180, height: 140 });
+  expect(history.commandCount).toBe(1);
+  expect(history.undo()).toBe(true);
+  expect(document.store.size).toBe(0);
+  expect(history.redo()).toBe(true);
+  expect(document.store.get(identity.id)?.element).toEqual(rectangle);
+  history.dispose();
+});
 
 describe("active editor selection area composition", () => {
   it.each([

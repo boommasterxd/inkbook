@@ -14,7 +14,7 @@ Shared hosted runners introduce measurement uncertainty, and repeated speed comp
 
 ## Consequences
 
-Direct bounds on indexed visits, coordinate reads, fragment/geometry construction, DOM writes, host calls, queues, and owned storage catch covered forms of unnecessary work. Controlled clocks verify scheduling. Large fixtures and meaningful state transitions remain. Heap ceilings remain resource checks with runtime-dependent readings.
+Direct bounds on indexed visits, coordinate reads, fragment and geometry construction, DOM writes, host calls, queues, and owned storage identify excess work at the observed boundaries. Controlled clocks verify scheduling. Retain large fixtures and meaningful state transitions for the work being checked. Measure the heap ceilings on the reference devices.
 
 A computation can become slower while its observed work counts stay unchanged. Such regressions, including real p99 regressions, are no longer automatically detected. Deterministic work evidence is not a replacement measurement of speed. Physical-device latency targets remain acceptance requirements outside this CI suite.
 
@@ -22,4 +22,4 @@ The canonical implementation and authoring rules are in [Performance CI](../perf
 
 ## Verification Boundaries
 
-Work contracts must reject duplicate static-fragment generation and unnecessary React chrome renders at their actual production boundaries. Such bounds protect observed work rather than arbitrary computation or latency. Full local and hosted gates retain their required coverage; passing them does not guarantee future runner duration or physical-device speed.
+When a change affects static fragment generation or React chrome rendering, observe duplicate work at the production boundary in running Obsidian. The two permanent CI contracts and the separate physical-device checks remain defined in [Performance Verification](../performance-ci.md).

@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { applyImageCrop } from "../../../../src/domain/images/image-crop";
 import { rasterImage, rasterResource } from "../../../fixtures/persistence/image-svg";
 import { createSnapshot } from "./fixtures";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/document-codec";
@@ -10,12 +11,24 @@ import { ChunkedInkbookInputParser } from "../../../../src/persistence/serializa
 it("round-trips one raster payload shared by independently cropped and rotated instances", async () => {
   const resource = rasterResource();
   const image = rasterImage(resource);
-  const second = {
+  const rotated = {
     ...image,
     id: "00000000-0000-4000-8000-000000000011",
-    rotation: 30,
-    crop: { x: 0.25, y: 0, width: 0.5, height: 1 },
+    rotation: 90,
   };
+  const crop = { x: 0.25, y: 0, width: 0.5, height: 0.5 };
+  const second = applyImageCrop(rotated, crop);
+  expect(second).toMatchObject({
+    assetId: resource.id,
+    crop,
+    x: 175,
+    y: 225,
+    width: 100,
+    height: 50,
+    pivot: { x: 225, y: 250 },
+    rotation: 90,
+  });
+  expect(applyImageCrop(second, image.crop)).toEqual(rotated);
   const snapshot = {
     ...createSnapshot([image, second]),
     version: 5 as const,

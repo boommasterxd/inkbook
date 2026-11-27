@@ -125,6 +125,7 @@ export async function verifyEmbeddedPackageModules(outputMain) {
     throw new Error("Package must contain exactly one embedded plugin runtime.");
   const [runtime] = runtimes;
   const modules = await readEmbeddedModulesIn(runtime.ast);
+  standaloneModule(modules, "mountEditorChrome");
   standaloneModule(modules, "createPortableMathRenderer");
   const examples = standaloneModule(modules, "IMPORT_EXAMPLE_IMAGES");
   const expectedUrls = IMPORT_EXAMPLE_IMAGES.flatMap(({ before, after }) => [

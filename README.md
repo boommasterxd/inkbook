@@ -109,8 +109,9 @@ To convert supported Obsidian Ink drawings, open **Settings → Inkbook → Impo
 
 - **Files in your vault.** Every drawing is a self-contained SVG with an embedded editable snapshot. It remains viewable in an SVG viewer without Inkbook.
 - **Local processing.** Inkbook requires no account, subscription, or remote service and includes no telemetry or analytics. Obsidian and your chosen vault synchronization keep their own settings and behavior.
+- **Files you choose to import.** Inkbook reads the image, PDF, and font files you select, including files outside the vault. It processes them on your device so you can annotate images and PDF pages or use the fonts in drawings.
 - **Local version checks.** Inkbook keeps a small [version index](docs/obsidian-integration.md#settings-boundary) on each device for each vault. It helps detect an older drawing or different contents at the same revision.
-- **Storage for import recovery.** Obsidian Ink conversion preserves originals and creates recovery backups in your vault. These files use extra vault storage and can be included in vault sync.
+- **Storage for import recovery.** Obsidian Ink conversion preserves originals and backs up complete original notes in the vault's `inkbook-imports/` folder. Vault sync may include these files. See [import recovery and cleanup](docs/features.md#importing-from-obsidian-ink).
 - **Keep the original.** Save the original Inkbook SVG for future editing. Changes made in an external vector editor are not imported back as Inkbook elements.
 
 ![The saved handwritten diagram on squared paper alongside the surrounding note text in Obsidian's dark Reading view.](docs/assets/readme-reading-dark.webp)
@@ -126,14 +127,14 @@ See the [SVG format and portability contract](docs/svg-envelope.md) for how save
 
 After the setup above, `npm run dev` watches the source and writes development builds to `dist/`. Copy changed artifacts into your test vault and reload the plugin.
 
-| Command                  | Purpose                                                            |
-| ------------------------ | ------------------------------------------------------------------ |
-| `npm run build`          | Produce the production plugin package.                             |
-| `npm run package:verify` | Check the generated artifacts and version consistency.             |
-| `npm test`               | Run and validate the complete Unit and Integration suite.          |
-| `npm run benchmark`      | Run the viewport and pen-input performance contracts.              |
-| `npm run docs:check`     | Check documentation links, fences, and the complete index.         |
-| `npm run ci`             | Run the complete local quality and performance gate when required. |
+| Command                  | Purpose                                                                 |
+| ------------------------ | ----------------------------------------------------------------------- |
+| `npm run build`          | Produce the production plugin package.                                  |
+| `npm run package:verify` | Check the generated artifacts and version consistency.                  |
+| `npm test`               | Run and validate the complete Unit and Integration suite.               |
+| `npm run benchmark`      | Run the viewport and pen-input performance contracts.                   |
+| `npm run docs:check`     | Check local links, Markdown anchors and fences, and the complete index. |
+| `npm run ci`             | Run the complete local quality and performance gate when required.      |
 
 Run checks relevant to your change and complete the required verification before handoff. Profile affected performance in running Obsidian and compare the same interaction after changes. See [Performance Verification](docs/performance-ci.md).
 
@@ -151,10 +152,10 @@ The code separates pure domain logic, editor interactions, imperative SVG render
 | [Settings](docs/settings.md)                         | Tool defaults and vault or device preferences.                           |
 | [Obsidian integration](docs/obsidian-integration.md) | Embed syntax, host behavior, and release requirements.                   |
 
-The [complete documentation index](AGENTS.md#documentation-index) links all maintained technical guides.
+The [complete documentation index](docs/README.md#documentation-index) links all maintained technical guides.
 
 For bugs and feature requests, use [GitHub Issues](https://github.com/boommasterxd/inkbook/issues). Include your Obsidian version, operating system, input device, and reproduction steps. Share a minimal example without private vault content. Report security vulnerabilities privately using [SECURITY.md](SECURITY.md).
 
 ## License
 
-Inkbook is [MIT licensed](LICENSE), copyright (c) 2026 Yannick Schäfer. Bundled third-party components and the adapted Lucide highlighter icon retain their own licenses; required notices are included in `LICENSE` and the generated plugin bundle.
+Inkbook is [MIT licensed](LICENSE), copyright (c) 2026 Yannick Schäfer. Bundled components and the adapted Lucide highlighter icon retain their own licenses. See the [third-party notices](THIRD-PARTY-NOTICES.txt). The generated plugin bundle includes both the license and the notices.
