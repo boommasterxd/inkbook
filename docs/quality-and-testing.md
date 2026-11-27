@@ -30,12 +30,11 @@ The dense-viewport fixture contains 2,500 simple paths whose exact conservative 
 
 ### Generate the manual datasets
 
-From an installed checkout, run the [fixture generator](../scripts/manual-performance-fixtures.mjs). Each output path must be absolute, outside the checkout, and point to a new directory whose parent already exists.
+From an installed checkout, run the [fixture generator](../scripts/manual-performance-fixtures.mjs). Each invocation prints the path to a new private folder in the system temporary directory. The temporary location must be outside the checkout.
 
 ```sh
-fixture_root="$(mktemp -d /tmp/inkbook-fixtures.XXXXXXXX)"
-node scripts/manual-performance-fixtures.mjs "$fixture_root/reference"
-node scripts/manual-performance-fixtures.mjs "$fixture_root/stress" --stress
+node scripts/manual-performance-fixtures.mjs
+node scripts/manual-performance-fixtures.mjs --stress
 ```
 
 The default command generates `standard.svg`, `standard.md`, `dense.svg`, `dense.md`, `dense-expectations.json` and `manifest.json` through the production serializer. The manifest identifies the expected standard content and the element IDs to select for the centered-viewport scenario. The optional `--stress` command generates `stress.svg`, `stress.md` and `manifest.json`. Its manifest also records the schema's expected rejection of one additional stroke or sample when each limit is exceeded independently.

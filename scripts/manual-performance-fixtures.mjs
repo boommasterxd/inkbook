@@ -1,6 +1,7 @@
-import { mkdir, realpath, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { registerHooks } from "node:module";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { build } from "esbuild";
@@ -24,17 +25,14 @@ function fixtureId(number) {
 }
 
 async function outputDirectory(args) {
-  const [path, mode, extra] = args;
-  if (!path || !isAbsolute(path) || (mode !== undefined && mode !== "--stress") || extra)
-    throw new Error(
-      "Usage: node scripts/manual-performance-fixtures.mjs /absolute/fresh-directory [--stress]",
-    );
-  const target = resolve(path);
-  const directory = join(await realpath(dirname(target)), basename(target));
-  const fromRoot = relative(await realpath(ROOT), directory);
+  const [mode] = args;
+  if (args.length > 1 || (mode !== undefined && mode !== "--stress"))
+    throw new Error("Usage: node scripts/manual-performance-fixtures.mjs [--stress]");
+  const temporary = await realpath(tmpdir());
+  const fromRoot = relative(await realpath(ROOT), temporary);
   if (!isAbsolute(fromRoot) && fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`))
-    throw new Error("The fresh output directory must be outside the checkout.");
-  await mkdir(directory, { mode: 0o700 });
+    throw new Error("The system temporary directory must be outside the checkout.");
+  const directory = await mkdtemp(join(temporary, "inkbook-performance-"));
   return { directory, stress: mode === "--stress" };
 }
 
